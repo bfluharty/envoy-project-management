@@ -1,5 +1,7 @@
 import logger from '@adonisjs/core/services/logger'
 import type { HttpContext } from '@adonisjs/core/http'
+import ProjectService from '#services/project_service'
+import { ProjectRequest } from '../../types/project_request.js'
 
 export default class ProjectsController {
   /**
@@ -19,14 +21,15 @@ export default class ProjectsController {
    * Create a new project
    */
   async create({ request, response }: HttpContext) {
+    logger.info(request.headers())
+    logger.info(request.body())
     // Validator
 
     // Service call
+    const project = await ProjectService.createProject(request.body() as ProjectRequest)
 
     // Response
-    logger.info(request.headers())
-    logger.info(request.body())
-    return response.send('Project created!')
+    return response.send('Project created!' + JSON.stringify(project))
   }
 
   /**
