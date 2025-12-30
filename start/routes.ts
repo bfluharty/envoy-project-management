@@ -8,37 +8,18 @@
 */
 
 import router from '@adonisjs/core/services/router'
+const ProjectsController = () => import('#controllers/projects_controller')
 
 router
   .group(() => {
-    router.get('/', async () => {
-      return {
-        response: 'Get all projects for user.',
-      }
-    })
+    router.get('/', [ProjectsController, 'getAll'])
 
-    router.get('/:uuid', async ({ params }) => {
-      return {
-        response: `Get project: ${params.uuid}`,
-      }
-    })
+    router.get('/:uuid', [ProjectsController, 'getByUuid'])
 
-    router.post('/', async () => {
-      return {
-        response: 'Create a new project.',
-      }
-    })
+    router.post('/', [ProjectsController, 'create'])
 
-    router.patch('/:uuid', async () => {
-      return {
-        response: 'Update a project.',
-      }
-    })
+    router.patch('/:uuid', [ProjectsController, 'update'])
 
-    router.post('/:uuid/chat', async () => {
-      return {
-        response: 'Send a new chat.',
-      }
-    })
+    router.post('/:uuid/chat', [ProjectsController, 'chat'])
   })
   .prefix('/projects')
