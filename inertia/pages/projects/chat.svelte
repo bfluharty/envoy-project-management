@@ -2,7 +2,7 @@
 import Sidebar from "#components/sidebar.svelte";
 import Logo from '#components/logo.svelte';
 
-export let project: { uuid?: number, name?: string };
+export let project: { uuid?: string, name?: string };
 console.log('Project prop:', project);
 // Message type
 interface Message {
