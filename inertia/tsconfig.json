@@ -4,7 +4,7 @@
     "baseUrl": ".",
     "module": "ESNext",
     "paths": {
-      "~/*": ["./*"],
+      "~/*": ["./*"]
     },
   },
   "include": ["./**/*.ts", "./**/*.svelte"],
