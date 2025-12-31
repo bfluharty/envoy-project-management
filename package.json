@@ -36,7 +36,8 @@
     "#database/*": "./database/*.js",
     "#start/*": "./start/*.js",
     "#tests/*": "./tests/*.js",
-    "#config/*": "./config/*.js"
+    "#config/*": "./config/*.js",
+    "#components/*": "./inertia/components/*"
   },
   "devDependencies": {
     "@adonisjs/assembler": "^7.8.2",
@@ -47,6 +48,10 @@
     "@japa/assert": "^4.0.1",
     "@japa/plugin-adonisjs": "^4.0.0",
     "@japa/runner": "^4.2.0",
+    "@lucide/svelte": "^0.562.0",
+    "@skeletonlabs/skeleton": "^4.8.0",
+    "@skeletonlabs/skeleton-svelte": "^4.8.0",
+    "@sveltejs/vite-plugin-svelte": "^6.2.1",
     "@swc/core": "1.11.24",
     "@types/luxon": "^3.7.1",
     "@types/node": "^22.15.18",
@@ -57,18 +62,26 @@
     "pino-pretty": "^13.0.0",
     "prettier": "^3.5.3",
     "ts-node-maintained": "^10.9.5",
-    "typescript": "~5.8"
+    "typescript": "~5.8",
+    "vite": "^6.4.1"
   },
   "dependencies": {
     "@adonisjs/auth": "^9.4.0",
     "@adonisjs/core": "^6.18.0",
     "@adonisjs/cors": "^2.2.1",
+    "@adonisjs/inertia": "^3.1.1",
     "@adonisjs/lucid": "^21.6.1",
     "@adonisjs/session": "^7.7.1",
+    "@adonisjs/vite": "^4.0.0",
+    "@inertiajs/svelte": "^2.3.4",
+    "@tailwindcss/vite": "^4.1.18",
     "@vinejs/vine": "^3.0.1",
+    "edge.js": "^6.4.0",
     "luxon": "^3.7.2",
     "pg": "^8.16.3",
-    "reflect-metadata": "^0.2.2"
+    "reflect-metadata": "^0.2.2",
+    "svelte": "^5.46.1",
+    "tailwindcss": "^4.1.18"
   },
   "hotHook": {
     "boundaries": [
