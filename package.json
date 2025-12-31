@@ -14,6 +14,12 @@
     "typecheck": "tsc --noEmit",
     "prepare": "husky"
   },
+  "lint-staged": {
+    "*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ]
+  },
   "imports": {
     "#controllers/*": "./app/controllers/*.js",
     "#exceptions/*": "./app/exceptions/*.js",
@@ -47,6 +53,7 @@
     "eslint": "^9.26.0",
     "hot-hook": "^0.4.0",
     "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "pino-pretty": "^13.0.0",
     "prettier": "^3.5.3",
     "ts-node-maintained": "^10.9.5",

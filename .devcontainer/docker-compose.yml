@@ -1,0 +1,31 @@
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm
+    user: root
+    volumes:
+      - ../..:/workspaces:cached
+    command: sleep infinity
+    ports:
+      - "3333:3333"
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=postgres
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_DATABASE=envoy_project_dev
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=envoy_project_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
