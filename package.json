@@ -68,7 +68,8 @@
     "@vinejs/vine": "^3.0.1",
     "luxon": "^3.7.2",
     "pg": "^8.16.3",
-    "reflect-metadata": "^0.2.2"
+    "reflect-metadata": "^0.2.2",
+    "uuid": "^13.0.0"
   },
   "hotHook": {
     "boundaries": [
