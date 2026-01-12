@@ -1,12 +1,14 @@
+import { DateTime } from 'luxon'
+
 export interface ProjectRequest {
   title: string
   description?: string
   location?: any
-  startDate?: string
-  endDate?: string
-  deadline?: string
+  startDate?: DateTime
+  endDate?: DateTime
+  deadline?: DateTime
   budgetAmount?: number
-  budgetCurrency?: string
+  budgetCurrency?: number
   goals?: string
   isActive?: boolean
 }
