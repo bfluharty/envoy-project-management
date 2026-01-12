@@ -75,4 +75,8 @@ export default class ProjectsController {
     logger.info(request.body())
     return response.send('Project chat!')
   }
+
+  validateUser(user: string) {
+    return user !== null && user.length > 0
+  }
 }
