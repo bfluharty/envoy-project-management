@@ -1,8 +1,8 @@
 -- Users
-INSERT INTO envoy_schema.users (uuid, full_name, email, password, created_timestamp, modified_timestamp, is_active)
+INSERT INTO envoy_schema.users (uuid, full_name, email, password, created_timestamp, modified_timestamp, is_active, entitlement)
 VALUES
-  ('b7e1a2e2-1c3a-4b2e-8e7a-1f2b3c4d5e6f', 'Alice Example', 'alice@example.com', 'hashedpassword1', NOW(), NOW(), true),
-  ('c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b4c', 'Bob Example', 'bob@example.com', 'hashedpassword2', NOW(), NOW(), true);
+  ('b7e1a2e2-1c3a-4b2e-8e7a-1f2b3c4d5e6f', 'Alice Example', 'alice@example.com', 'hashedpassword1', NOW(), NOW(), true, 1),
+  ('c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b4c', 'Bob Example', 'bob@example.com', 'hashedpassword2', NOW(), NOW(), true, 2);
 
 -- Projects
 INSERT INTO envoy_schema.projects (uuid, title, description, location, start_date, end_date, deadline, budget_amount, budget_currency_id, goals, user_uuid, created_timestamp, modified_timestamp, is_active)

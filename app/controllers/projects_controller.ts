@@ -1,7 +1,7 @@
 import logger from '@adonisjs/core/services/logger'
 import type { HttpContext } from '@adonisjs/core/http'
 import ProjectService from '#services/project_service'
-import { ProjectRequest } from '../../types/project_request.js'
+import { ProjectRequest } from '../../types/request.js'
 
 export default class ProjectsController {
   /**
@@ -102,5 +102,9 @@ export default class ProjectsController {
     logger.info(request.params())
     logger.info(request.body())
     return response.send('Project chat!')
+  }
+
+  validateUser(user: string) {
+    return user !== null && user.length > 0
   }
 }

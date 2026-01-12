@@ -82,7 +82,7 @@
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
     "svelte": "^5.46.1",
-    "tailwindcss": "^4.1.18"
+    "tailwindcss": "^4.1.18",
     "uuid": "^13.0.0"
   },
   "hotHook": {
