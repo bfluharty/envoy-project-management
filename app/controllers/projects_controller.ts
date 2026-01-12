@@ -35,7 +35,7 @@ export default class ProjectsController {
   /**
    * Display a single project
    */
-  async getByUuid({ request, response }: HttpContext) {
+  async getByUuid({ request, inertia }: HttpContext) {
     // Validator
 
     // Service call
@@ -43,7 +43,35 @@ export default class ProjectsController {
     // Response
     logger.info(request.headers())
     logger.info(request.params())
-    return response.send('Project by id details!')
+
+    const mockProjects = [
+      {
+        uuid: '1',
+        name: 'Weekend Plans',
+      },
+      {
+        uuid: '2',
+        name: 'Recipe Ideas',
+      },
+      {
+        uuid: '3',
+        name: 'Travel Advice',
+      },
+      {
+        uuid: '4',
+        name: 'Book Recommendations',
+      },
+      {
+        uuid: '5',
+        name: 'Workout Tips',
+      },
+    ]
+
+    const project = { project: mockProjects.find((p) => p.uuid === request.params().uuid) }
+
+    logger.info(project)
+
+    return inertia.render('projects/chat', { ...project })
   }
 
   /**

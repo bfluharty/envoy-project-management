@@ -10,10 +10,7 @@
 import router from '@adonisjs/core/services/router'
 const ProjectsController = () => import('#controllers/projects_controller')
 
-// Redirect root to projects
-router.get('/', async ({ response }) => {
-  return response.redirect('/projects')
-})
+router.on('/').renderInertia('home')
 
 router
   .group(() => {
