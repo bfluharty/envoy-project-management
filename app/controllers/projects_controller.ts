@@ -1,7 +1,7 @@
 import logger from '@adonisjs/core/services/logger'
 import type { HttpContext } from '@adonisjs/core/http'
 import ProjectService from '#services/project_service'
-import { ProjectRequest } from '../../types/project_request.js'
+import { ProjectRequest } from '../../types/request.js'
 
 export default class ProjectsController {
   /**
