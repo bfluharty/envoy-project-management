@@ -77,6 +77,7 @@
     "@adonisjs/inertia": "^3.1.1",
     "@adonisjs/lucid": "^21.6.1",
     "@adonisjs/session": "^7.7.1",
+    "@adonisjs/static": "^1.1.1",
     "@adonisjs/vite": "^4.0.0",
     "@inertiajs/svelte": "^2.3.4",
     "@tailwindcss/vite": "^4.1.18",

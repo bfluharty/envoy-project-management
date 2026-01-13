@@ -1,5 +1,5 @@
 <script lang="ts">
-import { FolderIcon, HouseIcon, SettingsIcon, LogOutIcon } from "@lucide/svelte";
+import { FolderIcon, DatabaseIcon, SettingsIcon, LogOutIcon } from "@lucide/svelte";
 import Logo from './logo.svelte';
 import { Navigation } from "@skeletonlabs/skeleton-svelte";
 import { router, page } from '@inertiajs/svelte'
@@ -31,7 +31,7 @@ function handleLogout() {
 	<Navigation layout="sidebar" class="grid grid-rows-[auto_1fr_auto] gap-4">
 		<Navigation.Header>
 			<a
-				href="https://www.skeleton.dev"
+				href="/"
 				class="btn-icon btn-icon-lg preset-filled-primary-500"
 			>
 				<Logo class="size-6" />
@@ -40,9 +40,9 @@ function handleLogout() {
 		<Navigation.Content>
 			<Navigation.Group>
 				<Navigation.Menu>
-					<a href="/dashboard" class={_anchorSidebar}>
-						<HouseIcon class="size-4" />
-						<span>Dashboard</span>
+					<a href="/projects" class={_anchorSidebar}>
+						<DatabaseIcon class="size-4" />
+						<span>Projects <span class="text-xs">(JSON)</span></span>
 					</a>
 				</Navigation.Menu>
 			</Navigation.Group>
@@ -70,19 +70,14 @@ function handleLogout() {
 		</Navigation.Content>
 		<Navigation.Footer>
 			{#if user}
-				<div class="px-2 py-2 border-t border-surface-200-800">
-					<p class="text-sm text-surface-500 truncate">Welcome, {user.fullName}</p>
+				<div class="px-2 py-2 border-t border-surface-200-800 flex items-center space-x-2">
+					<div class="w-2 h-2 bg-primary-500 rounded-full animate-pulse"></div>
+					<p class="text-sm text-light text-surface-200">
+      			Welcome, <span class="font-semibold text-surface-900-100">{user.fullName || user.email || 'User'}</span>
+    			</p>
 				</div>
 			{/if}
-			<a
-				href="/dashboard"
-				class={_anchorSidebar}
-				title="Settings"
-				aria-label="Settings"
-			>
-				<SettingsIcon class="size-4" />
-				<span>Settings</span>
-			</a>
+	
 			<button
 				onclick={handleLogout}
 				class={_anchorSidebar}

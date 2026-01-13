@@ -14,7 +14,10 @@ const ProjectsController = () => import('#controllers/projects_controller')
 const AuthController = () => import('#controllers/auth_controller')
 
 // Public landing page (no auth required)
-router.get('/', ({ inertia }) => inertia.render('landing')).as('landing')
+router
+  .get('/', ({ inertia }) => inertia.render('landing'))
+  .as('landing')
+  .middleware(middleware.silentAuth())
 
 // Auth routes (guest only)
 router
