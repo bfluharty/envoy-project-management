@@ -2,7 +2,7 @@ import Project from '#models/project'
 import { ProjectRequest } from '../../types/request.js'
 
 export default class ProjectService {
-  public static async createProject(request: ProjectRequest) {
+  public static async createProject(request: ProjectRequest & { userUuid: string }) {
     const data: any = {
       title: request.title,
       description: request.description,

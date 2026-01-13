@@ -42,7 +42,9 @@ export default class ProjectsController {
         userUuid: user.uuid,
       }
 
-      const project = await ProjectService.createProject(projectData as ProjectRequest)
+      const project = await ProjectService.createProject(
+        projectData as ProjectRequest & { userUuid: string }
+      )
 
       return response.status(201).json({
         message: 'Project created successfully',
