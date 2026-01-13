@@ -1,5 +1,5 @@
 <script lang="ts">
-import { FolderIcon, DatabaseIcon, LogOutIcon } from "@lucide/svelte";
+import { FolderIcon, HouseIcon, DatabaseIcon, LogOutIcon } from "@lucide/svelte";
 import Logo from './logo.svelte';
 import { Navigation } from "@skeletonlabs/skeleton-svelte";
 import { router, page } from '@inertiajs/svelte'
@@ -41,7 +41,7 @@ function handleLogout() {
 			<Navigation.Group>
 				<Navigation.Menu>
 					<a href="/dashboard" class={_anchorSidebar}>
-						<FolderIcon class="size-4" />
+						<HouseIcon class="size-4" />
 						<span>Dashboard</span>
 					</a>
 					<a href="/projects" class={_anchorSidebar}>
