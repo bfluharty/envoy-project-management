@@ -14,6 +14,8 @@ const AuthFinder = withAuthFinder(() => hash.use('scrypt'), {
 })
 
 export default class User extends compose(BaseModel, AuthFinder) {
+  static table = 'envoy_schema.users'
+
   @column({ isPrimary: true })
   declare id: number
 

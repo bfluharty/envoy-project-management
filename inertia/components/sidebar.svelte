@@ -1,9 +1,13 @@
 <script lang="ts">
-import { FolderIcon, HouseIcon, SettingsIcon } from "@lucide/svelte";
+import { FolderIcon, HouseIcon, SettingsIcon, LogOutIcon } from "@lucide/svelte";
 import Logo from './logo.svelte';
 import { Navigation } from "@skeletonlabs/skeleton-svelte";
+import { router, page } from '@inertiajs/svelte'
 
 const { children } = $props();
+
+// Access user from global Inertia shared data
+const user = $derived($page.props.user);
 
 const _linksSidebar = {
 	projects: [
@@ -16,6 +20,10 @@ const _linksSidebar = {
 };
 
 const _anchorSidebar = "btn hover:preset-tonal justify-start px-2 w-full";
+
+function handleLogout() {
+	router.post('/logout')
+}
 </script>
 
 <div
@@ -33,7 +41,7 @@ const _anchorSidebar = "btn hover:preset-tonal justify-start px-2 w-full";
 		<Navigation.Content>
 			<Navigation.Group>
 				<Navigation.Menu>
-					<a href="/" class={_anchorSidebar}>
+					<a href="/dashboard" class={_anchorSidebar}>
 						<HouseIcon class="size-4" />
 						<span>Dashboard</span>
 					</a>
@@ -62,8 +70,13 @@ const _anchorSidebar = "btn hover:preset-tonal justify-start px-2 w-full";
 			{/each}
 		</Navigation.Content>
 		<Navigation.Footer>
+			{#if user}
+				<div class="px-2 py-2 border-t border-surface-200-800">
+					<p class="text-sm text-surface-500 truncate">Welcome, {user.fullName}</p>
+				</div>
+			{/if}
 			<a
-				href="/"
+				href="/dashboard"
 				class={_anchorSidebar}
 				title="Settings"
 				aria-label="Settings"
@@ -71,6 +84,15 @@ const _anchorSidebar = "btn hover:preset-tonal justify-start px-2 w-full";
 				<SettingsIcon class="size-4" />
 				<span>Settings</span>
 			</a>
+			<button
+				onclick={handleLogout}
+				class={_anchorSidebar}
+				title="Logout"
+				aria-label="Logout"
+			>
+				<LogOutIcon class="size-4" />
+				<span>Logout</span>
+			</button>
 		</Navigation.Footer>
 	</Navigation>
 	<!-- --- -->

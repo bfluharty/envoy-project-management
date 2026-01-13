@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid'
 import VendorConversation from './vendor_conversation.js'
 
 export default class Message extends BaseModel {
+  static table = 'envoy_schema.messages'
+
   @column({ isPrimary: true })
   declare id: number
 

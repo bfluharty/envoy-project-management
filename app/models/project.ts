@@ -8,6 +8,8 @@ import Currency from './currency.js'
 import User from './user.js'
 
 export default class Project extends BaseModel {
+  static table = 'envoy_schema.projects'
+
   @column({ isPrimary: true })
   declare id: number
 

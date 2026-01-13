@@ -6,6 +6,8 @@ import Vendor from './vendor.js'
 import Message from './message.js'
 
 export default class VendorConversation extends BaseModel {
+  static table = 'envoy_schema.vendor_conversations'
+
   @column({ isPrimary: true })
   declare id: number
 
