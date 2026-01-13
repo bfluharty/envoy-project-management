@@ -12,6 +12,7 @@ export interface ProjectRequest {
   budgetCurrency?: number
   goals?: string
   isActive?: boolean
+  userUuid?: string
 }
 
 export interface ReasoningRequest {

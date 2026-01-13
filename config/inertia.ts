@@ -12,6 +12,29 @@ const inertiaConfig = defineConfig({
    */
   sharedData: {
     user: (ctx) => ctx.inertia.always(() => ctx.auth.user),
+    projects: async (ctx) => {
+      // Only fetch projects if user is authenticated
+      if (!ctx.auth.user) return []
+
+      try {
+        const projectModule = await import('#models/project')
+        const Project = projectModule.default
+        const projects = await Project.query()
+          .where('user_uuid', ctx.auth.user.uuid)
+          .where('is_active', true)
+          .orderBy('created_timestamp', 'desc')
+          .limit(10)
+
+        return projects.map((p) => ({
+          uuid: p.uuid,
+          title: p.title,
+          description: p.description,
+        }))
+      } catch (error) {
+        // Return empty array if there's an error
+        return []
+      }
+    },
   },
 
   /**

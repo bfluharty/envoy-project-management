@@ -6,18 +6,17 @@ import { router, page } from '@inertiajs/svelte'
 
 const { children } = $props();
 
-// Access user from global Inertia shared data
+// Access user and projects from global Inertia shared data
 const user = $derived($page.props.user);
+const projects = $derived($page.props.projects || []);
 
-const _linksSidebar = {
-	projects: [
-		{ label: "Weekend Plans", href: "/projects/1", icon: FolderIcon },
-		{ label: "Recipe Ideas", href: "/projects/2", icon: FolderIcon },
-		{ label: "Travel Advice", href: "/projects/3", icon: FolderIcon },
-		{ label: "Book Recommendations", href: "/projects/4", icon: FolderIcon },
-		{ label: "Workout Tips", href: "/projects/5", icon: FolderIcon },
-	],
-};
+const _linksSidebar = $derived({
+	projects: projects.map((project: any) => ({
+		label: project.title,
+		href: `/projects/${project.uuid}`,
+		icon: FolderIcon
+	}))
+});
 
 const _anchorSidebar = "btn hover:preset-tonal justify-start px-2 w-full";
 
