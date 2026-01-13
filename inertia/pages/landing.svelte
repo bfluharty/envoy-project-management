@@ -6,7 +6,7 @@
 </script>
 
 <svelte:head>
-  <title>Welcome - Envoy Project API</title>
+  <title>Envoy - Welcome</title>
 </svelte:head>
 
 

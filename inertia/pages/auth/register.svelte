@@ -28,7 +28,7 @@
 </script>
 
 <svelte:head>
-  <title>Register - Envoy Project API</title>
+  <title>Envoy - Register</title>
 </svelte:head>
 
 <div class="min-h-screen bg-base-100 flex items-center justify-center px-4">

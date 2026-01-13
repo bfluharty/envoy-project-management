@@ -43,7 +43,7 @@
 </script>
 
 <svelte:head>
-  <title>Login - Envoy Project API</title>
+  <title>Envoy - Login</title>
 </svelte:head>
 
 <div class="min-h-screen bg-base-100 flex items-center justify-center px-4">
