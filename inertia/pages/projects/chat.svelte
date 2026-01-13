@@ -2,8 +2,11 @@
 import Sidebar from "#components/sidebar.svelte";
 import Logo from '#components/logo.svelte';
 
-export let project: { uuid?: string, name?: string };
-console.log('Project prop:', project);
+import { page } from '@inertiajs/svelte';
+const user = $derived($page.props.user || null);
+
+const { project }: { project: { uuid?: string, name?: string } } = $props();
+
 // Message type
 interface Message {
     id: number;
@@ -11,13 +14,29 @@ interface Message {
     content: string;
 }
 
-let messages: Message[] = [
-    { id: 1, role: 'assistant', content: `Hello! How can I help you with project "${project.name}"?` }
-];
-let input = '';
-let nextId = 2;
+// Use $state for reactive variables
+let messages = $state<Message[]>([]);
+let input = $state('');
+let nextId = $state(2);
 
-function sendMessage() {
+// Initialize messages in $effect to properly handle reactive dependencies
+$effect(() => {
+    // Debug: Log page props to see what's available
+    console.log('Page props:', $page.props);
+    console.log('User:', user);
+    console.log('Project:', project);
+    
+    // Add defensive check and better initial message
+    const userName = user?.name || user?.fullName || user?.email || 'there';
+    const projectName = project?.name || 'this project';
+    
+    messages = [
+        { id: 1, role: 'assistant', content: `Hello ${userName}! How can I help you with "${projectName}"?` }
+    ];
+});
+
+function sendMessage(event: Event) {
+    event.preventDefault();
     if (!input.trim()) return;
     messages = [...messages, { id: nextId++, role: 'user', content: input }];
     input = '';
@@ -43,7 +62,7 @@ function sendMessage() {
         {#each messages as msg (msg.id)}
             <div class="flex items-start gap-2" class:justify-end={msg.role === 'user'}>
                 {#if msg.role === 'assistant'}
-                    <div class="avatar size-8">
+                    <div class="avatar size-8 mt-1.5">
                         <Logo class="size-8" />
                     </div>
                 {/if}
@@ -53,15 +72,15 @@ function sendMessage() {
                     {msg.content}
                 </div>
                 {#if msg.role === 'user'}
-                    <div class="avatar size-8">
+                    <div class="avatar size-8 mt-1.5">
                         <img src="https://i.pravatar.cc/40?img=12" alt="You" class="rounded-full" />
                     </div>
                 {/if}
             </div>
         {/each}
     </div>
-    <form class="p-4 flex gap-2 border-t border-surface-200-800 bg-surface-100-900" on:submit|preventDefault={sendMessage}>
-        <input class="input flex-1" type="text" bind:value={input} placeholder="Type your message..." autocomplete="off" />
+    <form class="p-4 flex gap-2 bg-surface-800" onsubmit={sendMessage}>
+        <input class="input flex-1 outline-none" type="text" bind:value={input} placeholder="Type your message..." autocomplete="off" />
         <button class="btn preset-filled-primary-500" type="submit">Send</button>
     </form>
 </div>
