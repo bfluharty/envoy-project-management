@@ -16,8 +16,8 @@
     <div class="max-w-4xl w-full text-center space-y-8">
       <div class="space-y-4">
         <div class="flex justify-center">
-          <div class="w-16 h-16 bg-primary rounded-full flex items-center justify-center">
-            <Logo class="w-16 h-16" />
+          <div class="w-24 h-24 bg-primary rounded-full flex items-center justify-center">
+            <Logo class="w-24 h-24 text-primary-400 animate-pulse duration-1000" />
           </div>
         </div>
         <h1 class="text-5xl font-bold text-base-content">Welcome to Envoy</h1>
