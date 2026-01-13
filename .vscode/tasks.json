@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Postgres Database (5432)",
+			"type": "shell",
+			"command": "docker compose up",
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build",
+			"runOptions": {
+				"runOn": "folderOpen"
+			}
+		}		
+	]
+}
