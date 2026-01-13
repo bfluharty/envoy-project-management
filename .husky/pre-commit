@@ -12,6 +12,6 @@ if command -v npx > /dev/null 2>&1; then
 elif [ -f "./node_modules/.bin/lint-staged" ]; then
   node ./node_modules/.bin/lint-staged
 else
-  echo "Error: Could not find npx or lint-staged"
+  echo "Error: Could not run lint-staged. Install fast node manager (fnm) or ensure npx is available." >&2
   exit 1
 fi
