@@ -21,10 +21,6 @@ let nextId = $state(2);
 
 // Initialize messages in $effect to properly handle reactive dependencies
 $effect(() => {
-    // Debug: Log page props to see what's available
-    console.log('Page props:', $page.props);
-    console.log('User:', user);
-    console.log('Project:', project);
     
     // Add defensive check and better initial message
     const userName = user?.name || user?.fullName || user?.email || 'there';
