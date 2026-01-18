@@ -40,7 +40,7 @@ export default class Vendor extends BaseModel {
   @column.dateTime({ columnName: 'modified_timestamp', autoCreate: true, autoUpdate: true })
   declare modifiedTimestamp: DateTime
 
-  @column({ columnName: 'status_id' })
+  @column({ columnName: 'status' })
   declare statusId: number
 
   @belongsTo(() => VendorStatus, { foreignKey: 'statusId' })
