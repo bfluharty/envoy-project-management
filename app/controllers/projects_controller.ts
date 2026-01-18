@@ -36,14 +36,9 @@ export default class ProjectsController {
     const user = auth.user!
 
     try {
-      // Add user UUID to project data
-      const projectData = {
-        ...request.body(),
-        userUuid: user.uuid,
-      }
-
       const project = await ProjectService.createProject(
-        projectData as ProjectRequest & { userUuid: string }
+        request.body() as ProjectRequest,
+        user.uuid
       )
 
       return response.status(201).json({

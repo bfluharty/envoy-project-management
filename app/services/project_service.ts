@@ -2,7 +2,7 @@ import Project from '#models/project'
 import { ProjectRequest } from '../../types/request.js'
 
 export default class ProjectService {
-  public static async createProject(request: ProjectRequest & { userUuid: string }) {
+  public static async createProject(request: ProjectRequest, userUuid: string) {
     const data: any = {
       title: request.title,
       description: request.description,
@@ -13,7 +13,7 @@ export default class ProjectService {
       budgetAmount: request.budgetAmount,
       budgetCurrencyId: request.budgetCurrency,
       goals: request.goals,
-      userUuid: request.userUuid,
+      userUuid: userUuid,
       isActive: request.isActive ?? true,
     }
 
