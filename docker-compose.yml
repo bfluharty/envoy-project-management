@@ -1,4 +1,19 @@
 services:
+  app:
+    build: .
+    image: envoy-project-management:latest
+    environment:
+      - NODE_ENV=dev
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=
+      - DB_DATABASE=envoy_project_dev
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
