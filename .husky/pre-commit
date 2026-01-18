@@ -1,1 +1,17 @@
-npx lint-staged
+#!/usr/bin/env sh
+
+# Try to use fnm if available, fallback to system node
+if command -v fnm > /dev/null 2>&1; then
+  eval "$(fnm env --use-on-cd)"
+  fnm use default 2>/dev/null || true
+fi
+
+# Try npx from multiple possible locations
+if command -v npx > /dev/null 2>&1; then
+  npx lint-staged
+elif [ -f "./node_modules/.bin/lint-staged" ]; then
+  node ./node_modules/.bin/lint-staged
+else
+  echo "Error: Could not run lint-staged. Install fast node manager (fnm) or ensure npx is available." >&2
+  exit 1
+fi

@@ -1,3 +1,8 @@
+/// <reference path="../../adonisrc.ts" />
+/// <reference path="../../config/inertia.ts" />
+
+import '../css/app.css'
+
 import { createInertiaApp, type ResolvedComponent } from '@inertiajs/svelte'
 import { render as svelteRender } from 'svelte/server'
 

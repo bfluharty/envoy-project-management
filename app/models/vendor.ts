@@ -7,6 +7,8 @@ import VendorConversation from './vendor_conversation.js'
 import Project from './project.js'
 
 export default class Vendor extends BaseModel {
+  static table = 'envoy_schema.vendors'
+
   @column({ isPrimary: true })
   declare id: number
 
@@ -38,7 +40,7 @@ export default class Vendor extends BaseModel {
   @column.dateTime({ columnName: 'modified_timestamp', autoCreate: true, autoUpdate: true })
   declare modifiedTimestamp: DateTime
 
-  @column({ columnName: 'status' })
+  @column({ columnName: 'status_id' })
   declare statusId: number
 
   @belongsTo(() => VendorStatus, { foreignKey: 'statusId' })

@@ -25,5 +25,10 @@ createInertiaApp({
     } else {
       mount(App, { target: el, props })
     }
+
+    // Mark as hydrated to show content (prevents FOUC)
+    setTimeout(() => {
+      el.classList.add('hydrated')
+    }, 0)
   },
 })

@@ -6,6 +6,8 @@ import Conversation from './conversation.js'
 import * as turn from '../../types/turn.js'
 
 export default class ConversationTurn extends BaseModel {
+  static table = 'envoy_schema.conversation_turns'
+
   @column({ isPrimary: true })
   declare id: number
 

@@ -1,21 +1,28 @@
 <script lang="ts">
-import { FolderIcon, HouseIcon, SettingsIcon } from "@lucide/svelte";
+import { FolderIcon, HouseIcon, DatabaseIcon, LogOutIcon } from "@lucide/svelte";
 import Logo from './logo.svelte';
 import { Navigation } from "@skeletonlabs/skeleton-svelte";
+import { router, page } from '@inertiajs/svelte'
 
 const { children } = $props();
 
-const _linksSidebar = {
-	projects: [
-		{ label: "Weekend Plans", href: "/projects/1", icon: FolderIcon },
-		{ label: "Recipe Ideas", href: "/projects/2", icon: FolderIcon },
-		{ label: "Travel Advice", href: "/projects/3", icon: FolderIcon },
-		{ label: "Book Recommendations", href: "/projects/4", icon: FolderIcon },
-		{ label: "Workout Tips", href: "/projects/5", icon: FolderIcon },
-	],
-};
+// Access user and projects from global Inertia shared data
+const user = $derived($page.props.user);
+const projects = $derived($page.props.projects || []);
+
+const _linksSidebar = $derived({
+	projects: projects.map((project: any) => ({
+		label: project.title,
+		href: `/projects/${project.uuid}`,
+		icon: FolderIcon
+	}))
+});
 
 const _anchorSidebar = "btn hover:preset-tonal justify-start px-2 w-full";
+
+function handleLogout() {
+	router.post('/logout')
+}
 </script>
 
 <div
@@ -24,8 +31,8 @@ const _anchorSidebar = "btn hover:preset-tonal justify-start px-2 w-full";
 	<Navigation layout="sidebar" class="grid grid-rows-[auto_1fr_auto] gap-4">
 		<Navigation.Header>
 			<a
-				href="https://www.skeleton.dev"
-				class="btn-icon btn-icon-lg preset-filled-primary-500"
+				href="/"
+				class="btn-icon btn-icon-lg preset-filled-primary-500 "
 			>
 				<Logo class="size-6" />
 			</a>
@@ -33,9 +40,13 @@ const _anchorSidebar = "btn hover:preset-tonal justify-start px-2 w-full";
 		<Navigation.Content>
 			<Navigation.Group>
 				<Navigation.Menu>
-					<a href="/" class={_anchorSidebar}>
+					<a href="/dashboard" class={_anchorSidebar}>
 						<HouseIcon class="size-4" />
 						<span>Dashboard</span>
+					</a>
+					<a href="/projects" class={_anchorSidebar}>
+						<DatabaseIcon class="size-4" />
+						<span>Projects <span class="text-xs">(JSON)</span></span>
 					</a>
 				</Navigation.Menu>
 			</Navigation.Group>
@@ -62,15 +73,24 @@ const _anchorSidebar = "btn hover:preset-tonal justify-start px-2 w-full";
 			{/each}
 		</Navigation.Content>
 		<Navigation.Footer>
-			<a
-				href="/"
+			{#if user}
+				<div class="px-2 py-2 border-t border-surface-200-800 flex items-center space-x-2">
+					<div class="w-2 h-2 bg-primary-500 rounded-full animate-pulse"></div>
+					<p class="text-sm text-light text-surface-200">
+      			Welcome, <span class="font-semibold text-surface-900-100">{user.fullName || user.email || 'User'}</span>
+    			</p>
+				</div>
+			{/if}
+	
+			<button
+				onclick={handleLogout}
 				class={_anchorSidebar}
-				title="Settings"
-				aria-label="Settings"
+				title="Logout"
+				aria-label="Logout"
 			>
-				<SettingsIcon class="size-4" />
-				<span>Settings</span>
-			</a>
+				<LogOutIcon class="size-4" />
+				<span>Logout</span>
+			</button>
 		</Navigation.Footer>
 	</Navigation>
 	<!-- --- -->

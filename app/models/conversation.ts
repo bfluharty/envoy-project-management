@@ -6,6 +6,8 @@ import Project from './project.js'
 import ConversationTurn from './conversation_turn.js'
 
 export default class Conversation extends BaseModel {
+  static table = 'envoy_schema.conversations'
+
   @column({ isPrimary: true })
   declare id: number
 
