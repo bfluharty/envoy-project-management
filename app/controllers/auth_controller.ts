@@ -67,10 +67,9 @@ export default class AuthController {
 
       session.flash('success', 'Account created successfully! Please log in.')
       return response.redirect().toRoute('auth.login')
-    } catch (error) {
-      if (error.code === '23505') {
-        // Duplicate email
-        session.flash('error', 'An account with this email already exists')
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
+        session.flash('error', 'Registration failed. Please check your details and try again.')
       } else {
         session.flash('error', 'Something went wrong. Please try again.')
       }
