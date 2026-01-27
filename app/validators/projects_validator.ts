@@ -1,16 +1,18 @@
 import vine from '@vinejs/vine'
 import { retrieveReferences } from '../utils/retrieve_references.js'
 
+const CURRENCIES_TABLE = 'envoy_schema.currencies'
+
 export const getUserProjectsValidator = vine.compile(
   vine.object({
-    limit: vine.number().positive().optional(),
+    limit: vine.number().min(1).optional(),
     offset: vine.number().min(0).optional(),
   })
 )
 
 export const getUserProjectByUuidValidator = vine.compile(
   vine.object({
-    uuid: vine.string().uuid(),
+    uuid: vine.string().uuid({ version: [1, 2, 3, 4, 5] }),
   })
 )
 
@@ -38,7 +40,7 @@ export const createProjectValidator = vine.compile(
       .afterOrEqual('endDate')
       .optional(),
     budgetAmount: vine.number().min(0).optional(),
-    budgetCurrency: vine.enum(await retrieveReferences('currencies', ['code'])),
+    budgetCurrency: vine.enum(await retrieveReferences(CURRENCIES_TABLE, ['code'])),
     goals: vine.string().optional(),
     isActive: vine.boolean(),
   })
@@ -69,7 +71,7 @@ export const updateProjectValidator = vine.compile(
       .afterOrEqual('endDate')
       .optional(),
     budgetAmount: vine.number().min(0).optional(),
-    budgetCurrency: vine.enum(await retrieveReferences('currencies', ['code'])).optional(),
+    budgetCurrency: vine.enum(await retrieveReferences(CURRENCIES_TABLE, ['code'])).optional(),
     goals: vine.string().optional(),
     isActive: vine.boolean(),
   })

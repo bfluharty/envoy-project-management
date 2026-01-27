@@ -39,13 +39,13 @@ export default class ProjectsController {
   /**
    * Get a single user project
    */
-  async getByUuid({ request, response, auth, inertia }: HttpContext) {
+  async getByUuid({ request, response, auth }: HttpContext) {
     // Validate user
     await auth.check()
     const user = auth.user!
 
     // Validate request
-    const { uuid: projectUuid } = await request.validateUsing(getUserProjectByUuidValidator)
+    const { uuid: projectUuid } = await getUserProjectByUuidValidator.validate(request.params())
 
     // Get user project
     try {
@@ -53,13 +53,7 @@ export default class ProjectsController {
       if (!project) {
         return response.status(404).json({ error: 'Project not found' })
       }
-
-      return inertia.render('projects/chat', {
-        project: {
-          uuid: project.uuid,
-          name: project.title,
-        },
-      })
+      return response.status(200).json({ project })
     } catch (error) {
       logger.error('Error fetching project:', error)
       return response.status(500).json({ error: 'Failed to fetch project' })

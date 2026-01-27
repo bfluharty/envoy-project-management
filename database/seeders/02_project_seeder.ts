@@ -21,7 +21,7 @@ export default class extends BaseSeeder {
         isActive: true,
       },
       {
-        uuid: 'f1e2d3c4-b5a6-7c8d-9e0f-1a2b3c4d5e6f',
+        uuid: 'bc5ad890-4915-43e3-9b6f-33aea76dd2f6',
         title: 'Mobile App Redesign',
         description: 'Complete redesign of mobile application user interface',
         location: { city: 'San Francisco' },
@@ -35,7 +35,7 @@ export default class extends BaseSeeder {
         isActive: true,
       },
       {
-        uuid: 'a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d',
+        uuid: '0e037e80-6922-441a-b413-887a856a286b',
         title: 'E-commerce Platform',
         description: 'Build new e-commerce platform for online sales',
         location: { city: 'Austin' },
@@ -49,7 +49,7 @@ export default class extends BaseSeeder {
         isActive: true,
       },
       {
-        uuid: 'b3c4d5e6-f7a8-9b0c-1d2e-3f4a5b6c7d8e',
+        uuid: 'b3c4d5e6-f7a8-4b0c-8d2e-3f4a5b6c7d8e',
         title: 'Data Analytics Dashboard',
         description: 'Business intelligence dashboard for sales analytics',
         location: { city: 'Seattle' },
@@ -63,7 +63,7 @@ export default class extends BaseSeeder {
         isActive: true,
       },
       {
-        uuid: 'c4d5e6f7-a8b9-0c1d-2e3f-4a5b6c7d8e9f',
+        uuid: 'c4d5e6f7-a8b9-4c1d-8e3f-4a5b6c7d8e9f',
         title: 'Weekend Plans App',
         description: 'Social app for planning weekend activities with friends',
         location: { city: 'Portland' },
@@ -79,7 +79,7 @@ export default class extends BaseSeeder {
 
       // Bob's projects
       {
-        uuid: 'e6f7a8b9-c0d1-4e2f-3a4b-5c6d7e8f9a0b',
+        uuid: 'e6f7a8b9-c0d1-4e2f-8a4b-5c6d7e8f9a0b',
         title: 'Project Beta',
         description: 'Second project',
         location: { city: 'London' },
@@ -93,7 +93,7 @@ export default class extends BaseSeeder {
         isActive: true,
       },
       {
-        uuid: 'd5e6f7a8-b9c0-1d2e-3f4a-5b6c7d8e9f0a',
+        uuid: 'd5e6f7a8-b9c0-4d2e-8f4a-5b6c7d8e9f0a',
         title: 'Recipe Discovery Platform',
         description: 'AI-powered recipe recommendation system',
         location: { city: 'Paris' },
@@ -107,7 +107,7 @@ export default class extends BaseSeeder {
         isActive: true,
       },
       {
-        uuid: 'e7f8a9b0-c1d2-3e4f-5a6b-7c8d9e0f1a2b',
+        uuid: 'e7f8a9b0-c1d2-4e4f-8a6b-7c8d9e0f1a2b',
         title: 'Travel Booking System',
         description: 'Comprehensive travel planning and booking platform',
         location: { city: 'Amsterdam' },
@@ -121,7 +121,7 @@ export default class extends BaseSeeder {
         isActive: true,
       },
       {
-        uuid: 'f8a9b0c1-d2e3-4f5a-6b7c-8d9e0f1a2b3c',
+        uuid: 'f8a9b0c1-d2e3-4f5a-8b7c-8d9e0f1a2b3c',
         title: 'Digital Library System',
         description: 'Modern library management and digital lending system',
         location: { city: 'Berlin' },
@@ -135,7 +135,7 @@ export default class extends BaseSeeder {
         isActive: true,
       },
       {
-        uuid: 'a9b0c1d2-e3f4-5a6b-7c8d-9e0f1a2b3c4d',
+        uuid: 'a9b0c1d2-e3f4-4a6b-8c8d-9e0f1a2b3c4d',
         title: 'Fitness Tracking App',
         description: 'Comprehensive workout and nutrition tracking application',
         location: { city: 'Barcelona' },
