@@ -5,9 +5,12 @@ import { ProjectRequest } from '../../types/request.js'
 import {
   createProjectValidator,
   getUserProjectsValidator,
-  getUserProjectByUuidValidator,
+  requestParamsValidator,
   updateProjectValidator,
 } from '#validators/projects_validator'
+import { retrieveReferences } from '../utils/retrieve_references.js'
+
+const CURRENCIES_TABLE = 'envoy_schema.currencies'
 
 export default class ProjectsController {
   /**
@@ -31,8 +34,11 @@ export default class ProjectsController {
         offset: offset,
       })
     } catch (error) {
-      logger.error('Error fetching projects:', error)
-      return response.status(500).json({ error: 'Failed to fetch projects' })
+      logger.error('Error fetching projects:')
+      logger.error(error)
+      return response
+        .status(500)
+        .json({ error: 'Failed to fetch projects', developerText: error.message })
     }
   }
 
@@ -45,7 +51,7 @@ export default class ProjectsController {
     const user = auth.user!
 
     // Validate request
-    const { uuid: projectUuid } = await getUserProjectByUuidValidator.validate(request.params())
+    const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
 
     // Get user project
     try {
@@ -55,8 +61,11 @@ export default class ProjectsController {
       }
       return response.status(200).json({ project })
     } catch (error) {
-      logger.error('Error fetching project:', error)
-      return response.status(500).json({ error: 'Failed to fetch project' })
+      logger.error('Error fetching project:')
+      logger.error(error)
+      return response
+        .status(500)
+        .json({ error: 'Failed to fetch project', developerText: error.message })
     }
   }
 
@@ -73,6 +82,13 @@ export default class ProjectsController {
     if (validatedRequest.isActive === false) {
       return response.status(400).json({ error: 'Projects cannot be deleted during creation' })
     }
+    if (validatedRequest.budgetCurrency) {
+      try {
+        validatedRequest.budgetCurrency = await validateCurrency(validatedRequest.budgetCurrency)
+      } catch (error) {
+        return response.status(400).json({ error: error.message })
+      }
+    }
 
     // Save project
     try {
@@ -82,8 +98,11 @@ export default class ProjectsController {
       )
       return response.status(201).json({ project })
     } catch (error) {
-      logger.error('Error creating project:', error)
-      return response.status(500).json({ error: 'Failed to create project' })
+      logger.error('Error creating project:')
+      logger.error(error)
+      return response
+        .status(500)
+        .json({ error: 'Failed to create project', developerText: error.message })
     }
   }
 
@@ -96,22 +115,35 @@ export default class ProjectsController {
     const user = auth.user!
 
     // Validate request
+    const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
     const validatedRequest = await request.validateUsing(updateProjectValidator)
+
+    if (validatedRequest.budgetCurrency) {
+      try {
+        validatedRequest.budgetCurrency = await validateCurrency(validatedRequest.budgetCurrency)
+      } catch (error) {
+        return response.status(400).json({ error: error.message })
+      }
+    }
 
     // Update project
     try {
       const project = await ProjectService.updateProject(
         user.uuid,
-        request.params().uuid,
-        validatedRequest as ProjectRequest
+        projectUuid,
+        validatedRequest as ProjectRequest,
+        isOnlyActivatingRecord(validatedRequest)
       )
       if (!project) {
         return response.status(404).json({ error: 'Project not found' })
       }
       return response.status(201).json({ project })
     } catch (error) {
-      logger.error('Error updating project:', error)
-      return response.status(500).json({ error: 'Failed to update project' })
+      logger.error('Error updating project:')
+      logger.error(error)
+      return response
+        .status(500)
+        .json({ error: 'Failed to update project', developerText: error.message })
     }
   }
 
@@ -132,4 +164,22 @@ export default class ProjectsController {
     logger.info(request.body())
     return response.send('Project chat!')
   }
+}
+
+const validateCurrency = async (currencyCode: string) => {
+  if (currencyCode) {
+    const currencies = await retrieveReferences(CURRENCIES_TABLE)
+    const currencyId = currencies.find((c) => c.code === currencyCode)?.id
+    if (!currencyId) {
+      throw new Error('Invalid currency code')
+    } else {
+      return currencyId
+    }
+  }
+}
+
+const isOnlyActivatingRecord = (validatedRequest: Record<string, any>): boolean => {
+  if (!validatedRequest || typeof validatedRequest !== 'object') return false
+  const keys = Object.keys(validatedRequest).filter((k) => validatedRequest[k] !== undefined)
+  return keys.length === 1 && keys[0] === 'isActive' && validatedRequest.isActive === true
 }

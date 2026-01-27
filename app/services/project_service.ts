@@ -1,4 +1,3 @@
-import Currency from '#models/currency'
 import Project from '#models/project'
 import { ProjectRequest } from '../../types/request.js'
 
@@ -23,33 +22,31 @@ export default class ProjectService {
       .first()
   }
 
-  public static async createProject(userUuid: string, request: ProjectRequest) {
-    return Project.create(await this.mapRequest(request, userUuid))
+  public static createProject(userUuid: string, request: ProjectRequest) {
+    return Project.create(this.mapRequest(request, userUuid))
   }
 
   public static async updateProject(
     userUuid: string,
     projectUuid: string,
-    request: Partial<ProjectRequest>
+    request: Partial<ProjectRequest>,
+    isOnlyActivatingRecord: boolean
   ) {
-    const project = await Project.query()
-      .where('user_uuid', userUuid)
-      .andWhere('uuid', projectUuid)
-      .andWhere('is_active', true)
-      .first()
+    let query = Project.query().where('user_uuid', userUuid).andWhere('uuid', projectUuid)
+    if (!isOnlyActivatingRecord) {
+      query = query.andWhere('is_active', true)
+    }
+    const project = await query.first()
 
     if (!project) {
       return null
     }
+    await project.merge(this.mapRequest(request)).save()
 
-    return project.merge(await this.mapRequest(request)).save()
+    return await Project.query().where('user_uuid', userUuid).andWhere('uuid', projectUuid).first()
   }
 
-  private static async mapRequest(request: Partial<ProjectRequest>, userUuid?: string) {
-    if (request.budgetCurrency) {
-      const currency = await Currency.findByOrFail('code', request.budgetCurrency)
-      request.budgetCurrency = currency.id
-    }
+  private static mapRequest(request: Partial<ProjectRequest>, userUuid?: string) {
     return {
       title: request.title,
       description: request.description,

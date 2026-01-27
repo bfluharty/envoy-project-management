@@ -1,7 +1,5 @@
 import vine from '@vinejs/vine'
-import { retrieveReferences } from '../utils/retrieve_references.js'
-
-const CURRENCIES_TABLE = 'envoy_schema.currencies'
+import { DateTime } from 'luxon'
 
 export const getUserProjectsValidator = vine.compile(
   vine.object({
@@ -10,9 +8,9 @@ export const getUserProjectsValidator = vine.compile(
   })
 )
 
-export const getUserProjectByUuidValidator = vine.compile(
+export const requestParamsValidator = vine.compile(
   vine.object({
-    uuid: vine.string().uuid({ version: [1, 2, 3, 4, 5] }),
+    uuid: vine.string().uuid(),
   })
 )
 
@@ -24,55 +22,60 @@ export const createProjectValidator = vine.compile(
     startDate: vine
       .date()
       .afterOrEqual('today')
-      .beforeOrEqual('endDate')
-      .beforeOrEqual('deadline')
+      .beforeOrSameAs('endDate')
+      .beforeOrSameAs('deadline')
+      .transform((date) => DateTime.fromJSDate(date))
       .optional(),
     endDate: vine
       .date()
       .afterOrEqual('today')
-      .afterOrEqual('startDate')
-      .beforeOrEqual('deadline')
+      .afterOrSameAs('startDate')
+      .beforeOrSameAs('deadline')
+      .transform((date) => DateTime.fromJSDate(date))
       .optional(),
     deadline: vine
       .date()
       .afterOrEqual('today')
-      .afterOrEqual('startDate')
-      .afterOrEqual('endDate')
+      .afterOrSameAs('startDate')
+      .afterOrSameAs('endDate')
+      .transform((date) => DateTime.fromJSDate(date))
       .optional(),
     budgetAmount: vine.number().min(0).optional(),
-    budgetCurrency: vine.enum(await retrieveReferences(CURRENCIES_TABLE, ['code'])),
+    budgetCurrency: vine.string().optional(),
     goals: vine.string().optional(),
-    isActive: vine.boolean(),
+    isActive: vine.boolean().optional(),
   })
 )
 
 export const updateProjectValidator = vine.compile(
   vine.object({
-    uuid: vine.string().uuid(),
     title: vine.string().trim().minLength(1).optional(),
     description: vine.string().optional(),
     location: vine.object({}).allowUnknownProperties().optional(),
     startDate: vine
       .date()
       .afterOrEqual('today')
-      .beforeOrEqual('endDate')
-      .beforeOrEqual('deadline')
+      .beforeOrSameAs('endDate')
+      .beforeOrSameAs('deadline')
+      .transform((date) => DateTime.fromJSDate(date))
       .optional(),
     endDate: vine
       .date()
       .afterOrEqual('today')
-      .afterOrEqual('startDate')
-      .beforeOrEqual('deadline')
+      .afterOrSameAs('startDate')
+      .beforeOrSameAs('deadline')
+      .transform((date) => DateTime.fromJSDate(date))
       .optional(),
     deadline: vine
       .date()
       .afterOrEqual('today')
-      .afterOrEqual('startDate')
-      .afterOrEqual('endDate')
+      .afterOrSameAs('startDate')
+      .afterOrSameAs('endDate')
+      .transform((date) => DateTime.fromJSDate(date))
       .optional(),
     budgetAmount: vine.number().min(0).optional(),
-    budgetCurrency: vine.enum(await retrieveReferences(CURRENCIES_TABLE, ['code'])).optional(),
+    budgetCurrency: vine.string().optional(),
     goals: vine.string().optional(),
-    isActive: vine.boolean(),
+    isActive: vine.boolean().optional(),
   })
 )
