@@ -132,6 +132,7 @@ export default class ProjectsController {
     // Service call
 
     // Response
+    logger.info('Chat request received for user:', user.uuid)
     logger.info(request.headers())
     logger.info(request.params())
     logger.info(request.body())
