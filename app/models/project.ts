@@ -65,10 +65,10 @@ export default class Project extends BaseModel {
   @column.dateTime({ columnName: 'modified_timestamp', autoCreate: true, autoUpdate: true })
   declare modifiedTimestamp: DateTime
 
-  @hasMany(() => Conversation, { foreignKey: 'projectUuid' })
+  @hasMany(() => Conversation, { foreignKey: 'projectUuid', localKey: 'uuid' })
   declare conversations: HasMany<typeof Conversation>
 
-  @hasMany(() => Vendor, { foreignKey: 'projectUuid' })
+  @hasMany(() => Vendor, { foreignKey: 'projectUuid', localKey: 'uuid' })
   declare vendors: HasMany<typeof Vendor>
 
   @column({ columnName: 'is_active' })

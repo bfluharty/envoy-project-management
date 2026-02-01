@@ -79,3 +79,10 @@ export const updateProjectValidator = vine.compile(
     isActive: vine.boolean().optional(),
   })
 )
+
+export const chatProjectValidator = vine.compile(
+  vine.object({
+    prompt: vine.string().trim().minLength(1),
+    variables: vine.object({}).allowUnknownProperties().optional(),
+  })
+)

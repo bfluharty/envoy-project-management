@@ -1,5 +1,8 @@
 import Project from '#models/project'
+import logger from '@adonisjs/core/services/logger'
 import { ProjectRequest } from '../../types/request.js'
+import { Turn } from '../../types/turn.js'
+import ConversationTurn from '#models/conversation_turn'
 
 export default class ProjectService {
   private static readonly DEFAULT_PROJECT_LIMIT = 10
@@ -44,6 +47,36 @@ export default class ProjectService {
     await project.merge(this.mapRequest(request)).save()
 
     return await Project.query().where('user_uuid', userUuid).andWhere('uuid', projectUuid).first()
+  }
+
+  public static async getProjectWithConversations(userUuid: string, projectUuid: string) {
+    const project = await Project.query()
+      .where('user_uuid', userUuid)
+      .andWhere('uuid', projectUuid)
+      .andWhere('is_active', true)
+      .preload('conversations', (conversationQuery) => {
+        conversationQuery.preload('conversationTurns')
+      })
+      .first()
+
+    if (!project) {
+      throw new Error('Project not found')
+    }
+
+    if (!project.conversations?.length) {
+      logger.info('No conversations found for project, creating a new one.')
+      await project.related('conversations').create({ projectUuid: project.uuid })
+      await project.load('conversations')
+    }
+
+    return project
+  }
+
+  public static async saveConversationTurn(conversationUuid: string, turn: Turn) {
+    await ConversationTurn.create({
+      conversationUuid: conversationUuid,
+      contents: turn,
+    })
   }
 
   private static mapRequest(request: Partial<ProjectRequest>, userUuid?: string) {

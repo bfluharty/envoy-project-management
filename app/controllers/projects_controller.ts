@@ -1,15 +1,16 @@
 import logger from '@adonisjs/core/services/logger'
 import type { HttpContext } from '@adonisjs/core/http'
 import ProjectService from '#services/project_service'
-import { ProjectRequest } from '../../types/request.js'
+import { ProjectRequest, ReasoningRequest } from '../../types/request.js'
 import {
+  chatProjectValidator,
   createProjectValidator,
   getUserProjectsValidator,
   requestParamsValidator,
   updateProjectValidator,
 } from '#validators/projects_validator'
 import { retrieveReferences } from '../utils/retrieve_references.js'
-
+import ReasoningEngineService from '#services/reasoning_engine_service'
 const CURRENCIES_TABLE = 'envoy_schema.currencies'
 
 export default class ProjectsController {
@@ -155,14 +156,36 @@ export default class ProjectsController {
     await auth.check()
     const user = auth.user!
 
-    // Service call
+    // Validate request
+    const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
+    const { prompt, variables } = await request.validateUsing(chatProjectValidator)
 
-    // Response
-    logger.info('Chat request received for user:', user.uuid)
-    logger.info(request.headers())
-    logger.info(request.params())
-    logger.info(request.body())
-    return response.send('Project chat!')
+    // Build reasoning request
+    const agentId = 'envoy-reasoning-agent-001' // Placeholder agent ID
+    try {
+      const project = await ProjectService.getProjectWithConversations(user.uuid, projectUuid)
+      const pastConversationTurns =
+        project.conversations
+          .flatMap((conv) => conv.conversationTurns)
+          ?.map((turn) => turn?.contents) || []
+
+      const reasoningRequest = {
+        agentId,
+        prompt,
+        variables,
+        projectUuid,
+        pastConversationTurns,
+      } as ReasoningRequest
+
+      // Send request
+      return await ReasoningEngineService.handleReasoningChat(reasoningRequest, project, response)
+    } catch (error) {
+      logger.error('Error preparing chat request:')
+      logger.error(error)
+      return response
+        .status(500)
+        .json({ error: 'Failed to prepare chat request', developerText: error.message })
+    }
   }
 }
 
