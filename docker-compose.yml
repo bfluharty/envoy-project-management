@@ -1,42 +1,34 @@
 services:
-  app:
-    build: .
+  project-management:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
     image: envoy-project-management:latest
     environment:
-      - NODE_ENV=production
       - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=postgres
-      - DB_PASSWORD=
-      - DB_DATABASE=envoy_db_dev
-      - PORT=8080
-      - APP_KEY=
       - HOST=0.0.0.0
-      - LOG_LEVEL=info
-      - SESSION_DRIVER=cookie
-      - OPENAI_API_KEY=
+      - REASONING_ENGINE_URL_LOCAL=http://reasoning-engine:8081/reasoning/chat
+      - CHOKIDAR_USEPOLLING=true
     ports:
       - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - /app/node_modules
     depends_on:
       - postgres
-    restart: unless-stopped
 
   reasoning-engine:
     build:
       context: ../reasoning-engine
     image: reasoning-engine:latest
     environment:
-      - NODE_ENV=production
-      - HOST=localhost
-      - PORT=8081
       - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=postgres
-      - DB_PASSWORD=
-      - DB_DATABASE=envoy_db_dev
-      - OPENAI_API_KEY=
     ports:
       - "8081:8081"
+    env_file:
+      - ../reasoning-engine/.env
     depends_on:
       - postgres
     restart: unless-stopped
@@ -44,11 +36,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=
-      - POSTGRES_DB=envoy_db_dev
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_DATABASE}
     ports:
       - "5432:5432"
+    env_file:
+      - .env
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

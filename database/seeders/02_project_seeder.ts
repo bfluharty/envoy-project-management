@@ -79,7 +79,7 @@ export default class extends BaseSeeder {
 
       // Bob's projects
       {
-        uuid: 'e6f7a8b9-c0d1-4e2f-8a4b-5c6d7e8f9a0b',
+        uuid: 'e6f7a8b9-c0d1-4e2f-3a4b-5c6d7e8f9a0b',
         title: 'Project Beta',
         description: 'Second project',
         location: { city: 'London' },
