@@ -14,7 +14,6 @@ export default class ReasoningEngineService {
     response: HttpContext['response']
   ) {
     try {
-      //Replace with configurable routing
       const reasoningResponse = await axios.post(getReasoningEngineUrl(), reasoningRequest)
       if (reasoningResponse.status !== 200) {
         logger.error('Reasoning engine returned error:')
