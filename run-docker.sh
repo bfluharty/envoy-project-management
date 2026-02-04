@@ -41,7 +41,7 @@ docker compose up -d $DB_SERVICE
 wait_for_postgres
 
 # -------------------------------------------------
-# 2) Start reasoning-engine container
+# 2) Start reasoning-engine container (live reload)
 # -------------------------------------------------
 echo "Starting reasoning engine..."
 docker compose up -d $REASONING_SERVICE
@@ -53,13 +53,13 @@ echo "Running migrations..."
 docker compose run --rm $PROJECT_SERVICE node ace migration:run
 
 # -------------------------------------------------
-# 4) Run seed only if database is empty
+# 4) Run database seeders
 # -------------------------------------------------
 echo "Seeding database..."
 docker compose run --rm $PROJECT_SERVICE node ace db:seed
 
 # -------------------------------------------------
-# 5) Start API container (live reload)
+# 5) Start project-management container (live reload)
 # -------------------------------------------------
-echo "Starting API container..."
+echo "Starting project management..."
 docker compose up $PROJECT_SERVICE
