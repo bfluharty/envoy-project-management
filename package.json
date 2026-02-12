@@ -82,6 +82,7 @@
     "@skeletonlabs/skeleton-svelte": "^4.8.0",
     "@tailwindcss/vite": "^4.1.18",
     "@vinejs/vine": "^3.0.1",
+    "axios": "^1.13.4",
     "edge.js": "^6.4.0",
     "luxon": "^3.7.2",
     "pg": "^8.16.3",

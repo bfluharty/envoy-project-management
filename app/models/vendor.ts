@@ -49,10 +49,10 @@ export default class Vendor extends BaseModel {
   @column({ columnName: 'project_uuid' })
   declare projectUuid: string
 
-  @belongsTo(() => Project, { foreignKey: 'projectUuid' })
+  @belongsTo(() => Project, { foreignKey: 'projectUuid', localKey: 'uuid' })
   declare project: BelongsTo<typeof Project>
 
-  @hasMany(() => VendorConversation, { foreignKey: 'vendorUuid' })
+  @hasMany(() => VendorConversation, { foreignKey: 'vendorUuid', localKey: 'uuid' })
   declare vendorConversations: HasMany<typeof VendorConversation>
 
   @column({ columnName: 'is_active' })

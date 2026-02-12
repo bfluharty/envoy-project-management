@@ -22,5 +22,5 @@ export interface ReasoningRequest {
 }
 
 export interface Variables {
-  context: string
+  context?: string
 }
