@@ -22,6 +22,7 @@ export default class ProjectService {
       .where('user_uuid', userUuid)
       .andWhere('uuid', projectUuid)
       .andWhere('is_active', true)
+      .preload('vendors')
       .first()
   }
 
