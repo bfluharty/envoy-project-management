@@ -1,30 +1,27 @@
-FROM node:22.16.0-alpine3.22 AS base
+# ----------- Build Stage -----------
+FROM node:22-alpine AS builder
+WORKDIR /usr/src/app
+COPY package*.json ./
+RUN npm ci --ignore-scripts
+COPY . .
+RUN npm run build
 
-# All deps stage
-FROM base AS deps
-WORKDIR /app
-ADD package.json package-lock.json ./
-RUN npm ci
+# ----------- Production Stage -----------
+FROM node:22-alpine AS production
+WORKDIR /usr/src/app
+COPY package*.json ./
+# Install only production dependencies
+RUN npm ci --only=production --ignore-scripts
+# Copy built files and necessary assets from builder stage
+COPY --from=builder /usr/src/app/build ./build
+COPY --from=builder /usr/src/app/bin ./bin
+# Add other necessary production assets as needed
 
-# Production only deps stage
-FROM base AS production-deps
-WORKDIR /app
-ADD package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts
+# Use a non-root user for security
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
 
-# Build stage
-FROM base AS build
-WORKDIR /app
-COPY --from=deps /app/node_modules /app/node_modules
-ADD . .
-RUN node ace build
-
-# Production stage
-FROM base
-ENV NODE_ENV=production
-WORKDIR /app
-COPY --from=production-deps /app/node_modules /app/node_modules
-COPY --from=build /app/build /app
 EXPOSE 8080
+ENV NODE_ENV=production
 
-CMD sh -c "node ace migration:run --force && node ./bin/server.js"
+CMD ["node", "build/bin/server.js"]
