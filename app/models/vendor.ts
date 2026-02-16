@@ -4,7 +4,6 @@ import { BaseModel, column, belongsTo, hasMany, beforeCreate } from '@adonisjs/l
 import { v4 as uuidv4 } from 'uuid'
 import VendorStatus from './vendor_status.js'
 import VendorConversation from './vendor_conversation.js'
-import Project from './project.js'
 
 export default class Vendor extends BaseModel {
   static table = 'envoy_schema.vendors'
@@ -45,12 +44,6 @@ export default class Vendor extends BaseModel {
 
   @belongsTo(() => VendorStatus, { foreignKey: 'statusId' })
   declare status: BelongsTo<typeof VendorStatus>
-
-  @column({ columnName: 'project_uuid' })
-  declare projectUuid: string
-
-  @belongsTo(() => Project, { foreignKey: 'projectUuid', localKey: 'uuid' })
-  declare project: BelongsTo<typeof Project>
 
   @hasMany(() => VendorConversation, { foreignKey: 'vendorUuid', localKey: 'uuid' })
   declare vendorConversations: HasMany<typeof VendorConversation>
