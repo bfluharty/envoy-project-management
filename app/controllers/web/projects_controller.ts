@@ -1,7 +1,7 @@
 import logger from '@adonisjs/core/services/logger'
 import type { HttpContext } from '@adonisjs/core/http'
 import ProjectService from '#services/project_service'
-import { ProjectRequest, ReasoningRequest } from '../../types/request.js'
+import { ProjectRequest, ReasoningRequest } from '../../../types/request.js'
 import {
   chatProjectValidator,
   createProjectValidator,
@@ -9,7 +9,7 @@ import {
   requestParamsValidator,
   updateProjectValidator,
 } from '#validators/projects_validator'
-import { retrieveReferences } from '../utils/retrieve_references.js'
+import { retrieveReferences } from '../../utils/retrieve_references.js'
 import ReasoningEngineService from '#services/reasoning_engine_service'
 const CURRENCIES_TABLE = 'envoy_schema.currencies'
 

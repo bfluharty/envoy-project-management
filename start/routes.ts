@@ -9,9 +9,9 @@
 
 import router from '@adonisjs/core/services/router'
 import { middleware } from './kernel.js'
-
-const ProjectsController = () => import('#controllers/projects_controller')
-const AuthController = () => import('#controllers/auth_controller')
+const ProjectsController = () => import('#controllers/web/projects_controller')
+const ProjectsAPIController = () => import('#controllers/api/projects_api_controller')
+const AuthController = () => import('#controllers/web/auth_controller')
 
 // Public landing page (no auth required)
 router
@@ -40,6 +40,7 @@ router
   .middleware(middleware.auth())
 router.post('/logout', [AuthController, 'logout']).as('auth.logout').middleware(middleware.auth())
 
+// UI routes for projects
 router
   .group(() => {
     router.get('/', [ProjectsController, 'getAll'])
@@ -54,3 +55,22 @@ router
   })
   .prefix('/projects')
   .middleware(middleware.auth())
+
+// API routes for projects
+router
+  .group(() => {
+    router
+      .group(() => {
+        router.get('/', [ProjectsAPIController, 'getAll'])
+
+        router.get('/:uuid', [ProjectsAPIController, 'getByUuid'])
+
+        router.post('/', [ProjectsAPIController, 'create'])
+
+        router.patch('/:uuid', [ProjectsAPIController, 'update'])
+
+        router.post('/:uuid/chat', [ProjectsAPIController, 'chat'])
+      })
+      .prefix('/projects')
+  })
+  .prefix('/api')
