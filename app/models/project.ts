@@ -3,7 +3,6 @@ import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
 import { BaseModel, column, belongsTo, hasMany, beforeCreate } from '@adonisjs/lucid/orm'
 import { v4 as uuidv4 } from 'uuid'
 import Conversation from './conversation.js'
-import Vendor from './vendor.js'
 import Currency from './currency.js'
 import User from './user.js'
 
@@ -67,9 +66,6 @@ export default class Project extends BaseModel {
 
   @hasMany(() => Conversation, { foreignKey: 'projectUuid', localKey: 'uuid' })
   declare conversations: HasMany<typeof Conversation>
-
-  @hasMany(() => Vendor, { foreignKey: 'projectUuid', localKey: 'uuid' })
-  declare vendors: HasMany<typeof Vendor>
 
   @column({ columnName: 'is_active' })
   declare isActive: boolean

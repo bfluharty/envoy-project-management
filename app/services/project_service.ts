@@ -3,6 +3,7 @@ import logger from '@adonisjs/core/services/logger'
 import { ProjectRequest } from '../../types/request.js'
 import { Turn } from '../../types/turn.js'
 import ConversationTurn from '#models/conversation_turn'
+import ProjectVendor from '#models/project_vendor'
 
 export default class ProjectService {
   private static readonly DEFAULT_PROJECT_LIMIT = 10
@@ -18,12 +19,24 @@ export default class ProjectService {
   }
 
   public static async getUserProjectByUuid(userUuid: string, projectUuid: string) {
-    return await Project.query()
+    const project = await Project.query()
       .where('user_uuid', userUuid)
       .andWhere('uuid', projectUuid)
       .andWhere('is_active', true)
-      .preload('vendors')
       .first()
+
+    if (!project) {
+      return null
+    }
+
+    const projectVendors = await ProjectVendor.query()
+      .where('project_uuid', projectUuid)
+      .preload('vendor')
+
+    const combinedProject = project.toJSON()
+    combinedProject.vendors = projectVendors.map((pv) => pv.vendor.toJSON())
+
+    return combinedProject
   }
 
   public static createProject(userUuid: string, request: ProjectRequest) {
