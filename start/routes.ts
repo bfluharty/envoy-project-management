@@ -45,7 +45,7 @@ router
   .group(() => {
     router.get('/', [ProjectsController, 'getAll'])
 
-    router.get('/:uuid', [ProjectsController, 'getByUuid'])
+    router.get('/:uuid', [ProjectsController, 'show'])
 
     router.post('/', [ProjectsController, 'create'])
 
