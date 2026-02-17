@@ -44,29 +44,28 @@ export default class ProjectsController {
   }
 
   /**
-   * Get a single user project
+   * Display a single project
    */
-  async getByUuid({ request, response, auth }: HttpContext) {
-    // Validate user
+  async show({ request, inertia, auth, response }: HttpContext) {
     await auth.check()
     const user = auth.user!
-
-    // Validate request
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
 
-    // Get user project
     try {
       const project = await ProjectService.getUserProjectByUuid(user.uuid, projectUuid)
       if (!project) {
         return response.status(404).json({ error: 'Project not found' })
       }
-      return response.status(200).json({ project })
+
+      return inertia.render('projects/chat', {
+        project: {
+          uuid: project.uuid,
+          name: project.title,
+        },
+      })
     } catch (error) {
-      logger.error('Error fetching project:')
-      logger.error(error)
-      return response
-        .status(500)
-        .json({ error: 'Failed to fetch project', developerText: error.message })
+      logger.error('Error fetching project:', error)
+      return response.status(500).json({ error: 'Failed to fetch project' })
     }
   }
 
