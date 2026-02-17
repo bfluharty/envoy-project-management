@@ -12,6 +12,12 @@ export interface ProjectRequest {
   budgetCurrency?: number
   goals?: string
   isActive?: boolean
+  vendors?: ProjectVendorRequest
+}
+
+export interface ProjectVendorRequest {
+  toAddVendorIds?: string[]
+  toRemoveVendorIds?: string[]
 }
 
 export interface ReasoningRequest {

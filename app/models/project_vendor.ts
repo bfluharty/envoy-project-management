@@ -16,6 +16,9 @@ export default class ProjectVendor extends BaseModel {
   @column({ columnName: 'vendor_uuid' })
   declare vendorUuid: string
 
+  @column({ columnName: 'is_active' })
+  declare isActive: boolean
+
   @belongsTo(() => Project, { foreignKey: 'projectUuid', localKey: 'uuid' })
   declare project: BelongsTo<typeof Project>
 

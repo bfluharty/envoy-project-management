@@ -124,8 +124,19 @@ export default class ProjectsAPIController {
 
     // Save project
     try {
-      const project = await ProjectService.createProject(userId, validatedRequest as ProjectRequest)
-      return response.status(201).json({ project })
+      const { combinedProject, errors } = await ProjectService.createProject(
+        userId,
+        validatedRequest as ProjectRequest
+      )
+      if (errors?.length) {
+        logger.warn('Project created with errors:')
+        logger.warn(errors)
+        return response.status(203).json({
+          project: combinedProject,
+          errors,
+        })
+      }
+      return response.status(201).json({ combinedProject })
     } catch (error) {
       logger.error('Error creating project:')
       logger.error(error)
@@ -167,16 +178,24 @@ export default class ProjectsAPIController {
 
     // Update project
     try {
-      const project = await ProjectService.updateProject(
+      const { combinedProject, errors } = await ProjectService.updateProject(
         userId,
         projectUuid,
         validatedRequest as ProjectRequest,
         isOnlyActivatingRecord(validatedRequest)
       )
-      if (!project) {
+      if (!combinedProject) {
         return response.status(404).json({ error: 'Project not found' })
       }
-      return response.status(201).json({ project })
+      if (errors?.length) {
+        logger.warn('Project updated with errors:')
+        logger.warn(errors)
+        return response.status(203).json({
+          project: combinedProject,
+          errors,
+        })
+      }
+      return response.status(201).json({ project: combinedProject })
     } catch (error) {
       logger.error('Error updating project:')
       logger.error(error)
