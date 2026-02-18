@@ -12,6 +12,10 @@ const inertiaConfig = defineConfig({
    */
   sharedData: {
     user: (ctx) => ctx.inertia.always(() => ctx.auth.user),
+    flash: (ctx) => ({
+      success: ctx.session.flashMessages.get('success'),
+      error: ctx.session.flashMessages.get('error'),
+    }),
     projects: async (ctx) => {
       // Only fetch projects if user is authenticated
       if (!ctx.auth.user) return []
