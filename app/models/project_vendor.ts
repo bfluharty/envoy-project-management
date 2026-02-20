@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid'
 
 import Project from './project.js'
 import Vendor from './vendor.js'
+import VendorStatus from './vendor_status.js'
 
 export default class ProjectVendor extends BaseModel {
   static table = 'envoy_schema.project_vendors'
@@ -27,6 +28,12 @@ export default class ProjectVendor extends BaseModel {
 
   @column({ columnName: 'vendor_uuid' })
   declare vendorUuid: string
+
+  @column({ columnName: 'status' })
+  declare statusId: number
+
+  @belongsTo(() => VendorStatus, { foreignKey: 'statusId' })
+  declare status: BelongsTo<typeof VendorStatus>
 
   @column({ columnName: 'is_active' })
   declare isActive: boolean
