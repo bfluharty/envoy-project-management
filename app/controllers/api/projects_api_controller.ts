@@ -12,6 +12,7 @@ import {
 import { retrieveReferences } from '../../utils/retrieve_references.js'
 import ReasoningEngineService from '#services/reasoning_engine_service'
 import User from '#models/user'
+import { isOnlyActivatingRecord, validateUser } from '../../utils/controller_utils.js'
 const CURRENCIES_TABLE = 'envoy_schema.currencies'
 
 export default class ProjectsAPIController {
@@ -266,17 +267,4 @@ const validateCurrency = async (currencyCode: string) => {
       return currencyId
     }
   }
-}
-
-const isOnlyActivatingRecord = (validatedRequest: Record<string, any>): boolean => {
-  if (!validatedRequest || typeof validatedRequest !== 'object') return false
-  const keys = Object.keys(validatedRequest).filter((k) => validatedRequest[k] !== undefined)
-  return keys.length === 1 && keys[0] === 'isActive' && validatedRequest.isActive === true
-}
-
-const validateUser = async (userId: string | undefined) => {
-  if (!userId) {
-    throw new Error('User ID was not provided.')
-  }
-  return await User.query().where('uuid', userId).andWhere('isActive', true).first()
 }

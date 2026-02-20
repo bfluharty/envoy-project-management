@@ -2,7 +2,7 @@ import { DateTime } from 'luxon'
 import { Turn } from './turn.js'
 
 export interface ProjectRequest {
-  title: string
+  title?: string
   description?: string
   location?: any
   startDate?: DateTime
@@ -29,4 +29,12 @@ export interface ReasoningRequest {
 
 export interface Variables {
   context?: string
+}
+
+export interface VendorRequest {
+  name?: string
+  email?: string
+  createdBy?: string
+  modifiedBy?: string
+  isActive?: boolean
 }
