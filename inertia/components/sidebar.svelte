@@ -36,6 +36,7 @@ function handleNewProject() {
 	router.visit('/dashboard', {
 		onSuccess: () => {
 			showNewProjectForm.set(true);
+			closeDrawer();
 		}
 	});
 }
