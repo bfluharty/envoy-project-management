@@ -51,7 +51,7 @@ export default class ProjectsController {
   /**
    * Store a new project
    */
-  async store({ request, response, auth }: HttpContext) {
+  async store({ request, response, auth, session }: HttpContext) {
     const user = auth.getUserOrFail()
 
     const body = parseDateFields(request)
