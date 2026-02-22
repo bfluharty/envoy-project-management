@@ -127,7 +127,7 @@ export default class ProjectsController {
         pastConversationTurns,
       } as ReasoningRequest
 
-      return ReasoningEngineService.handleReasoningChat(reasoningRequest, project, response)
+      return await ReasoningEngineService.handleReasoningChat(reasoningRequest, project, response)
     } catch (error) {
       if (error.message === 'Project not found') {
         return response.abort({ error: 'Project not found' }, 404)
