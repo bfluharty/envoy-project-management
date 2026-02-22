@@ -31,14 +31,7 @@
     return [...common, ...other];
   });
 
-  // Subscribe to the store for form visibility
-  let showForm = $state(false);
-  $effect(() => {
-    const unsubscribe = showNewProjectForm.subscribe(value => {
-      showForm = value;
-    });
-    return unsubscribe;
-  });
+  const showForm = $derived($showNewProjectForm);
   let processing = $state(false);
   let errors = $state({});
 

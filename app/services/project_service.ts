@@ -48,13 +48,16 @@ export default class ProjectService {
   public static async updateProject(
     userUuid: string,
     projectUuid: string,
-    request: Partial<ProjectRequest>
+    request: Partial<ProjectRequest>,
+    isOnlyActivatingRecord: boolean = false
   ) {
-    const project = await Project.query()
-      .where('user_uuid', userUuid)
-      .andWhere('uuid', projectUuid)
-      .andWhere('is_active', true)
-      .first()
+    let query = Project.query().where('user_uuid', userUuid).andWhere('uuid', projectUuid)
+
+    if (!isOnlyActivatingRecord) {
+      query = query.andWhere('is_active', true)
+    }
+
+    const project = await query.first()
 
     if (!project) {
       return null
@@ -124,7 +127,9 @@ export default class ProjectService {
       .first()
 
     if (!currency) {
-      throw new Error('Invalid currency code')
+      throw new Error(
+        `Invalid currency code: ${currencyCode}. Please use a valid active currency code.`
+      )
     }
 
     return currency.id

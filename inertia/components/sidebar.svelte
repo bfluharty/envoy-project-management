@@ -22,14 +22,7 @@ function closeDrawer() {
 	drawerOpen = false;
 }
 
-// Subscribe to form visibility store
-let isFormVisible = $state(false);
-$effect(() => {
-	const unsubscribe = showNewProjectForm.subscribe(value => {
-		isFormVisible = value;
-	});
-	return unsubscribe;
-});
+const isFormVisible = $derived($showNewProjectForm);
 
 function handleNewProject() {
 	// Navigate to dashboard and show the form

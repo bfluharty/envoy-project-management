@@ -9,10 +9,10 @@
 
 import router from '@adonisjs/core/services/router'
 import { middleware } from './kernel.js'
-import Currency from '#models/currency'
 const ProjectsController = () => import('#controllers/web/projects_controller')
 const ProjectsAPIController = () => import('#controllers/api/projects_api_controller')
 const AuthController = () => import('#controllers/web/auth_controller')
+const DashboardController = () => import('#controllers/web/dashboard_controller')
 
 // Public landing page (no auth required)
 router
@@ -32,19 +32,7 @@ router
 
 // Authenticated routes
 router
-  .get('/dashboard', async ({ inertia, auth }) => {
-    await auth.check()
-    const user = auth.user
-    const currencies = await Currency.query().where('is_active', true).orderBy('code', 'asc')
-
-    return inertia.render('home', {
-      user,
-      currencies: currencies.map((currency) => ({
-        code: currency.code,
-        name: currency.name,
-      })),
-    })
-  })
+  .get('/dashboard', [DashboardController, 'show'])
   .as('dashboard')
   .middleware(middleware.auth())
 router.post('/logout', [AuthController, 'logout']).as('auth.logout').middleware(middleware.auth())

@@ -1,4 +1,5 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import logger from '@adonisjs/core/services/logger'
 import ProjectService from '#services/project_service'
 import { ProjectRequest, ReasoningRequest } from '../../../types/request.js'
 import {
@@ -9,7 +10,7 @@ import {
   updateProjectValidator,
 } from '#validators/projects_validator'
 import ReasoningEngineService from '#services/reasoning_engine_service'
-import { parseDateFields } from '#helpers/date_helper'
+import { parseDateFields } from '#utils/date_helper'
 
 export default class ProjectsController {
   /**
@@ -56,34 +57,51 @@ export default class ProjectsController {
 
     const body = parseDateFields(request)
     const validatedRequest = await createProjectValidator.validate(body)
-    const project = await ProjectService.createProject(
-      user.uuid,
-      validatedRequest as ProjectRequest
-    )
-    return response.redirect().toPath(`/projects/${project.uuid}`)
+
+    try {
+      const project = await ProjectService.createProject(
+        user.uuid,
+        validatedRequest as ProjectRequest
+      )
+      session.flash('success', 'Project created successfully!')
+      return response.redirect().toPath(`/projects/${project.uuid}`)
+    } catch (error) {
+      logger.error('Error creating project:')
+      logger.error(error)
+      session.flash('error', error.message || 'Failed to create project. Please try again.')
+      return response.redirect().back()
+    }
   }
 
   /**
    * Update a project
    */
-  async update({ request, response, auth }: HttpContext) {
+  async update({ request, response, auth, session }: HttpContext) {
     const user = auth.getUserOrFail()
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
 
     const body = parseDateFields(request)
     const validatedRequest = await updateProjectValidator.validate(body)
 
-    const project = await ProjectService.updateProject(
-      user.uuid,
-      projectUuid,
-      validatedRequest as ProjectRequest
-    )
+    try {
+      const project = await ProjectService.updateProject(
+        user.uuid,
+        projectUuid,
+        validatedRequest as ProjectRequest,
+        isOnlyActivatingRecord(validatedRequest)
+      )
 
-    if (!project) {
-      return response.abort({ error: 'Project not found' }, 404)
+      if (!project) {
+        return response.abort({ error: 'Project not found' }, 404)
+      }
+
+      return response.json({ project })
+    } catch (error) {
+      logger.error('Error updating project:')
+      logger.error(error)
+      session.flash('error', error.message || 'Failed to update project. Please try again.')
+      return response.redirect().back()
     }
-
-    return response.json({ project })
   }
 
   /**
@@ -94,20 +112,35 @@ export default class ProjectsController {
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
     const { prompt, variables } = await request.validateUsing(chatProjectValidator)
 
-    const project = await ProjectService.getProjectWithConversations(user.uuid, projectUuid)
-    const pastConversationTurns =
-      project.conversations
-        .flatMap((conv) => conv.conversationTurns)
-        ?.map((turn) => turn?.contents) || []
+    try {
+      const project = await ProjectService.getProjectWithConversations(user.uuid, projectUuid)
+      const pastConversationTurns =
+        project.conversations
+          .flatMap((conv) => conv.conversationTurns)
+          ?.map((turn) => turn?.contents) || []
 
-    const reasoningRequest: ReasoningRequest = {
-      agentId: 'envoy-reasoning-agent-001',
-      prompt,
-      variables,
-      projectUuid,
-      pastConversationTurns,
+      const reasoningRequest = {
+        agentId: 'envoy-reasoning-agent-001',
+        prompt,
+        variables: variables ?? {},
+        projectUuid,
+        pastConversationTurns,
+      } as ReasoningRequest
+
+      return ReasoningEngineService.handleReasoningChat(reasoningRequest, project, response)
+    } catch (error) {
+      if (error.message === 'Project not found') {
+        return response.abort({ error: 'Project not found' }, 404)
+      }
+      logger.error('Error preparing chat request:')
+      logger.error(error)
+      throw error
     }
-
-    return ReasoningEngineService.handleReasoningChat(reasoningRequest, project, response)
   }
+}
+
+const isOnlyActivatingRecord = (validatedRequest: Record<string, any>): boolean => {
+  if (!validatedRequest || typeof validatedRequest !== 'object') return false
+  const keys = Object.keys(validatedRequest).filter((k) => validatedRequest[k] !== undefined)
+  return keys.length === 1 && keys[0] === 'isActive' && validatedRequest.isActive === true
 }
