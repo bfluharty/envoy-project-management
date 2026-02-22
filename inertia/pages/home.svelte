@@ -11,7 +11,7 @@
   const commonCurrencyCodes = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CNY', 'INR', 'MXN', 'BRL'];
   
   // Sort currencies: common ones first, then alphabetically
-  const sortedCurrencies = $derived(() => {
+  const sortedCurrencies = $derived.by(() => {
     const common = [];
     const other = [];
     
@@ -216,7 +216,7 @@
             <div class="input-group grid-cols-[1fr_auto]">
               <input class="ig-input" type="number" min="0" step="0.01" bind:value={budgetAmount} placeholder="0.00" />
               <select class="ig-select" bind:value={budgetCurrency}>
-                {#each sortedCurrencies() as currency}
+                {#each sortedCurrencies as currency}
                   <option value={currency.code}>{currency.code}</option>
                 {/each}
               </select>
