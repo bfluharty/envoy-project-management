@@ -1,5 +1,5 @@
-import logger from '@adonisjs/core/services/logger'
 import type { HttpContext } from '@adonisjs/core/http'
+import logger from '@adonisjs/core/services/logger'
 import ProjectService from '#services/project_service'
 import { ProjectRequest, ReasoningRequest } from '../../../types/request.js'
 import {
@@ -9,124 +9,80 @@ import {
   requestParamsValidator,
   updateProjectValidator,
 } from '#validators/projects_validator'
-import { retrieveReferences } from '../../utils/retrieve_references.js'
 import ReasoningEngineService from '#services/reasoning_engine_service'
-const CURRENCIES_TABLE = 'envoy_schema.currencies'
+import { parseDateFields } from '#utils/date_helper'
 
 export default class ProjectsController {
   /**
    * Display all user projects
    */
-  async getAll({ request, response, auth }: HttpContext) {
-    // Validate user
-    await auth.check()
-    const user = auth.user!
-
-    // Validate request
+  async index({ request, response, auth }: HttpContext) {
+    const user = auth.getUserOrFail()
     const { limit, offset } = await request.validateUsing(getUserProjectsValidator)
 
-    // Get all user projects
-    try {
-      const projects = await ProjectService.getUserProjects(user.uuid, limit, offset)
-      return response.status(200).json({
-        projects: projects,
-        count: projects.length,
-        limit: limit,
-        offset: offset,
-      })
-    } catch (error) {
-      logger.error('Error fetching projects:')
-      logger.error(error)
-      return response
-        .status(500)
-        .json({ error: 'Failed to fetch projects', developerText: error.message })
-    }
+    const projects = await ProjectService.getUserProjects(user.uuid, limit, offset)
+    return response.json({
+      projects,
+      count: projects.length,
+      limit,
+      offset,
+    })
   }
 
   /**
    * Display a single project
    */
-  async show({ request, inertia, auth, response }: HttpContext) {
-    await auth.check()
-    const user = auth.user!
+  async show({ request, response, inertia, auth }: HttpContext) {
+    const user = auth.getUserOrFail()
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
 
-    try {
-      const project = await ProjectService.getUserProjectByUuid(user.uuid, projectUuid)
-      if (!project) {
-        return response.status(404).json({ error: 'Project not found' })
-      }
-
-      return inertia.render('projects/chat', {
-        project: {
-          uuid: project.uuid,
-          name: project.title,
-        },
-      })
-    } catch (error) {
-      logger.error('Error fetching project:', error)
-      return response.status(500).json({ error: 'Failed to fetch project' })
+    const project = await ProjectService.getUserProjectByUuid(user.uuid, projectUuid)
+    if (!project) {
+      return response.abort({ error: 'Project not found' }, 404)
     }
+
+    return inertia.render('projects/chat', {
+      project: {
+        uuid: project.uuid,
+        name: project.title,
+      },
+    })
   }
 
   /**
-   * Create a new project
+   * Store a new project
    */
-  async create({ request, response, auth }: HttpContext) {
-    // Validate user
-    await auth.check()
-    const user = auth.user!
+  async store({ request, response, auth, session }: HttpContext) {
+    const user = auth.getUserOrFail()
 
-    // Validate request
-    const validatedRequest = await request.validateUsing(createProjectValidator)
-    if (validatedRequest.isActive === false) {
-      return response.status(400).json({ error: 'Projects cannot be deleted during creation' })
-    }
-    if (validatedRequest.budgetCurrency) {
-      try {
-        validatedRequest.budgetCurrency = await validateCurrency(validatedRequest.budgetCurrency)
-      } catch (error) {
-        return response.status(400).json({ error: error.message })
-      }
-    }
+    const body = parseDateFields(request)
+    const validatedRequest = await createProjectValidator.validate(body)
 
-    // Save project
     try {
       const project = await ProjectService.createProject(
         user.uuid,
         validatedRequest as ProjectRequest
       )
-      return response.status(201).json({ project })
+      session.flash('success', 'Project created successfully!')
+      return response.redirect().toPath(`/projects/${project.uuid}`)
     } catch (error) {
       logger.error('Error creating project:')
       logger.error(error)
-      return response
-        .status(500)
-        .json({ error: 'Failed to create project', developerText: error.message })
+      session.flash('error', error.message || 'Failed to create project. Please try again.')
+      return response.redirect().back()
     }
   }
 
   /**
    * Update a project
    */
-  async update({ request, response, auth }: HttpContext) {
-    // Validate user
-    await auth.check()
-    const user = auth.user!
-
-    // Validate request
+  async update({ request, response, auth, session }: HttpContext) {
+    const user = auth.getUserOrFail()
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
-    const validatedRequest = await request.validateUsing(updateProjectValidator)
 
-    if (validatedRequest.budgetCurrency) {
-      try {
-        validatedRequest.budgetCurrency = await validateCurrency(validatedRequest.budgetCurrency)
-      } catch (error) {
-        return response.status(400).json({ error: error.message })
-      }
-    }
+    const body = parseDateFields(request)
+    const validatedRequest = await updateProjectValidator.validate(body)
 
-    // Update project
     try {
       const project = await ProjectService.updateProject(
         user.uuid,
@@ -134,16 +90,17 @@ export default class ProjectsController {
         validatedRequest as ProjectRequest,
         isOnlyActivatingRecord(validatedRequest)
       )
+
       if (!project) {
-        return response.status(404).json({ error: 'Project not found' })
+        return response.abort({ error: 'Project not found' }, 404)
       }
-      return response.status(201).json({ project })
+
+      return response.json({ project })
     } catch (error) {
       logger.error('Error updating project:')
       logger.error(error)
-      return response
-        .status(500)
-        .json({ error: 'Failed to update project', developerText: error.message })
+      session.flash('error', error.message || 'Failed to update project. Please try again.')
+      return response.redirect().back()
     }
   }
 
@@ -151,16 +108,10 @@ export default class ProjectsController {
    * Chat with reasoning engine about a project
    */
   async chat({ request, response, auth }: HttpContext) {
-    // Validate user
-    await auth.check()
-    const user = auth.user!
-
-    // Validate request
+    const user = auth.getUserOrFail()
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
     const { prompt, variables } = await request.validateUsing(chatProjectValidator)
 
-    // Build reasoning request
-    const agentId = 'envoy-reasoning-agent-001' // Placeholder agent ID
     try {
       const project = await ProjectService.getProjectWithConversations(user.uuid, projectUuid)
       const pastConversationTurns =
@@ -169,33 +120,21 @@ export default class ProjectsController {
           ?.map((turn) => turn?.contents) || []
 
       const reasoningRequest = {
-        agentId,
+        agentId: 'envoy-reasoning-agent-001',
         prompt,
-        variables,
+        variables: variables ?? {},
         projectUuid,
         pastConversationTurns,
       } as ReasoningRequest
 
-      // Send request
       return await ReasoningEngineService.handleReasoningChat(reasoningRequest, project, response)
     } catch (error) {
+      if (error.message === 'Project not found') {
+        return response.abort({ error: 'Project not found' }, 404)
+      }
       logger.error('Error preparing chat request:')
       logger.error(error)
-      return response
-        .status(500)
-        .json({ error: 'Failed to prepare chat request', developerText: error.message })
-    }
-  }
-}
-
-const validateCurrency = async (currencyCode: string) => {
-  if (currencyCode) {
-    const currencies = await retrieveReferences(CURRENCIES_TABLE)
-    const currencyId = currencies.find((c) => c.code === currencyCode)?.id
-    if (!currencyId) {
-      throw new Error('Invalid currency code')
-    } else {
-      return currencyId
+      throw error
     }
   }
 }

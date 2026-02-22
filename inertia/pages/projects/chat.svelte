@@ -53,7 +53,7 @@ function sendMessage(event: Event) {
 
 <Sidebar>
 
-<div class="flex flex-col h-full w-full bg-surface-50-950">
+<div class="flex flex-col h-[calc(100vh-4rem)] lg:h-screen w-full bg-surface-50-950">
     <div class="flex-1 overflow-y-auto p-4 space-y-4">
         {#each messages as msg (msg.id)}
             <div class="flex items-start gap-2" class:justify-end={msg.role === 'user'}>

@@ -1,6 +1,8 @@
 import { BaseModel, column } from '@adonisjs/lucid/orm'
 
 export default class Currency extends BaseModel {
+  static table = 'envoy_schema.currencies'
+
   @column({ isPrimary: true })
   declare id: number
 

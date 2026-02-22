@@ -4,6 +4,7 @@ import { ProjectRequest } from '../../types/request.js'
 import { Turn } from '../../types/turn.js'
 import ConversationTurn from '#models/conversation_turn'
 import ProjectVendor from '#models/project_vendor'
+import Currency from '#models/currency'
 
 export default class ProjectService {
   private static readonly DEFAULT_PROJECT_LIMIT = 10
@@ -39,26 +40,31 @@ export default class ProjectService {
     return combinedProject
   }
 
-  public static createProject(userUuid: string, request: ProjectRequest) {
-    return Project.create(this.mapRequest(request, userUuid))
+  public static async createProject(userUuid: string, request: ProjectRequest) {
+    const mappedRequest = await this.mapRequest(request, userUuid)
+    return Project.create(mappedRequest)
   }
 
   public static async updateProject(
     userUuid: string,
     projectUuid: string,
     request: Partial<ProjectRequest>,
-    isOnlyActivatingRecord: boolean
+    isOnlyActivatingRecord: boolean = false
   ) {
     let query = Project.query().where('user_uuid', userUuid).andWhere('uuid', projectUuid)
+
     if (!isOnlyActivatingRecord) {
       query = query.andWhere('is_active', true)
     }
+
     const project = await query.first()
 
     if (!project) {
       return null
     }
-    await project.merge(this.mapRequest(request)).save()
+
+    const mappedRequest = await this.mapRequest(request)
+    await project.merge(mappedRequest).save()
 
     return await Project.query().where('user_uuid', userUuid).andWhere('uuid', projectUuid).first()
   }
@@ -93,7 +99,12 @@ export default class ProjectService {
     })
   }
 
-  private static mapRequest(request: Partial<ProjectRequest>, userUuid?: string) {
+  private static async mapRequest(request: Partial<ProjectRequest>, userUuid?: string) {
+    let budgetCurrencyId: number | undefined
+    if (request.budgetCurrency) {
+      budgetCurrencyId = await this.resolveCurrencyId(request.budgetCurrency)
+    }
+
     return {
       title: request.title,
       description: request.description,
@@ -102,10 +113,25 @@ export default class ProjectService {
       endDate: request.endDate,
       deadline: request.deadline,
       budgetAmount: request.budgetAmount,
-      budgetCurrencyId: request.budgetCurrency,
+      budgetCurrencyId,
       goals: request.goals,
       userUuid: userUuid,
       isActive: request.isActive ?? true,
     }
+  }
+
+  private static async resolveCurrencyId(currencyCode: string): Promise<number> {
+    const currency = await Currency.query()
+      .where('code', currencyCode)
+      .andWhere('is_active', true)
+      .first()
+
+    if (!currency) {
+      throw new Error(
+        `Invalid currency code: ${currencyCode}. Please use a valid active currency code.`
+      )
+    }
+
+    return currency.id
   }
 }
