@@ -9,7 +9,7 @@ export interface ProjectRequest {
   endDate?: DateTime
   deadline?: DateTime
   budgetAmount?: number
-  budgetCurrency?: number
+  budgetCurrency?: string
   goals?: string
   isActive?: boolean
   vendors?: ProjectVendorRequest

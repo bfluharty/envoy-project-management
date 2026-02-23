@@ -9,11 +9,8 @@ import {
   requestParamsValidator,
   updateProjectValidator,
 } from '#validators/projects_validator'
-import { retrieveReferences } from '../../utils/retrieve_references.js'
 import ReasoningEngineService from '#services/reasoning_engine_service'
-import User from '#models/user'
 import { isOnlyActivatingRecord, validateUser } from '../../utils/controller_utils.js'
-const CURRENCIES_TABLE = 'envoy_schema.currencies'
 
 export default class ProjectsAPIController {
   /**
@@ -115,13 +112,6 @@ export default class ProjectsAPIController {
     if (validatedRequest.isActive === false) {
       return response.status(400).json({ error: 'Projects cannot be deleted during creation' })
     }
-    if (validatedRequest.budgetCurrency) {
-      try {
-        validatedRequest.budgetCurrency = await validateCurrency(validatedRequest.budgetCurrency)
-      } catch (error) {
-        return response.status(400).json({ error: error.message })
-      }
-    }
 
     // Save project
     try {
@@ -168,14 +158,6 @@ export default class ProjectsAPIController {
     // Validate request
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
     const validatedRequest = await request.validateUsing(updateProjectValidator)
-
-    if (validatedRequest.budgetCurrency) {
-      try {
-        validatedRequest.budgetCurrency = await validateCurrency(validatedRequest.budgetCurrency)
-      } catch (error) {
-        return response.status(400).json({ error: error.message })
-      }
-    }
 
     // Update project
     try {
@@ -253,18 +235,6 @@ export default class ProjectsAPIController {
       return response
         .status(500)
         .json({ error: 'Failed to prepare chat request', developerText: error.message })
-    }
-  }
-}
-
-const validateCurrency = async (currencyCode: string) => {
-  if (currencyCode) {
-    const currencies = await retrieveReferences(CURRENCIES_TABLE)
-    const currencyId = currencies.find((c) => c.code === currencyCode)?.id
-    if (!currencyId) {
-      throw new Error('Invalid currency code')
-    } else {
-      return currencyId
     }
   }
 }

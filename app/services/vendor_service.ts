@@ -58,7 +58,6 @@ export default class ProjectService {
       email: request.email,
       isActive: request.isActive ?? true,
       modifiedBy: userUuid,
-      statusId: 1, // Remove with refactor
     }
   }
 }

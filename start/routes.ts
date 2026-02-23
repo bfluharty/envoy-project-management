@@ -13,6 +13,7 @@ const VendorsAPIController = () => import('#controllers/api/vendors_api_controll
 const ProjectsController = () => import('#controllers/web/projects_controller')
 const ProjectsAPIController = () => import('#controllers/api/projects_api_controller')
 const AuthController = () => import('#controllers/web/auth_controller')
+const DashboardController = () => import('#controllers/web/dashboard_controller')
 
 // Public landing page (no auth required)
 router
@@ -32,11 +33,7 @@ router
 
 // Authenticated routes
 router
-  .get('/dashboard', async ({ inertia, auth }) => {
-    await auth.check()
-    const user = auth.user
-    return inertia.render('home', { user })
-  })
+  .get('/dashboard', [DashboardController, 'show'])
   .as('dashboard')
   .middleware(middleware.auth())
 router.post('/logout', [AuthController, 'logout']).as('auth.logout').middleware(middleware.auth())
@@ -44,11 +41,11 @@ router.post('/logout', [AuthController, 'logout']).as('auth.logout').middleware(
 // UI routes for projects
 router
   .group(() => {
-    router.get('/', [ProjectsController, 'getAll'])
+    router.get('/', [ProjectsController, 'index'])
 
     router.get('/:uuid', [ProjectsController, 'show'])
 
-    router.post('/', [ProjectsController, 'create'])
+    router.post('/', [ProjectsController, 'store'])
 
     router.patch('/:uuid', [ProjectsController, 'update'])
 

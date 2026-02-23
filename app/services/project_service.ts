@@ -5,6 +5,7 @@ import { Turn } from '../../types/turn.js'
 import ConversationTurn from '#models/conversation_turn'
 import ProjectVendor from '#models/project_vendor'
 import Vendor from '#models/vendor'
+import Currency from '#models/currency'
 
 export default class ProjectService {
   private static readonly DEFAULT_PROJECT_LIMIT = 10
@@ -42,7 +43,8 @@ export default class ProjectService {
   }
 
   public static async createProject(userUuid: string, request: ProjectRequest) {
-    const project = await Project.create(this.mapRequest(request, userUuid))
+    const mappedRequest = await this.mapRequest(request, userUuid)
+    const project = await Project.create(mappedRequest)
     const errors = await this.handleVendorUpdates(project.uuid, request.vendors)
     const projectVendors = await ProjectVendor.query()
       .where('project_uuid', project.uuid)
@@ -59,18 +61,22 @@ export default class ProjectService {
     userUuid: string,
     projectUuid: string,
     request: Partial<ProjectRequest>,
-    isOnlyActivatingRecord: boolean
+    isOnlyActivatingRecord: boolean = false
   ) {
     let query = Project.query().where('user_uuid', userUuid).andWhere('uuid', projectUuid)
+
     if (!isOnlyActivatingRecord) {
       query = query.andWhere('is_active', true)
     }
+
     const project = await query.first()
 
     if (!project) {
       return { project, errors: [] }
     }
-    await project.merge(this.mapRequest(request)).save()
+
+    const mappedRequest = await this.mapRequest(request)
+    await project.merge(mappedRequest).save()
 
     const errors = await this.handleVendorUpdates(projectUuid, request.vendors)
 
@@ -121,7 +127,12 @@ export default class ProjectService {
     })
   }
 
-  private static mapRequest(request: Partial<ProjectRequest>, userUuid?: string) {
+  private static async mapRequest(request: Partial<ProjectRequest>, userUuid?: string) {
+    let budgetCurrencyId: number | undefined
+    if (request.budgetCurrency) {
+      budgetCurrencyId = await this.resolveCurrencyId(request.budgetCurrency)
+    }
+
     return {
       title: request.title,
       description: request.description,
@@ -130,7 +141,7 @@ export default class ProjectService {
       endDate: request.endDate,
       deadline: request.deadline,
       budgetAmount: request.budgetAmount,
-      budgetCurrencyId: request.budgetCurrency,
+      budgetCurrencyId,
       goals: request.goals,
       userUuid: userUuid,
       isActive: request.isActive ?? true,
@@ -240,5 +251,19 @@ export default class ProjectService {
       .where('project_uuid', projectUuid)
       .whereIn('vendor_uuid', vendorIds)
       .update({ isActive: false })
+  }
+  private static async resolveCurrencyId(currencyCode: string): Promise<number> {
+    const currency = await Currency.query()
+      .where('code', currencyCode)
+      .andWhere('is_active', true)
+      .first()
+
+    if (!currency) {
+      throw new Error(
+        `Invalid currency code: ${currencyCode}. Please use a valid active currency code.`
+      )
+    }
+
+    return currency.id
   }
 }
