@@ -53,6 +53,9 @@
       <p class="mt-2 text-base-content/60">
         Or <a href="/register" class="text-primary hover:text-primary-focus">create a new account</a>
       </p>
+      <p class="mt-1">
+        <a href="/forgot-password" class="text-primary/80 hover:text-primary text-sm">Forgot password?</a>
+      </p>
     </div>
 
     <form class="mt-8 space-y-6" on:submit={handleSubmit}>
