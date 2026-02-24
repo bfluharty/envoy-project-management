@@ -13,6 +13,7 @@ const ProjectsController = () => import('#controllers/web/projects_controller')
 const ProjectsAPIController = () => import('#controllers/api/projects_api_controller')
 const AuthController = () => import('#controllers/web/auth_controller')
 const DashboardController = () => import('#controllers/web/dashboard_controller')
+const InboxController = () => import('#controllers/web/inbox_controller')
 
 // Public landing page (no auth required)
 router
@@ -40,6 +41,18 @@ router
   .as('dashboard')
   .middleware(middleware.auth())
 router.post('/logout', [AuthController, 'logout']).as('auth.logout').middleware(middleware.auth())
+
+// Inbox (connect customer inbox to listen and reply to vendors)
+router
+  .group(() => {
+    router.get('/emails', [InboxController, 'emails']).as('inbox.emails')
+    router.get('/settings', [InboxController, 'settings']).as('inbox.settings')
+    router.get('/connect', [InboxController, 'connect']).as('inbox.connect')
+    router.get('/callback', [InboxController, 'callback']).as('inbox.callback')
+    router.post('/disconnect', [InboxController, 'disconnect']).as('inbox.disconnect')
+  })
+  .prefix('/inbox')
+  .middleware(middleware.auth())
 
 // UI routes for projects
 router
@@ -75,3 +88,15 @@ router
       .prefix('/projects')
   })
   .prefix('/api')
+
+// API routes for inbox (authenticated)
+const InboxAPIController = () => import('#controllers/api/inbox_api_controller')
+router
+  .group(() => {
+    router.post('/reply', [InboxAPIController, 'sendReply'])
+    router.post('/analyze-email', [InboxAPIController, 'analyzeEmail'])
+    router.post('/generate-reply', [InboxAPIController, 'generateReply'])
+    router.post('/generate-initial-email', [InboxAPIController, 'generateInitialEmail'])
+  })
+  .prefix('/api/inbox')
+  .middleware(middleware.auth())

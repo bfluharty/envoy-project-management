@@ -47,19 +47,29 @@ echo "Starting reasoning engine..."
 docker compose up -d $REASONING_SERVICE
 
 # -------------------------------------------------
-# 3) Run migrations
+# 3) Install dependencies only if node_modules is missing key packages (fast after first run)
+# -------------------------------------------------
+if ! docker compose run --rm $PROJECT_SERVICE test -d node_modules/@adonisjs/mail 2>/dev/null; then
+  echo "Installing dependencies (first run or after volume reset)..."
+  docker compose run --rm $PROJECT_SERVICE npm ci --registry https://registry.npmjs.org/
+else
+  echo "Dependencies already installed, skipping npm ci."
+fi
+
+# -------------------------------------------------
+# 4) Run migrations
 # -------------------------------------------------
 echo "Running migrations..."
 docker compose run --rm $PROJECT_SERVICE node ace migration:run
 
 # -------------------------------------------------
-# 4) Run database seeders
+# 5) Run database seeders
 # -------------------------------------------------
 echo "Seeding database..."
 docker compose run --rm $PROJECT_SERVICE node ace db:seed
 
 # -------------------------------------------------
-# 5) Start project-management container (live reload)
+# 6) Start project-management container (live reload)
 # -------------------------------------------------
 echo "Starting project management..."
 docker compose up $PROJECT_SERVICE
