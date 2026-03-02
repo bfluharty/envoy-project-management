@@ -43,4 +43,10 @@ export default await Env.create(new URL('../', import.meta.url), {
   */
   REASONING_ENGINE_URL_DEV: Env.schema.string(),
   REASONING_ENGINE_URL_PROD: Env.schema.string(),
+
+  /* Mail (transactional via Resend — https://resend.com) */
+  APP_URL: Env.schema.string.optional(),
+  MAIL_FROM_ADDRESS: Env.schema.string.optional(),
+  MAIL_FROM_NAME: Env.schema.string.optional(),
+  RESEND_API_KEY: Env.schema.string.optional(),
 })

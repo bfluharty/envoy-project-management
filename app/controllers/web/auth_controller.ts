@@ -1,6 +1,18 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import logger from '@adonisjs/core/services/logger'
+import mail from '@adonisjs/mail/services/main'
+import env from '#start/env'
 import User from '#models/user'
-import { loginValidator, registerValidator } from '#validators/auth_validator'
+import PasswordResetToken from '#models/password_reset_token'
+import ResetPasswordMail from '#mails/reset_password_mail'
+import {
+  forgotPasswordValidator,
+  loginValidator,
+  registerValidator,
+  resetPasswordValidator,
+} from '#validators/auth_validator'
+import { randomBytes } from 'node:crypto'
+import { DateTime } from 'luxon'
 
 export default class AuthController {
   /**
@@ -8,7 +20,8 @@ export default class AuthController {
    */
   async showLogin({ inertia, session }: HttpContext) {
     return inertia.render('auth/login', {
-      flashMessage: session.flashMessages.get('success') || session.flashMessages.get('error'),
+      flashMessage:
+        session.flashMessages.get('success') ?? session.flashMessages.get('error') ?? null,
     })
   }
 
@@ -46,7 +59,8 @@ export default class AuthController {
    */
   async showRegister({ inertia, session }: HttpContext) {
     return inertia.render('auth/register', {
-      flashMessage: session.flashMessages.get('success') || session.flashMessages.get('error'),
+      flashMessage:
+        session.flashMessages.get('success') ?? session.flashMessages.get('error') ?? null,
     })
   }
 
@@ -84,5 +98,79 @@ export default class AuthController {
     await auth.use('web').logout()
     session.flash('success', 'You have been logged out')
     return response.redirect().toRoute('landing')
+  }
+
+  async showForgotPassword({ inertia, session }: HttpContext) {
+    const flashMessage =
+      session.flashMessages.get('success') ?? session.flashMessages.get('error') ?? null
+    return inertia.render('auth/forgot_password', { flashMessage })
+  }
+
+  async forgotPassword({ request, response, session }: HttpContext) {
+    const { email } = await request.validateUsing(forgotPasswordValidator)
+    const user = await User.findBy('email', email)
+    if (!user) {
+      session.flash(
+        'success',
+        'If that email is registered, you will receive a reset link shortly.'
+      )
+      return response.redirect().back()
+    }
+    const token = randomBytes(32).toString('hex')
+    const expiresAt = DateTime.utc().plus({ hours: 1 })
+    await PasswordResetToken.create({
+      userUuid: user.uuid,
+      token,
+      expiresAt,
+      createdAt: DateTime.utc(),
+    })
+    const baseUrl = (env.get('APP_URL') ?? '').replace(/\/$/, '')
+    if (!baseUrl && env.get('NODE_ENV') === 'production') {
+      logger.error('APP_URL not set; cannot send password reset link')
+      session.flash('error', 'Email is not configured. Please contact support.')
+      return response.redirect().back()
+    }
+    const resetUrl = `${baseUrl}/reset-password?token=${token}`
+    try {
+      await mail.send(new ResetPasswordMail(user, resetUrl))
+    } catch (err) {
+      logger.error(err, 'Failed to send password reset email')
+      if (env.get('NODE_ENV') === 'development') {
+        logger.info('Dev fallback: reset link (valid 1h): %s', resetUrl)
+      }
+      session.flash('error', 'Failed to send reset email. Please try again later.')
+      return response.redirect().back()
+    }
+    session.flash('success', 'If that email is registered, you will receive a reset link shortly.')
+    return response.redirect().back()
+  }
+
+  async showResetPassword({ inertia, request, session }: HttpContext) {
+    const token = request.input('token', '')
+    const flashMessage =
+      session.flashMessages.get('success') ?? session.flashMessages.get('error') ?? null
+    return inertia.render('auth/reset_password', { token, flashMessage })
+  }
+
+  async resetPassword({ request, response, session }: HttpContext) {
+    const { token, password } = await request.validateUsing(resetPasswordValidator)
+    const record = await PasswordResetToken.query()
+      .where('token', token)
+      .where('expires_at', '>', DateTime.utc().toSQL())
+      .first()
+    if (!record) {
+      session.flash('error', 'This reset link is invalid or has expired. Please request a new one.')
+      return response.redirect().toRoute('auth.forgotPassword')
+    }
+    const user = await User.findBy('uuid', record.userUuid)
+    if (!user) {
+      session.flash('error', 'This reset link is invalid. Please request a new one.')
+      return response.redirect().toRoute('auth.forgotPassword')
+    }
+    user.password = password
+    await user.save()
+    await PasswordResetToken.query().where('token', token).delete()
+    session.flash('success', 'Your password has been reset. You can now sign in.')
+    return response.redirect().toRoute('auth.login')
   }
 }

@@ -28,6 +28,10 @@ router
     router.post('/login', [AuthController, 'login'])
     router.get('/register', [AuthController, 'showRegister']).as('auth.register')
     router.post('/register', [AuthController, 'register'])
+    router.get('/forgot-password', [AuthController, 'showForgotPassword']).as('auth.forgotPassword')
+    router.post('/forgot-password', [AuthController, 'forgotPassword'])
+    router.get('/reset-password', [AuthController, 'showResetPassword']).as('auth.resetPassword')
+    router.post('/reset-password', [AuthController, 'resetPassword'])
   })
   .middleware(middleware.guest())
 
