@@ -1,6 +1,7 @@
 <script lang="ts">
 import Sidebar from "#components/sidebar.svelte";
 import Logo from '#components/logo.svelte';
+import { UserIcon } from '@lucide/svelte';
 import { onMount } from 'svelte';
 
 interface ChatMessage {
@@ -127,8 +128,8 @@ onMount(() => {
                     {/if}
                 </div>
                 {#if msg.role === 'user'}
-                    <div class="avatar size-8 mt-1.5">
-                        <img src="https://i.pravatar.cc/40?img=12" alt="You" class="rounded-full" />
+                    <div class="avatar size-8 mt-1.5 rounded-full bg-primary-500 flex items-center justify-center">
+                        <UserIcon class="size-4 text-white" />
                     </div>
                 {/if}
             </div>

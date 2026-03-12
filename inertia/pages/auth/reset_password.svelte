@@ -37,31 +37,31 @@
   <title>Envoy - Reset Password</title>
 </svelte:head>
 
-<div class="min-h-screen bg-base-100 flex items-center justify-center px-4">
+<div class="min-h-screen bg-surface-50-950 flex items-center justify-center px-4">
   <div class="max-w-md w-full space-y-8">
     <div class="text-center">
-      <h2 class="text-3xl font-bold text-base-content">Set new password</h2>
-      <p class="mt-2 text-base-content/60">
-        <a href="/login" class="text-primary hover:text-primary-focus">Back to sign in</a>
+      <h2 class="text-3xl font-bold">Set new password</h2>
+      <p class="mt-2 text-surface-600-400">
+        <a href="/login" class="text-primary-500 hover:text-primary-400">Back to sign in</a>
       </p>
     </div>
 
     <form class="mt-8 space-y-6" on:submit={handleSubmit}>
       {#if showError}
-        <div class="alert alert-error">
-          <span>{errorMessage}</span>
-        </div>
+        <aside class="card preset-tonal-error p-4">
+          <p>{errorMessage}</p>
+        </aside>
       {/if}
       {#if flashMessage?.type === 'success'}
-        <div class="alert alert-success">
-          <span>{flashMessage.message}</span>
-        </div>
+        <aside class="card preset-tonal-success p-4">
+          <p>{flashMessage.message}</p>
+        </aside>
       {/if}
 
       <input type="hidden" name="token" value={token} />
 
-      <div>
-        <label for="password" class="block text-sm font-medium text-base-content">New password</label>
+      <label class="label">
+        <span>New password</span>
         <input
           id="password"
           name="password"
@@ -69,17 +69,17 @@
           autocomplete="new-password"
           required
           bind:value={password}
-          class="input input-bordered w-full mt-1"
+          class="input"
           class:input-error={errors.password}
           placeholder="At least 8 characters"
         />
         {#if errors.password}
-          <div class="text-error text-sm mt-1">{errors.password}</div>
+          <p class="text-error-500 text-sm">{errors.password}</p>
         {/if}
-      </div>
+      </label>
 
-      <div>
-        <label for="passwordConfirmation" class="block text-sm font-medium text-base-content">Confirm new password</label>
+      <label class="label">
+        <span>Confirm new password</span>
         <input
           id="passwordConfirmation"
           name="passwordConfirmation"
@@ -87,20 +87,18 @@
           autocomplete="new-password"
           required
           bind:value={passwordConfirmation}
-          class="input input-bordered w-full mt-1"
+          class="input"
           class:input-error={errors.passwordConfirmation}
           placeholder="Confirm your password"
         />
         {#if errors.passwordConfirmation}
-          <div class="text-error text-sm mt-1">{errors.passwordConfirmation}</div>
+          <p class="text-error-500 text-sm">{errors.passwordConfirmation}</p>
         {/if}
-      </div>
+      </label>
 
-      <div>
-        <button type="submit" disabled={processing} class="btn btn-primary w-full" class:loading={processing}>
-          {processing ? 'Resetting...' : 'Reset password'}
-        </button>
-      </div>
+      <button type="submit" disabled={processing} class="btn preset-filled-primary-500 w-full">
+        {processing ? 'Resetting...' : 'Reset password'}
+      </button>
     </form>
   </div>
 </div>

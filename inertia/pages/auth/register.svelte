@@ -6,11 +6,11 @@
   let password = ''
   let passwordConfirmation = ''
   let processing = false
-  
+
   function handleSubmit(event: Event) {
     event.preventDefault()
     processing = true
-    
+
     router.post('/register', {
       fullName,
       email,
@@ -20,7 +20,7 @@
       onFinish: () => {
         processing = false
       },
-      onError: (errors) => {
+      onError: () => {
         processing = false
       }
     })
@@ -31,21 +31,19 @@
   <title>Envoy - Register</title>
 </svelte:head>
 
-<div class="min-h-screen bg-base-100 flex items-center justify-center px-4">
+<div class="min-h-screen bg-surface-50-950 flex items-center justify-center px-4">
   <div class="max-w-md w-full space-y-8">
     <div class="text-center">
-      <h2 class="text-3xl font-bold text-base-content">Create your account</h2>
-      <p class="mt-2 text-base-content/60">
-        Already have an account? <a href="/login" class="text-primary hover:text-primary-focus">Sign in</a>
+      <h2 class="text-3xl font-bold">Create your account</h2>
+      <p class="mt-2 text-surface-600-400">
+        Already have an account? <a href="/login" class="text-primary-500 hover:text-primary-400">Sign in</a>
       </p>
     </div>
 
     <form class="mt-8 space-y-6" on:submit={handleSubmit}>
       <div class="space-y-4">
-        <div>
-          <label for="fullName" class="block text-sm font-medium text-base-content">
-            Full Name
-          </label>
+        <label class="label">
+          <span>Full Name</span>
           <input
             id="fullName"
             name="fullName"
@@ -53,15 +51,13 @@
             autocomplete="name"
             required
             bind:value={fullName}
-            class="input input-bordered w-full mt-1"
+            class="input"
             placeholder="Enter your full name"
           />
-        </div>
+        </label>
 
-        <div>
-          <label for="email" class="block text-sm font-medium text-base-content">
-            Email address
-          </label>
+        <label class="label">
+          <span>Email address</span>
           <input
             id="email"
             name="email"
@@ -69,15 +65,13 @@
             autocomplete="email"
             required
             bind:value={email}
-            class="input input-bordered w-full mt-1"
+            class="input"
             placeholder="Enter your email"
           />
-        </div>
+        </label>
 
-        <div>
-          <label for="password" class="block text-sm font-medium text-base-content">
-            Password
-          </label>
+        <label class="label">
+          <span>Password</span>
           <input
             id="password"
             name="password"
@@ -85,15 +79,13 @@
             autocomplete="new-password"
             required
             bind:value={password}
-            class="input input-bordered w-full mt-1"
+            class="input"
             placeholder="Create a password (min 8 characters)"
           />
-        </div>
+        </label>
 
-        <div>
-          <label for="passwordConfirmation" class="block text-sm font-medium text-base-content">
-            Confirm Password
-          </label>
+        <label class="label">
+          <span>Confirm Password</span>
           <input
             id="passwordConfirmation"
             name="passwordConfirmation"
@@ -101,22 +93,19 @@
             autocomplete="new-password"
             required
             bind:value={passwordConfirmation}
-            class="input input-bordered w-full mt-1"
+            class="input"
             placeholder="Confirm your password"
           />
-        </div>
+        </label>
       </div>
 
-      <div>
-        <button
-          type="submit"
-          disabled={processing}
-          class="btn btn-primary w-full"
-          class:loading={processing}
-        >
-          {processing ? 'Creating account...' : 'Create account'}
-        </button>
-      </div>
+      <button
+        type="submit"
+        disabled={processing}
+        class="btn preset-filled-primary-500 w-full"
+      >
+        {processing ? 'Creating account...' : 'Create account'}
+      </button>
     </form>
   </div>
 </div>
