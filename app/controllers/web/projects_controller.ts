@@ -41,11 +41,24 @@ export default class ProjectsController {
       return response.abort({ error: 'Project not found' }, 404)
     }
 
+    const projectWithHistory = await ProjectService.getProjectConversationHistoryReadOnly(
+      user.uuid,
+      projectUuid
+    )
+    const allTurns = projectWithHistory?.conversations?.flatMap((c) => c.conversationTurns) ?? []
+    const hasPriorConversation = allTurns.length > 0
+    const conversationHistory = allTurns.flatMap((turn) => [
+      { role: 'user', content: turn.contents.userPrompt },
+      { role: 'assistant', content: turn.contents.modelResponse },
+    ])
+
     return inertia.render('projects/chat', {
       project: {
         uuid: project.uuid,
         name: project.title,
       },
+      hasPriorConversation,
+      conversationHistory,
     })
   }
 

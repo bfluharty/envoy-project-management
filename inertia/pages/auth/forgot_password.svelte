@@ -35,30 +35,30 @@
   <title>Envoy - Forgot Password</title>
 </svelte:head>
 
-<div class="min-h-screen bg-base-100 flex items-center justify-center px-4">
+<div class="min-h-screen bg-surface-50-950 flex items-center justify-center px-4">
   <div class="max-w-md w-full space-y-8">
     <div class="text-center">
-      <h2 class="text-3xl font-bold text-base-content">Forgot your password?</h2>
-      <p class="mt-2 text-base-content/60">
+      <h2 class="text-3xl font-bold">Forgot your password?</h2>
+      <p class="mt-2 text-surface-600-400">
         Enter your email and we'll send you a link to reset it.
-        <a href="/login" class="text-primary hover:text-primary-focus block mt-2">Back to sign in</a>
+        <a href="/login" class="text-primary-500 hover:text-primary-400 block mt-2">Back to sign in</a>
       </p>
     </div>
 
     <form class="mt-8 space-y-6" on:submit={handleSubmit}>
       {#if showError}
-        <div class="alert alert-error">
-          <span>{errorMessage}</span>
-        </div>
+        <aside class="card preset-tonal-error p-4">
+          <p>{errorMessage}</p>
+        </aside>
       {/if}
       {#if flashMessage?.type === 'success'}
-        <div class="alert alert-success">
-          <span>{flashMessage.message}</span>
-        </div>
+        <aside class="card preset-tonal-success p-4">
+          <p>{flashMessage.message}</p>
+        </aside>
       {/if}
 
-      <div>
-        <label for="email" class="block text-sm font-medium text-base-content">Email address</label>
+      <label class="label">
+        <span>Email address</span>
         <input
           id="email"
           name="email"
@@ -66,20 +66,18 @@
           autocomplete="email"
           required
           bind:value={email}
-          class="input input-bordered w-full mt-1"
+          class="input"
           class:input-error={errors.email}
           placeholder="Enter your email"
         />
         {#if errors.email}
-          <div class="text-error text-sm mt-1">{errors.email}</div>
+          <p class="text-error-500 text-sm">{errors.email}</p>
         {/if}
-      </div>
+      </label>
 
-      <div>
-        <button type="submit" disabled={processing} class="btn btn-primary w-full" class:loading={processing}>
-          {processing ? 'Sending...' : 'Send reset link'}
-        </button>
-      </div>
+      <button type="submit" disabled={processing} class="btn preset-filled-primary-500 w-full">
+        {processing ? 'Sending...' : 'Send reset link'}
+      </button>
     </form>
   </div>
 </div>

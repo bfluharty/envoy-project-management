@@ -97,6 +97,19 @@ export default class ProjectService {
     return { combinedProject, errors }
   }
 
+  public static async getProjectConversationHistoryReadOnly(userUuid: string, projectUuid: string) {
+    const project = await Project.query()
+      .where('user_uuid', userUuid)
+      .andWhere('uuid', projectUuid)
+      .andWhere('is_active', true)
+      .preload('conversations', (conversationQuery) => {
+        conversationQuery.preload('conversationTurns')
+      })
+      .first()
+
+    return project ?? null
+  }
+
   public static async getProjectWithConversations(userUuid: string, projectUuid: string) {
     const project = await Project.query()
       .where('user_uuid', userUuid)
