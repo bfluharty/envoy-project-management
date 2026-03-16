@@ -90,12 +90,12 @@
     "isomorphic-fetch": "^3.0.0",
     "edge.js": "^6.4.0",
     "luxon": "^3.7.2",
+    "normalize-url": "^8.0.1",
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
     "svelte": "^5.46.1",
     "tailwindcss": "^4.1.18",
-    "uuid": "^13.0.0",
-    "openai": "^4.28.0"
+    "uuid": "^13.0.0"
   },
   "hotHook": {
     "boundaries": [

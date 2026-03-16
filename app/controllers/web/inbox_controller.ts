@@ -1,5 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import { DateTime } from 'luxon'
+import User from '#models/user'
 import UserInboxConnection from '#models/user_inbox_connection'
 import VendorConversation from '#models/vendor_conversation'
 import {
@@ -8,6 +9,7 @@ import {
   decodeState,
   type InboxProvider,
 } from '#services/inbox_connection_service'
+import { syncConnection } from '#services/inbox_sync_service'
 import logger from '@adonisjs/core/services/logger'
 
 export default class InboxController {
@@ -92,9 +94,23 @@ export default class InboxController {
 
   /**
    * List vendor conversations and synced messages for the current user.
+   * Syncs from connected inboxes by calling the email service POST /inbox/list (and /inbox/message for bodies).
+   * Requires EMAIL_SERVICE_URL in .env and at least one connected inbox.
    */
-  async emails({ auth, inertia }: HttpContext) {
+  async emails({ auth, inertia, session }: HttpContext) {
     const user = auth.getUserOrFail()
+    const connections = await UserInboxConnection.query().where('user_uuid', user.uuid)
+    let syncError: string | null = null
+    for (const conn of connections) {
+      try {
+        await syncConnection(conn) // calls email service /inbox/list then /inbox/message per connection
+      } catch (err) {
+        logger.error(err, `Inbox sync failed for ${conn.provider}/${conn.email}`)
+        syncError =
+          err instanceof Error ? err.message : 'Inbox sync failed. Is the email service running?'
+        session.flash('error', `Sync failed for ${conn.email}: ${syncError}`)
+      }
+    }
     const conversations = await VendorConversation.query()
       .where('user_id', user.id)
       .preload('vendor')
@@ -102,6 +118,8 @@ export default class InboxController {
       .orderBy('id', 'desc')
 
     return inertia.render('inbox/emails', {
+      hasConnections: connections.length > 0,
+      syncError: syncError ?? undefined,
       conversations: conversations.map((c) => ({
         uuid: c.uuid,
         vendorName: c.vendor.name,
@@ -118,6 +136,9 @@ export default class InboxController {
               : m.sentTimestamp instanceof Date
                 ? m.sentTimestamp.toISOString()
                 : String(m.sentTimestamp ?? ''),
+          messageId: m.messageIdHeader ?? undefined,
+          references: m.referencesHeader ?? undefined,
+          threadId: m.providerThreadId ?? undefined,
         })),
       })),
     })
@@ -147,8 +168,12 @@ export default class InboxController {
    * Remove a connected inbox. Query or body: id (connection id).
    */
   async disconnect({ auth, request, response, session }: HttpContext) {
-    const user = auth.getUserOrFail()
-    const id = request.input('id', request.params.id)
+    const user = auth.getUserOrFail() as User
+    const id = request.input('id')
+    if (id === undefined || id === null) {
+      session.flash('error', 'Missing connection id.')
+      return response.redirect().back()
+    }
     const connection = await UserInboxConnection.query()
       .where('id', id)
       .where('user_uuid', user.uuid)

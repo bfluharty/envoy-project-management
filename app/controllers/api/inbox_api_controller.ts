@@ -1,18 +1,8 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import logger from '@adonisjs/core/services/logger'
 import UserInboxConnection from '#models/user_inbox_connection'
 import VendorConversation from '#models/vendor_conversation'
 import { sendReplyAndRecord } from '#services/inbox_reply_service'
-import type { EmailAnalysis } from '#services/email_ai_service'
-import {
-  analyzeEmail as analyzeEmailAi,
-  generateResponse as generateResponseAi,
-  generateInitialEmail as generateInitialEmailAi,
-} from '#services/email_ai_service'
-import {
-  analyzeEmailValidator,
-  generateReplyValidator,
-  generateInitialEmailValidator,
-} from '#validators/inbox_validator'
 
 export default class InboxAPIController {
   /**
@@ -29,11 +19,22 @@ export default class InboxAPIController {
       body: string
       inReplyTo?: string
       references?: string
+      threadId?: string
     }
+
+    logger.info(
+      {
+        to: body.to,
+        subject: body.subject,
+        vendorConversationUuid: body.vendorConversationUuid,
+        bodyLength: typeof body.body === 'string' ? body.body.length : 0,
+      },
+      'Inbox reply: received from frontend'
+    )
 
     const connectionId = body.connectionId
     const vendorConversationUuid = body.vendorConversationUuid
-    const { to, subject, body: replyBody, inReplyTo, references } = body
+    const { to, subject, body: replyBody, inReplyTo, references, threadId } = body
 
     if (!to || !subject || replyBody === undefined) {
       return response.badRequest({ error: 'Missing to, subject, or body' })
@@ -66,6 +67,17 @@ export default class InboxAPIController {
       return response.notFound({ error: 'Vendor conversation not found' })
     }
 
+    logger.info(
+      {
+        to,
+        subject,
+        connectionEmail: connection.email,
+        inReplyTo: !!inReplyTo,
+        references: !!references,
+      },
+      'Inbox reply: sending via email service'
+    )
+
     try {
       const message = await sendReplyAndRecord(connection, conversationUuid, {
         to,
@@ -73,81 +85,13 @@ export default class InboxAPIController {
         body: replyBody,
         inReplyTo,
         references,
+        threadId,
       })
       return response.ok({ message: { uuid: message.uuid } })
     } catch (err) {
-      return response.internalServerError({ error: 'Failed to send reply' })
+      const message = err instanceof Error ? err.message : 'Failed to send reply'
+      logger.error({ err, to, connectionEmail: connection.email }, 'Inbox reply failed')
+      return response.internalServerError({ error: message })
     }
-  }
-
-  /**
-   * Analyze an email (intent, urgency, key points, response strategy).
-   * Body: { subject, body, from, to, date, cc?, threadContext? }
-   */
-  async analyzeEmail({ request, response }: HttpContext) {
-    const payload = await request.validateUsing(analyzeEmailValidator)
-    const analysis = await analyzeEmailAi({
-      subject: payload.subject,
-      body: payload.body,
-      from: payload.from,
-      to: payload.to,
-      date: payload.date,
-      cc: payload.cc,
-      threadContext: payload.threadContext,
-    })
-    if (analysis === null) {
-      return response.serviceUnavailable({
-        error: 'AI analysis unavailable. Set OPENAI_API_KEY to enable.',
-      })
-    }
-    return response.ok({ analysis })
-  }
-
-  /**
-   * Generate a suggested reply for an email. Optionally pass pre-computed analysis.
-   * Body: { subject, body, from, to, date, cc?, threadContext?, analysis? }
-   */
-  async generateReply({ request, response }: HttpContext) {
-    const payload = await request.validateUsing(generateReplyValidator)
-    const result = await generateResponseAi(
-      {
-        subject: payload.subject,
-        body: payload.body,
-        from: payload.from,
-        to: payload.to,
-        date: payload.date,
-        cc: payload.cc,
-        threadContext: payload.threadContext,
-      },
-      (payload.analysis as EmailAnalysis | undefined) ?? null
-    )
-    if (result === null) {
-      return response.serviceUnavailable({
-        error: 'AI reply generation unavailable. Set OPENAI_API_KEY to enable.',
-      })
-    }
-    return response.ok({
-      emailResponse: result.emailResponse,
-      metadata: result.metadata,
-    })
-  }
-
-  /**
-   * Generate initial email content (greeting, body, closing, signature) for a new thread.
-   * Body: { recipients, subject, context }
-   */
-  async generateInitialEmail({ request, response }: HttpContext) {
-    const payload = await request.validateUsing(generateInitialEmailValidator)
-    const content = await generateInitialEmailAi({
-      recipients: payload.recipients,
-      subject: payload.subject,
-      context: payload.context,
-    })
-    if (content === null) {
-      return response.serviceUnavailable({
-        error: 'AI email generation unavailable. Set OPENAI_API_KEY to enable.',
-      })
-    }
-    return response.ok(content)
   }
 }

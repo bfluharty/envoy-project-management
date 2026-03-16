@@ -1,5 +1,6 @@
 import { defineConfig } from '@adonisjs/inertia'
 import type { InferSharedProps } from '@adonisjs/inertia/types'
+import env from '#start/env'
 
 const inertiaConfig = defineConfig({
   /**
@@ -11,6 +12,10 @@ const inertiaConfig = defineConfig({
    * Data that should be shared with all rendered pages
    */
   sharedData: {
+    backendUrl: () => {
+      const url = env.get('BACKEND_URL') ?? env.get('APP_URL')
+      return url ? url.replace(/\/$/, '') : ''
+    },
     user: (ctx) => ctx.inertia.always(() => ctx.auth.user),
     flash: (ctx) => ({
       success: ctx.session.flashMessages.get('success'),

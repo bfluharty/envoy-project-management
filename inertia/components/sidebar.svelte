@@ -1,5 +1,5 @@
 <script lang="ts">
-import { FolderIcon, HouseIcon, DatabaseIcon, LogOutIcon, PlusIcon, XIcon, MenuIcon } from "@lucide/svelte";
+import { FolderIcon, HouseIcon, DatabaseIcon, LogOutIcon, PlusIcon, XIcon, MenuIcon, MailIcon } from "@lucide/svelte";
 import Logo from './logo.svelte';
 import { Navigation } from "@skeletonlabs/skeleton-svelte";
 import { router, page } from '@inertiajs/svelte'
@@ -126,6 +126,10 @@ function handleLogout() {
 					<a href="/projects" class={getNavClasses('/projects', true)} onclick={closeDrawer}>
 						<DatabaseIcon class="size-4" />
 						<span>Projects <span class="text-xs">(JSON)</span></span>
+					</a>
+					<a href="/inbox/emails" class={getNavClasses('/inbox/emails')} onclick={closeDrawer}>
+						<MailIcon class="size-4" />
+						<span>Inbox</span>
 					</a>
 					<button onclick={() => { handleNewProject(); closeDrawer(); }} class={newProjectClasses}>
 						<PlusIcon class="size-4" />

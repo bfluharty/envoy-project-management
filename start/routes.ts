@@ -32,6 +32,10 @@ router
     router.post('/forgot-password', [AuthController, 'forgotPassword'])
     router.get('/reset-password', [AuthController, 'showResetPassword']).as('auth.resetPassword')
     router.post('/reset-password', [AuthController, 'resetPassword'])
+    router.get('/auth/google', [AuthController, 'googleRedirect']).as('auth.google')
+    router
+      .get('/auth/google/callback', [AuthController, 'googleCallback'])
+      .as('auth.google.callback')
   })
   .middleware(middleware.guest())
 
@@ -91,12 +95,14 @@ router
 
 // API routes for inbox (authenticated)
 const InboxAPIController = () => import('#controllers/api/inbox_api_controller')
+const InternalController = () => import('#controllers/api/internal_controller')
+
+// Internal API for email service (forgot-password: app creates token, email service sends)
+router.post('/api/internal/forgot-password-email', [InternalController, 'forgotPasswordEmail'])
+
 router
   .group(() => {
     router.post('/reply', [InboxAPIController, 'sendReply'])
-    router.post('/analyze-email', [InboxAPIController, 'analyzeEmail'])
-    router.post('/generate-reply', [InboxAPIController, 'generateReply'])
-    router.post('/generate-initial-email', [InboxAPIController, 'generateInitialEmail'])
   })
   .prefix('/api/inbox')
   .middleware(middleware.auth())

@@ -1,16 +1,14 @@
 import User from '#models/user'
 import UserInboxConnection from '#models/user_inbox_connection'
 import Vendor from '#models/vendor'
+import { DateTime } from 'luxon'
 import VendorConversation from '#models/vendor_conversation'
 import Message from '#models/message'
+import env from '#start/env'
 import {
-  listMessages as gmailListMessages,
-  getMessage as gmailGetMessage,
-} from './gmail_inbox_service.js'
-import {
-  listMessages as msListMessages,
-  getMessage as msGetMessage,
-} from './microsoft_inbox_service.js'
+  listInboxMessages as emailServiceListMessages,
+  getInboxMessage as emailServiceGetMessage,
+} from './email_communication_service.js'
 import logger from '@adonisjs/core/services/logger'
 
 const SYNC_MAX_MESSAGES = 50
@@ -36,14 +34,21 @@ export async function syncConnection(
     return { processed: 0, created: 0 }
   }
 
-  let summaries: Array<{ id: string; from: string; to: string; subject: string; date: string }>
-  if (connection.provider === 'gmail') {
-    summaries = await gmailListMessages(connection, { maxResults: SYNC_MAX_MESSAGES })
-  } else if (connection.provider === 'microsoft') {
-    summaries = await msListMessages(connection, { maxResults: SYNC_MAX_MESSAGES })
-  } else {
-    return { processed: 0, created: 0 }
+  const emailServiceUrl = env.get('EMAIL_SERVICE_URL')
+  if (!emailServiceUrl) {
+    throw new Error(
+      'EMAIL_SERVICE_URL is not set. Inbox sync uses only envoy-email-service. Set EMAIL_SERVICE_URL in .env (e.g. http://127.0.0.1:3000).'
+    )
   }
+  logger.info(
+    { provider: connection.provider, email: connection.email },
+    'Calling email service POST /inbox/list'
+  )
+  const summaries = await emailServiceListMessages(connection, { maxResults: SYNC_MAX_MESSAGES })
+  logger.info(
+    { connectionId: connection.id, count: summaries.length },
+    'Inbox sync: email service returned messages'
+  )
 
   let created = 0
   for (const summary of summaries) {
@@ -69,8 +74,7 @@ export async function syncConnection(
       })
     }
 
-    const getDetail = connection.provider === 'gmail' ? gmailGetMessage : msGetMessage
-    const detail = await getDetail(connection, summary.id)
+    const detail = await emailServiceGetMessage(connection, summary.id)
     if (!detail) continue
 
     const systemUser = 'inbox-sync'
@@ -79,16 +83,25 @@ export async function syncConnection(
       subject: detail.subject,
       from: detail.from,
       to: detail.to,
-      cc: detail.cc || null,
+      cc: detail.cc ?? undefined,
       body: detail.body || summary.snippet || '',
       createdBy: systemUser,
       modifiedBy: systemUser,
-      sentTimestamp: detail.date,
+      sentTimestamp: DateTime.fromJSDate(detail.date),
       providerMessageId: `${connection.provider}:${summary.id}`,
+      messageIdHeader: detail.messageId ?? null,
+      referencesHeader: detail.references ?? null,
+      providerThreadId: summary.threadId ?? null,
     })
     created++
   }
 
+  if (summaries.length > 0 && created === 0) {
+    logger.info(
+      { connectionId: connection.id, processed: summaries.length },
+      'Inbox sync: no messages matched a vendor (add vendors with sender emails to see them)'
+    )
+  }
   return { processed: summaries.length, created }
 }
 
