@@ -41,11 +41,24 @@ export default class ProjectsController {
       return response.abort({ error: 'Project not found' }, 404)
     }
 
+    const projectWithHistory = await ProjectService.getProjectConversationHistoryReadOnly(
+      user.uuid,
+      projectUuid
+    )
+    const allTurns = projectWithHistory?.conversations?.flatMap((c) => c.conversationTurns) ?? []
+    const hasPriorConversation = allTurns.length > 0
+    const conversationHistory = allTurns.flatMap((turn) => [
+      { role: 'user', content: turn.contents.userPrompt },
+      { role: 'assistant', content: turn.contents.modelResponse },
+    ])
+
     return inertia.render('projects/chat', {
       project: {
         uuid: project.uuid,
         name: project.title,
       },
+      hasPriorConversation,
+      conversationHistory,
     })
   }
 
@@ -59,12 +72,18 @@ export default class ProjectsController {
     const validatedRequest = await createProjectValidator.validate(body)
 
     try {
-      const project = await ProjectService.createProject(
+      const { combinedProject, errors } = await ProjectService.createProject(
         user.uuid,
         validatedRequest as ProjectRequest
       )
+      if (errors?.length) {
+        logger.warn('Project created with errors:')
+        logger.warn(errors)
+        session.flash('partial_success', 'Project created with errors: ' + errors.join('; '))
+        return response.redirect().toPath(`/projects/${combinedProject.uuid}`)
+      }
       session.flash('success', 'Project created successfully!')
-      return response.redirect().toPath(`/projects/${project.uuid}`)
+      return response.redirect().toPath(`/projects/${combinedProject.uuid}`)
     } catch (error) {
       logger.error('Error creating project:')
       logger.error(error)
@@ -84,18 +103,21 @@ export default class ProjectsController {
     const validatedRequest = await updateProjectValidator.validate(body)
 
     try {
-      const project = await ProjectService.updateProject(
+      const { combinedProject, errors } = await ProjectService.updateProject(
         user.uuid,
         projectUuid,
         validatedRequest as ProjectRequest,
         isOnlyActivatingRecord(validatedRequest)
       )
-
-      if (!project) {
+      if (!combinedProject) {
         return response.abort({ error: 'Project not found' }, 404)
       }
-
-      return response.json({ project })
+      if (errors?.length) {
+        logger.warn('Project updated with errors:')
+        logger.warn(errors)
+        return response.json({ project: combinedProject, errors })
+      }
+      return response.json({ project: combinedProject })
     } catch (error) {
       logger.error('Error updating project:')
       logger.error(error)

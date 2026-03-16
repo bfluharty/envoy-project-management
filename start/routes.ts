@@ -11,6 +11,7 @@ import router from '@adonisjs/core/services/router'
 import { middleware } from './kernel.js'
 const ProjectsController = () => import('#controllers/web/projects_controller')
 const ProjectsAPIController = () => import('#controllers/api/projects_api_controller')
+const VendorsAPIController = () => import('#controllers/api/vendors_api_controller')
 const AuthController = () => import('#controllers/web/auth_controller')
 const DashboardController = () => import('#controllers/web/dashboard_controller')
 const InboxController = () => import('#controllers/web/inbox_controller')
@@ -90,6 +91,23 @@ router
         router.post('/:uuid/chat', [ProjectsAPIController, 'chat'])
       })
       .prefix('/projects')
+  })
+  .prefix('/api')
+
+// API routes for vendors
+router
+  .group(() => {
+    router
+      .group(() => {
+        router.get('/', [VendorsAPIController, 'getAll'])
+
+        router.get('/:uuid', [VendorsAPIController, 'getByUuid'])
+
+        router.post('/', [VendorsAPIController, 'create'])
+
+        router.patch('/:uuid', [VendorsAPIController, 'update'])
+      })
+      .prefix('/vendors')
   })
   .prefix('/api')
 

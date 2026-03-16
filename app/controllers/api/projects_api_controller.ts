@@ -9,10 +9,8 @@ import {
   requestParamsValidator,
   updateProjectValidator,
 } from '#validators/projects_validator'
-import { retrieveReferences } from '../../utils/retrieve_references.js'
 import ReasoningEngineService from '#services/reasoning_engine_service'
-import User from '#models/user'
-const CURRENCIES_TABLE = 'envoy_schema.currencies'
+import { isOnlyActivatingRecord, validateUser } from '../../utils/controller_utils.js'
 
 export default class ProjectsAPIController {
   /**
@@ -114,18 +112,22 @@ export default class ProjectsAPIController {
     if (validatedRequest.isActive === false) {
       return response.status(400).json({ error: 'Projects cannot be deleted during creation' })
     }
-    if (validatedRequest.budgetCurrency) {
-      try {
-        validatedRequest.budgetCurrency = await validateCurrency(validatedRequest.budgetCurrency)
-      } catch (error) {
-        return response.status(400).json({ error: error.message })
-      }
-    }
 
     // Save project
     try {
-      const project = await ProjectService.createProject(userId, validatedRequest as ProjectRequest)
-      return response.status(201).json({ project })
+      const { combinedProject, errors } = await ProjectService.createProject(
+        userId,
+        validatedRequest as ProjectRequest
+      )
+      if (errors?.length) {
+        logger.warn('Project created with errors:')
+        logger.warn(errors)
+        return response.status(203).json({
+          project: combinedProject,
+          errors,
+        })
+      }
+      return response.status(201).json({ combinedProject })
     } catch (error) {
       logger.error('Error creating project:')
       logger.error(error)
@@ -157,26 +159,26 @@ export default class ProjectsAPIController {
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
     const validatedRequest = await request.validateUsing(updateProjectValidator)
 
-    if (validatedRequest.budgetCurrency) {
-      try {
-        validatedRequest.budgetCurrency = await validateCurrency(validatedRequest.budgetCurrency)
-      } catch (error) {
-        return response.status(400).json({ error: error.message })
-      }
-    }
-
     // Update project
     try {
-      const project = await ProjectService.updateProject(
+      const { combinedProject, errors } = await ProjectService.updateProject(
         userId,
         projectUuid,
         validatedRequest as ProjectRequest,
         isOnlyActivatingRecord(validatedRequest)
       )
-      if (!project) {
+      if (!combinedProject) {
         return response.status(404).json({ error: 'Project not found' })
       }
-      return response.status(201).json({ project })
+      if (errors?.length) {
+        logger.warn('Project updated with errors:')
+        logger.warn(errors)
+        return response.status(203).json({
+          project: combinedProject,
+          errors,
+        })
+      }
+      return response.status(201).json({ project: combinedProject })
     } catch (error) {
       logger.error('Error updating project:')
       logger.error(error)
@@ -235,29 +237,4 @@ export default class ProjectsAPIController {
         .json({ error: 'Failed to prepare chat request', developerText: error.message })
     }
   }
-}
-
-const validateCurrency = async (currencyCode: string) => {
-  if (currencyCode) {
-    const currencies = await retrieveReferences(CURRENCIES_TABLE)
-    const currencyId = currencies.find((c) => c.code === currencyCode)?.id
-    if (!currencyId) {
-      throw new Error('Invalid currency code')
-    } else {
-      return currencyId
-    }
-  }
-}
-
-const isOnlyActivatingRecord = (validatedRequest: Record<string, any>): boolean => {
-  if (!validatedRequest || typeof validatedRequest !== 'object') return false
-  const keys = Object.keys(validatedRequest).filter((k) => validatedRequest[k] !== undefined)
-  return keys.length === 1 && keys[0] === 'isActive' && validatedRequest.isActive === true
-}
-
-const validateUser = async (userId: string | undefined) => {
-  if (!userId) {
-    throw new Error('User ID was not provided.')
-  }
-  return await User.query().where('uuid', userId).andWhere('isActive', true).first()
 }

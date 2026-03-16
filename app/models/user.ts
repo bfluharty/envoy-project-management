@@ -36,10 +36,7 @@ export default class User extends compose(BaseModel, AuthFinder) {
   declare email: string
 
   @column({ serializeAs: null })
-  declare password: string | null
-
-  @column({ columnName: 'google_id' })
-  declare googleId: string | null
+  declare password: string
 
   @column.dateTime({ columnName: 'created_timestamp', autoCreate: true })
   declare createdTimestamp: DateTime

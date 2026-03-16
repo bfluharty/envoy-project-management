@@ -247,15 +247,15 @@
       <p>Click on a project in the sidebar to chat about it.</p>
 
       {#if flash.error}
-        <div class="alert alert-error">
-          <span>{flash.error}</span>
-        </div>
+        <aside class="card preset-tonal-error p-4">
+          <p>{flash.error}</p>
+        </aside>
       {/if}
 
       {#if flash.success}
-        <div class="alert alert-success">
-          <span>{flash.success}</span>
-        </div>
+        <aside class="card preset-tonal-success p-4">
+          <p>{flash.success}</p>
+        </aside>
       {/if}
     </div>
   {/if}

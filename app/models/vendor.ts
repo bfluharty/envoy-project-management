@@ -1,9 +1,6 @@
 import { DateTime } from 'luxon'
-import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
-import { BaseModel, column, belongsTo, hasMany, beforeCreate } from '@adonisjs/lucid/orm'
+import { BaseModel, column, beforeCreate } from '@adonisjs/lucid/orm'
 import { v4 as uuidv4 } from 'uuid'
-import VendorStatus from './vendor_status.js'
-import VendorConversation from './vendor_conversation.js'
 
 export default class Vendor extends BaseModel {
   static table = 'envoy_schema.vendors'
@@ -38,15 +35,6 @@ export default class Vendor extends BaseModel {
 
   @column.dateTime({ columnName: 'modified_timestamp', autoCreate: true, autoUpdate: true })
   declare modifiedTimestamp: DateTime
-
-  @column({ columnName: 'status' })
-  declare statusId: number
-
-  @belongsTo(() => VendorStatus, { foreignKey: 'statusId' })
-  declare status: BelongsTo<typeof VendorStatus>
-
-  @hasMany(() => VendorConversation, { foreignKey: 'vendorUuid', localKey: 'uuid' })
-  declare vendorConversations: HasMany<typeof VendorConversation>
 
   @column({ columnName: 'is_active' })
   declare isActive: boolean
