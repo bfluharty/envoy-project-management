@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
 import Project from './project.js'
 import UserEntitlement from './user_entitlement.js'
+import Vendor from './vendor.js'
 
 const AuthFinder = withAuthFinder(() => hash.use('scrypt'), {
   uids: ['email'],
@@ -46,6 +47,9 @@ export default class User extends compose(BaseModel, AuthFinder) {
 
   @hasMany(() => Project, { foreignKey: 'userUuid', localKey: 'uuid' })
   declare projects: HasMany<typeof Project>
+
+  @hasMany(() => Vendor, { foreignKey: 'userUuid', localKey: 'uuid' })
+  declare vendors: HasMany<typeof Vendor>
 
   @column({ columnName: 'is_active' })
   declare isActive: boolean

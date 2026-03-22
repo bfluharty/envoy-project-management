@@ -1,20 +1,22 @@
 import Vendor from '#models/vendor'
 import { VendorRequest } from '../../types/request.js'
 
-export default class ProjectService {
-  private static readonly DEFAULT_PROJECT_LIMIT = 10
-  private static readonly DEFAULT_PROJECT_OFFSET = 0
+export default class VendorService {
+  private static readonly DEFAULT_VENDOR_LIMIT = 10
+  private static readonly DEFAULT_VENDOR_OFFSET = 0
 
-  public static async getVendors(limit?: number, offset?: number) {
+  public static async getUserVendors(userUuid: string, limit?: number, offset?: number) {
     return await Vendor.query()
-      .where('is_active', true)
+      .where('user_uuid', userUuid)
+      .andWhere('is_active', true)
       .orderBy('name', 'asc')
-      .limit(limit ?? this.DEFAULT_PROJECT_LIMIT)
-      .offset(offset ?? this.DEFAULT_PROJECT_OFFSET)
+      .limit(limit ?? this.DEFAULT_VENDOR_LIMIT)
+      .offset(offset ?? this.DEFAULT_VENDOR_OFFSET)
   }
 
-  public static async getVendorByUuid(vendorUuid: string) {
+  public static async getUserVendorByUuid(userUuid: string, vendorUuid: string) {
     const vendor = await Vendor.query()
+      .where('user_uuid', userUuid)
       .andWhere('uuid', vendorUuid)
       .andWhere('is_active', true)
       .first()
@@ -29,6 +31,7 @@ export default class ProjectService {
   public static async createVendor(userUuid: string, request: VendorRequest) {
     const mappedRequest = this.mapRequest(request, userUuid)
     mappedRequest['createdBy'] = userUuid
+    mappedRequest['userUuid'] = userUuid
     return await Vendor.create(mappedRequest)
   }
 
@@ -38,7 +41,7 @@ export default class ProjectService {
     request: Partial<VendorRequest>,
     isOnlyActivatingRecord: boolean
   ) {
-    let query = Vendor.query().where('uuid', vendorUuid)
+    let query = Vendor.query().where('user_uuid', userUuid).andWhere('uuid', vendorUuid)
     if (!isOnlyActivatingRecord) {
       query = query.andWhere('is_active', true)
     }
@@ -49,7 +52,7 @@ export default class ProjectService {
     }
     await vendor.merge(this.mapRequest(request, userUuid)).save()
 
-    return await Vendor.query().where('uuid', vendorUuid).first()
+    return await Vendor.query().where('user_uuid', userUuid).andWhere('uuid', vendorUuid).first()
   }
 
   private static mapRequest(request: Partial<VendorRequest>, userUuid?: string): any {

@@ -1,6 +1,8 @@
 import { DateTime } from 'luxon'
-import { BaseModel, column, beforeCreate } from '@adonisjs/lucid/orm'
+import { BaseModel, column, beforeCreate, belongsTo } from '@adonisjs/lucid/orm'
 import { v4 as uuidv4 } from 'uuid'
+import User from './user.js'
+import type { BelongsTo } from '@adonisjs/lucid/types/relations'
 
 export default class Vendor extends BaseModel {
   static table = 'envoy_schema.vendors'
@@ -23,6 +25,12 @@ export default class Vendor extends BaseModel {
 
   @column()
   declare email: string
+
+  @column({ columnName: 'user_uuid' })
+  declare userUuid: string
+
+  @belongsTo(() => User, { foreignKey: 'userUuid', localKey: 'uuid' })
+  declare user: BelongsTo<typeof User>
 
   @column({ columnName: 'created_by' })
   declare createdBy: string
