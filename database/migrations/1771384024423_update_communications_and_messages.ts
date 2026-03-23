@@ -28,6 +28,28 @@ export default class UpdateCommunicationsAndMessages extends BaseSchema {
     this.schema.dropTable(this.messageTable)
     this.schema.dropTable('envoy_schema.vendor_conversations')
 
+    // Recreate vendor_conversations table (for inbox email threading per vendor/user)
+    this.schema.createTable('envoy_schema.vendor_conversations', (table) => {
+      table.increments('id').notNullable()
+      table.string('uuid').notNullable().unique()
+      table.string('channel').notNullable()
+      table
+        .integer('user_id')
+        .unsigned()
+        .notNullable()
+        .references('id')
+        .inTable('envoy_schema.users')
+        .onDelete('CASCADE')
+      table.timestamp('created_timestamp', { useTz: true }).notNullable().defaultTo(this.now())
+      table
+        .string('vendor_uuid')
+        .notNullable()
+        .references('uuid')
+        .inTable('envoy_schema.vendors')
+        .onDelete('CASCADE')
+      table.unique(['user_id', 'vendor_uuid'])
+    })
+
     // Recreate messages table
     this.schema.createTable(this.messageTable, (table) => {
       table.increments('id').notNullable()
@@ -46,6 +68,23 @@ export default class UpdateCommunicationsAndMessages extends BaseSchema {
         .references('uuid')
         .inTable(this.communicationTable)
         .onDelete('CASCADE')
+      table
+        .string('provider_message_id', 256)
+        .nullable()
+        .unique()
+        .comment('Gmail/Graph message id for idempotent sync')
+      table.string('message_id_header', 512).nullable().comment('RFC Message-ID for In-Reply-To')
+      table.text('references_header').nullable().comment('RFC References for threading')
+      table
+        .string('provider_thread_id', 256)
+        .nullable()
+        .comment('Gmail threadId for threading replies')
+      table
+        .string('vendor_conversation_uuid')
+        .nullable()
+        .references('uuid')
+        .inTable('envoy_schema.vendor_conversations')
+        .onDelete('SET NULL')
     })
   }
 

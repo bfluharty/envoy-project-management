@@ -47,6 +47,9 @@ export default class Message extends BaseModel {
   @column({ columnName: 'communication_uuid' })
   declare communicationUuid: string
 
+  @column({ columnName: 'vendor_conversation_uuid' })
+  declare vendorConversationUuid: string | null
+
   @belongsTo(() => Communication, { foreignKey: 'communicationUuid', localKey: 'uuid' })
   declare communication: BelongsTo<typeof Communication>
 }
