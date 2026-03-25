@@ -145,7 +145,7 @@ export default class extends BaseSeeder {
         budgetAmount: 55000.0,
         budgetCurrencyId: 2,
         goals: 'Gamified fitness tracking with social features',
-        userUuid: 'c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b4c',
+        userUuid: 'c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b41',
         isActive: true,
       },
     ])

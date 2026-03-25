@@ -50,6 +50,18 @@ export default class Message extends BaseModel {
   @column({ columnName: 'vendor_conversation_uuid' })
   declare vendorConversationUuid: string | null
 
+  @column({ columnName: 'provider_message_id' })
+  declare providerMessageId: string | null
+
+  @column({ columnName: 'message_id_header' })
+  declare messageIdHeader: string | null
+
+  @column({ columnName: 'references_header' })
+  declare referencesHeader: string | null
+
+  @column({ columnName: 'provider_thread_id' })
+  declare providerThreadId: string | null
+
   @belongsTo(() => Communication, { foreignKey: 'communicationUuid', localKey: 'uuid' })
   declare communication: BelongsTo<typeof Communication>
 }

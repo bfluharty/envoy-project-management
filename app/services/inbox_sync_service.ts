@@ -9,6 +9,7 @@ import {
   listInboxMessages as emailServiceListMessages,
   getInboxMessage as emailServiceGetMessage,
 } from './email_communication_service.js'
+import { getOrCreateEmailCommunication } from './email_communication_context.js'
 import logger from '@adonisjs/core/services/logger'
 
 const SYNC_MAX_MESSAGES = 50
@@ -77,8 +78,18 @@ export async function syncConnection(
     const detail = await emailServiceGetMessage(connection, summary.id)
     if (!detail) continue
 
+    const communication = await getOrCreateEmailCommunication(user.uuid, vendor.uuid)
+    if (!communication) {
+      logger.warn(
+        { vendorUuid: vendor.uuid, userUuid: user.uuid },
+        'Inbox sync: vendor not on an active project for this user; skipping message'
+      )
+      continue
+    }
+
     const systemUser = 'inbox-sync'
     await Message.create({
+      communicationUuid: communication.uuid,
       vendorConversationUuid: conversation.uuid,
       subject: detail.subject,
       from: detail.from,
@@ -86,7 +97,6 @@ export async function syncConnection(
       cc: detail.cc ?? undefined,
       body: detail.body || summary.snippet || '',
       createdBy: systemUser,
-      modifiedBy: systemUser,
       sentTimestamp: DateTime.fromJSDate(detail.date),
       providerMessageId: `${connection.provider}:${summary.id}`,
       messageIdHeader: detail.messageId ?? null,

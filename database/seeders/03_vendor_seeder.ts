@@ -23,6 +23,15 @@ export default class extends BaseSeeder {
         isActive: true,
         userUuid: 'c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b4c',
       },
+      {
+        uuid: '0a1b2c3d-4e5f-6a7b-8c9d-1e2f3a4b5c61',
+        name: 'Globex Limited',
+        email: 'vmadari6117@gmail.com',
+        createdBy: 'admin',
+        modifiedBy: 'admin',
+        isActive: true,
+        userUuid: 'c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b41',
+      },
     ])
 
     // Associate vendors with projects via ProjectVendor mapping
@@ -47,6 +56,13 @@ export default class extends BaseSeeder {
           uuid: 'fe037e80-6922-441a-b413-887a856a286b',
           projectUuid: '0e037e80-6922-441a-b413-887a856a286b',
           vendorUuid: 'f1e2d3c4-b5a6-4c7d-8e9f-0a1b2c3d4e5f',
+          statusId: 1,
+          isActive: true,
+        },
+        {
+          uuid: 'fe037e80-6922-441a-b413-887a856a2861',
+          projectUuid: 'a9b0c1d2-e3f4-4a6b-8c8d-9e0f1a2b3c4d',
+          vendorUuid: '0a1b2c3d-4e5f-6a7b-8c9d-1e2f3a4b5c61',
           statusId: 1,
           isActive: true,
         },

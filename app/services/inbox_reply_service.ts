@@ -2,8 +2,10 @@ import { DateTime } from 'luxon'
 import env from '#start/env'
 import logger from '@adonisjs/core/services/logger'
 import UserInboxConnection from '#models/user_inbox_connection'
+import VendorConversation from '#models/vendor_conversation'
 import Message from '#models/message'
 import { sendOnBehalf } from './email_communication_service.js'
+import { getOrCreateEmailCommunication } from './email_communication_context.js'
 
 export interface SendReplyParams {
   to: string
@@ -43,16 +45,32 @@ export async function sendReplyAndRecord(
   vendorConversationUuid: string,
   params: SendReplyParams
 ): Promise<Message> {
+  const vendorConversation = await VendorConversation.query()
+    .where('uuid', vendorConversationUuid)
+    .first()
+  if (!vendorConversation) {
+    throw new Error('Vendor conversation not found')
+  }
+  const communication = await getOrCreateEmailCommunication(
+    connection.userUuid,
+    vendorConversation.vendorUuid
+  )
+  if (!communication) {
+    throw new Error(
+      'This vendor is not linked to a project for your account. Add the vendor to a project first.'
+    )
+  }
+
   const id = await sendReply(connection, params)
   const systemUser = 'envoy-reply'
   const message = await Message.create({
+    communicationUuid: communication.uuid,
     vendorConversationUuid,
     subject: params.subject,
     from: connection.email,
     to: params.to,
     body: params.body,
     createdBy: systemUser,
-    modifiedBy: systemUser,
     sentTimestamp: DateTime.now(),
     providerMessageId: id ? `${connection.provider}:${id}` : null,
     providerThreadId: params.threadId ?? null,
