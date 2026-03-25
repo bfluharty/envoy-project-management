@@ -34,7 +34,7 @@ export default class VendorsAPIController {
 
     // Get all vendors
     try {
-      const vendors = await VendorService.getVendors(limit, offset)
+      const vendors = await VendorService.getUserVendors(userId, limit, offset)
       return response.status(200).json({
         vendors: vendors,
         count: vendors.length,
@@ -73,7 +73,7 @@ export default class VendorsAPIController {
 
     // Get vendor
     try {
-      const vendor = await VendorService.getVendorByUuid(vendorUuid)
+      const vendor = await VendorService.getUserVendorByUuid(userId, vendorUuid)
       if (!vendor) {
         return response.status(404).json({ error: 'Vendor not found' })
       }

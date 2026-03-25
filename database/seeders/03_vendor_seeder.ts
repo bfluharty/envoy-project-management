@@ -12,6 +12,7 @@ export default class extends BaseSeeder {
         createdBy: 'admin',
         modifiedBy: 'admin',
         isActive: true,
+        userUuid: 'b7e1a2e2-1c3a-4b2e-8e7a-1f2b3c4d5e6f',
       },
       {
         uuid: '0a1b2c3d-4e5f-6a7b-8c9d-1e2f3a4b5c6d',
@@ -20,6 +21,7 @@ export default class extends BaseSeeder {
         createdBy: 'admin',
         modifiedBy: 'admin',
         isActive: true,
+        userUuid: 'c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b4c',
       },
     ])
 
