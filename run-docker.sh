@@ -9,6 +9,17 @@ REASONING_SERVICE="reasoning-engine"
 EMAIL_SERVICE="email-service"
 DB_SERVICE="postgres"
 
+# -------------------------------------------------
+# Flags
+# -------------------------------------------------
+LOCAL=false
+
+for arg in "$@"; do
+  case $arg in
+    --local) LOCAL=true ;;
+  esac
+done
+
 # ----------------------------
 # Cleanup function
 # ----------------------------
@@ -32,48 +43,95 @@ wait_for_postgres() {
   echo "Postgres is ready!"
 }
 
-# -------------------------------------------------
-# 1) Start Postgres container
-# -------------------------------------------------
-echo "Starting Postgres..."
-docker compose up -d $DB_SERVICE
+if [ "$LOCAL" = true ]; then
+  # -------------------------------------------------
+  # LOCAL MODE: only Postgres + reasoning-engine + email-service in
+  # Docker; run the Node app natively for fast I/O.
+  # -------------------------------------------------
 
-# Wait for DB to be ready
-wait_for_postgres
+  # -------------------------------------------------
+  # 0) Patch knex exports (required by @adonisjs/lucid)
+  # -------------------------------------------------
+  echo "Patching knex..."
+  node -e "
+    const fs = require('fs');
+    const p = './node_modules/knex/package.json';
+    const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+    delete pkg.exports;
+    fs.writeFileSync(p, JSON.stringify(pkg, null, 2));
+  "
 
-# -------------------------------------------------
-# 2) Start reasoning-engine and email-service containers
-# -------------------------------------------------
-echo "Starting reasoning engine..."
-docker compose up -d $REASONING_SERVICE
+  # -------------------------------------------------
+  # 1) Start Postgres + reasoning-engine + email-service containers
+  # -------------------------------------------------
+  echo "Starting Postgres, reasoning engine, and email service..."
+  docker compose up -d $DB_SERVICE $REASONING_SERVICE $EMAIL_SERVICE
 
-echo "Starting email service..."
-docker compose up -d $EMAIL_SERVICE
+  wait_for_postgres
 
-# -------------------------------------------------
-# 3) Install dependencies only if node_modules is missing key packages (fast after first run)
-# -------------------------------------------------
-if ! docker compose run --rm $PROJECT_SERVICE test -d node_modules/@adonisjs/mail 2>/dev/null; then
-  echo "Installing dependencies (first run or after volume reset)..."
-  docker compose run --rm $PROJECT_SERVICE npm ci --registry https://registry.npmjs.org/
+  # -------------------------------------------------
+  # 2) Run migrations locally
+  # -------------------------------------------------
+  echo "Running migrations..."
+  DB_HOST=localhost node ace migration:run
+
+  # -------------------------------------------------
+  # 2) Run database seeders locally
+  # -------------------------------------------------
+  echo "Seeding database..."
+  DB_HOST=localhost node ace db:seed
+
+  # -------------------------------------------------
+  # 3) Start dev server locally
+  # -------------------------------------------------
+  echo "Starting dev server locally..."
+  DB_HOST=localhost npm run dev
+
 else
-  echo "Dependencies already installed, skipping npm ci."
+  # -------------------------------------------------
+  # DOCKER MODE (default)
+  # -------------------------------------------------
+
+  # -------------------------------------------------
+  # 0) Build images and reset node_modules volume
+  # -------------------------------------------------
+  echo "Building images..."
+  docker compose build
+
+  echo "Resetting node_modules volume..."
+  docker volume rm -f envoy-project-management_project_management_node_modules 2>/dev/null || true
+
+  # -------------------------------------------------
+  # 1) Start Postgres container
+  # -------------------------------------------------
+  echo "Starting Postgres..."
+  docker compose up -d $DB_SERVICE
+
+  # Wait for DB to be ready
+  wait_for_postgres
+
+  # -------------------------------------------------
+  # 2) Start reasoning-engine and email-service containers (live reload)
+  # -------------------------------------------------
+  echo "Starting reasoning engine and email service..."
+  docker compose up -d $REASONING_SERVICE $EMAIL_SERVICE
+
+  # -------------------------------------------------
+  # 3) Run migrations
+  # -------------------------------------------------
+  echo "Running migrations..."
+  docker compose run --rm $PROJECT_SERVICE node ace migration:run
+
+  # -------------------------------------------------
+  # 4) Run database seeders
+  # -------------------------------------------------
+  echo "Seeding database..."
+  docker compose run --rm $PROJECT_SERVICE node ace db:seed
+
+  # -------------------------------------------------
+  # 5) Start project-management container (live reload)
+  # -------------------------------------------------
+  echo "Starting project management..."
+  docker compose up $PROJECT_SERVICE
+
 fi
-
-# -------------------------------------------------
-# 4) Run migrations
-# -------------------------------------------------
-echo "Running migrations..."
-docker compose run --rm $PROJECT_SERVICE node ace migration:run
-
-# -------------------------------------------------
-# 5) Run database seeders
-# -------------------------------------------------
-echo "Seeding database..."
-docker compose run --rm $PROJECT_SERVICE node ace db:seed
-
-# -------------------------------------------------
-# 6) Start project-management container (live reload)
-# -------------------------------------------------
-echo "Starting project management..."
-docker compose up $PROJECT_SERVICE

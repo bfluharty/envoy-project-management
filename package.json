@@ -19,7 +19,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "prepare": "husky"
+    "prepare": "husky",
+    "dev:local": "sh run-docker.sh --local"
   },
   "lint-staged": {
     "*.ts": [
@@ -105,6 +106,9 @@
       "./app/controllers/**/*.ts",
       "./app/middleware/*.ts"
     ]
+  },
+  "optionalDependencies": {
+    "@swc/core-linux-x64-musl": "1.11.24"
   },
   "prettier": "@adonisjs/prettier-config"
 }
