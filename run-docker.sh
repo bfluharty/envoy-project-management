@@ -6,6 +6,7 @@ set -e
 # -------------------------------------------------
 PROJECT_SERVICE="project-management"
 REASONING_SERVICE="reasoning-engine"
+EMAIL_SERVICE="email-service"
 DB_SERVICE="postgres"
 
 # ----------------------------
@@ -41,10 +42,13 @@ docker compose up -d $DB_SERVICE
 wait_for_postgres
 
 # -------------------------------------------------
-# 2) Start reasoning-engine container (live reload)
+# 2) Start reasoning-engine and email-service containers
 # -------------------------------------------------
 echo "Starting reasoning engine..."
 docker compose up -d $REASONING_SERVICE
+
+echo "Starting email service..."
+docker compose up -d $EMAIL_SERVICE
 
 # -------------------------------------------------
 # 3) Install dependencies only if node_modules is missing key packages (fast after first run)

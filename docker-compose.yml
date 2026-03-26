@@ -20,6 +20,16 @@ services:
       postgres:
         condition: service_healthy
 
+  email-service:
+    build:
+      context: ../envoy-email-service
+      dockerfile: Dockerfile.dev
+    image: envoy-email-service:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - EMAIL_SERVICE_API_KEY=${EMAIL_SERVICE_API_KEY}
+
   reasoning-engine:
     build:
       context: ../reasoning-engine
