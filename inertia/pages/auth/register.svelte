@@ -1,11 +1,11 @@
 <script lang="ts">
   import { router } from '@inertiajs/svelte'
 
-  let fullName = ''
-  let email = ''
-  let password = ''
-  let passwordConfirmation = ''
-  let processing = false
+  let fullName = $state('')
+  let email = $state('')
+  let password = $state('')
+  let passwordConfirmation = $state('')
+  let processing = $state(false)
 
   function handleSubmit(event: Event) {
     event.preventDefault()
@@ -40,7 +40,7 @@
       </p>
     </div>
 
-    <form class="mt-8 space-y-6" on:submit={handleSubmit}>
+    <form class="mt-8 space-y-6" onsubmit={handleSubmit}>
       <div class="space-y-4">
         <label class="label">
           <span>Full Name</span>

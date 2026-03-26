@@ -1,14 +1,14 @@
 <script lang="ts">
   import { router } from '@inertiajs/svelte'
 
-  export let flashMessage: any = null
+  const { flashMessage = null }: { flashMessage: { type?: string; message?: string } | null } = $props()
 
-  let email = ''
-  let password = ''
-  let processing = false
-  let errors: any = {}
-  let showError = false
-  let errorMessage = ''
+  let email = $state('')
+  let password = $state('')
+  let processing = $state(false)
+  let errors = $state<any>({})
+  let showError = $state(false)
+  let errorMessage = $state('')
 
   function handleSubmit(event: Event) {
     event.preventDefault()
@@ -16,29 +16,23 @@
     errors = {}
     showError = false
 
-    router.post('/login', {
-      email,
-      password
-    }, {
-      onFinish: () => {
-        processing = false
-      },
+    router.post('/login', { email, password }, {
+      onFinish: () => { processing = false },
       onError: (responseErrors) => {
         processing = false
         errors = responseErrors || {}
         showError = true
         errorMessage = 'Invalid email or password. Please try again.'
-      }
+      },
     })
   }
 
-  // Handle flash messages
-  $: if (flashMessage) {
-    if (flashMessage.type === 'error') {
+  $effect(() => {
+    if (flashMessage?.type === 'error') {
       showError = true
-      errorMessage = flashMessage.message
+      errorMessage = flashMessage.message ?? ''
     }
-  }
+  })
 </script>
 
 <svelte:head>
@@ -57,7 +51,7 @@
       </p>
     </div>
 
-    <form class="mt-8 space-y-6" on:submit={handleSubmit}>
+    <form class="mt-8 space-y-6" onsubmit={handleSubmit}>
       {#if showError}
         <aside class="card preset-tonal-error p-4">
           <p>{errorMessage}</p>

@@ -44,12 +44,7 @@ export const createProjectValidator = vine.compile(
     budgetCurrency: vine.string().optional(),
     goals: vine.string().optional(),
     isActive: vine.boolean().optional(),
-    vendors: vine
-      .object({
-        toAddVendorIds: vine.array(vine.string().uuid()).optional(),
-        toRemoveVendorIds: vine.array(vine.string().uuid()).optional(),
-      })
-      .optional(),
+    vendors: vine.array(vine.string().uuid()).optional(),
   })
 )
 
@@ -83,12 +78,7 @@ export const updateProjectValidator = vine.compile(
     budgetCurrency: vine.string().optional(),
     goals: vine.string().optional(),
     isActive: vine.boolean().optional(),
-    vendors: vine
-      .object({
-        toAddVendorIds: vine.array(vine.string().uuid()).optional(),
-        toRemoveVendorIds: vine.array(vine.string().uuid()).optional(),
-      })
-      .optional(),
+    vendors: vine.array(vine.string().uuid()).optional(),
   })
 )
 

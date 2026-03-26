@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//d/documents/**)",
+      "Bash(npm run:*)",
+      "Skill(playwright-cli)"
+    ]
+  }
+}

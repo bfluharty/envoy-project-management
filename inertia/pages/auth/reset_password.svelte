@@ -1,15 +1,14 @@
 <script lang="ts">
   import { router } from '@inertiajs/svelte'
 
-  export let token: string = ''
-  export let flashMessage: { type?: string; message?: string } | null = null
+  const { token = '', flashMessage = null }: { token: string; flashMessage: { type?: string; message?: string } | null } = $props()
 
-  let password = ''
-  let passwordConfirmation = ''
-  let processing = false
-  let errors: Record<string, string[]> = {}
-  let showError = false
-  let errorMessage = ''
+  let password = $state('')
+  let passwordConfirmation = $state('')
+  let processing = $state(false)
+  let errors = $state<Record<string, string[]>>({})
+  let showError = $state(false)
+  let errorMessage = $state('')
 
   function handleSubmit(event: Event) {
     event.preventDefault()
@@ -27,10 +26,12 @@
     })
   }
 
-  $: if (flashMessage?.type === 'error') {
-    showError = true
-    errorMessage = flashMessage.message ?? 'Something went wrong.'
-  }
+  $effect(() => {
+    if (flashMessage?.type === 'error') {
+      showError = true
+      errorMessage = flashMessage.message ?? 'Something went wrong.'
+    }
+  })
 </script>
 
 <svelte:head>
@@ -46,7 +47,7 @@
       </p>
     </div>
 
-    <form class="mt-8 space-y-6" on:submit={handleSubmit}>
+    <form class="mt-8 space-y-6" onsubmit={handleSubmit}>
       {#if showError}
         <aside class="card preset-tonal-error p-4">
           <p>{errorMessage}</p>

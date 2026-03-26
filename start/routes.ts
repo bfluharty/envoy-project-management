@@ -9,7 +9,9 @@
 
 import router from '@adonisjs/core/services/router'
 import { middleware } from './kernel.js'
-const ProjectsController = () => import('#controllers/web/projects_controller')
+const ProjectsController = () => import('#controllers/web/projects/projects_controller')
+const ConvoController = () => import('#controllers/web/projects/convo_controller')
+const OverviewController = () => import('#controllers/web/projects/overview_controller')
 const ProjectsAPIController = () => import('#controllers/api/projects_api_controller')
 const VendorsAPIController = () => import('#controllers/api/vendors_api_controller')
 const AuthController = () => import('#controllers/web/auth_controller')
@@ -68,9 +70,9 @@ router
 
     router.post('/', [ProjectsController, 'store'])
 
-    router.patch('/:uuid', [ProjectsController, 'update'])
+    router.patch('/:uuid', [OverviewController, 'update'])
 
-    router.post('/:uuid/chat', [ProjectsController, 'chat'])
+    router.post('/:uuid/chat', [ConvoController, 'chat'])
   })
   .prefix('/projects')
   .middleware(middleware.auth())

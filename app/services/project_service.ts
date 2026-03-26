@@ -1,6 +1,6 @@
 import Project from '#models/project'
 import logger from '@adonisjs/core/services/logger'
-import { ProjectRequest, ProjectVendorRequest } from '../../types/request.js'
+import { ProjectRequest } from '../../types/request.js'
 import { Turn } from '../../types/turn.js'
 import ConversationTurn from '#models/conversation_turn'
 import ProjectVendor from '#models/project_vendor'
@@ -45,7 +45,7 @@ export default class ProjectService {
   public static async createProject(userUuid: string, request: ProjectRequest) {
     const mappedRequest = await this.mapRequest(request, userUuid)
     const project = await Project.create(mappedRequest)
-    const errors = await this.handleVendorUpdates(project.uuid, request.vendors)
+    const errors = await this.handleVendorUpdates(project.uuid, userUuid, request.vendors)
     const projectVendors = await ProjectVendor.query()
       .where('project_uuid', project.uuid)
       .andWhere('is_active', true)
@@ -78,7 +78,7 @@ export default class ProjectService {
     const mappedRequest = await this.mapRequest(request)
     await project.merge(mappedRequest).save()
 
-    const errors = await this.handleVendorUpdates(projectUuid, request.vendors)
+    const errors = await this.handleVendorUpdates(projectUuid, userUuid, request.vendors)
 
     const updatedProject = await Project.query()
       .where('user_uuid', userUuid)
@@ -163,107 +163,63 @@ export default class ProjectService {
 
   private static async handleVendorUpdates(
     projectUuid: string,
-    vendorRequest?: ProjectVendorRequest
+    userUuid: string,
+    vendorUuids?: string[]
   ) {
-    if (!vendorRequest) {
-      return
+    if (vendorUuids === undefined) {
+      return []
     }
 
-    const existingProjectVendors = await ProjectVendor.query()
+    // Filter to only vendors owned by this user (silently ignore others per spec §8)
+    const ownedVendors =
+      vendorUuids.length > 0
+        ? await Vendor.query()
+            .whereIn('uuid', vendorUuids)
+            .where('user_uuid', userUuid)
+            .select('uuid')
+        : []
+    const validUuids = new Set(ownedVendors.map((v) => v.uuid))
+
+    const existingRows = await ProjectVendor.query()
       .where('project_uuid', projectUuid)
       .select('vendor_uuid', 'is_active')
+    const existingMap = new Map(existingRows.map((r) => [r.vendorUuid, r.isActive]))
 
-    const existingVendorMap = new Map(existingProjectVendors.map((v) => [v.vendorUuid, v.isActive]))
-
-    const errors = []
-
-    try {
-      await this.handleAddingVendors(projectUuid, vendorRequest.toAddVendorIds, existingVendorMap)
-      await this.handleRemovingVendors(
-        projectUuid,
-        vendorRequest.toRemoveVendorIds,
-        existingVendorMap
-      )
-    } catch (error) {
-      errors.push(
-        error instanceof Error ? error.message : 'Unknown error occurred while updating vendors'
-      )
-    }
-    return errors
-  }
-
-  private static async handleAddingVendors(
-    projectUuid: string,
-    vendorIds?: string[],
-    existingVendorMap?: Map<string, boolean>
-  ) {
-    if (!vendorIds?.length || !existingVendorMap) {
-      return
+    // Deactivate rows no longer in the submitted list
+    const toDeactivate = [...existingMap.keys()].filter((id) => !validUuids.has(id))
+    if (toDeactivate.length) {
+      logger.info(`Deactivating vendors for project ${projectUuid}: ${toDeactivate.join(', ')}`)
+      await ProjectVendor.query()
+        .where('project_uuid', projectUuid)
+        .whereIn('vendor_uuid', toDeactivate)
+        .update({ isActive: false })
     }
 
-    const validVendors = await Vendor.query().whereIn('uuid', vendorIds).select('uuid')
-    const validVendorSet = new Set(validVendors.map((v) => v.uuid))
-
-    const invalidVendorIds = vendorIds.filter((id) => !validVendorSet.has(id))
-    if (invalidVendorIds.length) {
-      logger.error(`Invalid vendor IDs provided for addition: ${invalidVendorIds.join(', ')}`)
-      throw new Error(`The following vendor IDs do not exist: ${invalidVendorIds.join(', ')}`)
-    }
-
-    const vendorsToReactivate: string[] = []
-    const vendorsToCreate: string[] = []
-
-    for (const vendorId of vendorIds) {
-      if (existingVendorMap.has(vendorId)) {
-        if (!existingVendorMap.get(vendorId)) {
-          vendorsToReactivate.push(vendorId)
-        }
+    // Reactivate or create rows for each valid UUID
+    const toReactivate: string[] = []
+    const toCreate: string[] = []
+    for (const uuid of validUuids) {
+      if (existingMap.has(uuid)) {
+        if (!existingMap.get(uuid)) toReactivate.push(uuid)
       } else {
-        vendorsToCreate.push(vendorId)
+        toCreate.push(uuid)
       }
     }
 
-    if (vendorsToReactivate.length) {
-      logger.info(
-        `Reactivating vendors for project ${projectUuid}: ${vendorsToReactivate.join(', ')}`
-      )
+    if (toReactivate.length) {
+      logger.info(`Reactivating vendors for project ${projectUuid}: ${toReactivate.join(', ')}`)
       await ProjectVendor.query()
         .where('project_uuid', projectUuid)
-        .whereIn('vendor_uuid', vendorsToReactivate)
+        .whereIn('vendor_uuid', toReactivate)
         .update({ isActive: true })
     }
 
-    if (vendorsToCreate.length) {
-      logger.info(`Adding new vendors for project ${projectUuid}: ${vendorsToCreate.join(', ')}`)
-      await ProjectVendor.createMany(
-        vendorsToCreate.map((vendorUuid) => ({
-          projectUuid,
-          vendorUuid,
-        }))
-      )
-    }
-  }
-
-  private static async handleRemovingVendors(
-    projectUuid: string,
-    vendorIds?: string[],
-    existingVendorMap?: Map<string, boolean>
-  ) {
-    if (!vendorIds?.length || !existingVendorMap) {
-      return
+    if (toCreate.length) {
+      logger.info(`Adding vendors for project ${projectUuid}: ${toCreate.join(', ')}`)
+      await ProjectVendor.createMany(toCreate.map((vendorUuid) => ({ projectUuid, vendorUuid })))
     }
 
-    const invalidVendorIds = vendorIds.filter((id) => !existingVendorMap.has(id))
-    if (invalidVendorIds.length) {
-      logger.error(`Invalid vendor IDs provided for removal: ${invalidVendorIds.join(', ')}`)
-      throw new Error(`The following vendor IDs do not exist: ${invalidVendorIds.join(', ')}`)
-    }
-
-    logger.info(`Deactivating vendors for project ${projectUuid}: ${vendorIds.join(', ')}`)
-    await ProjectVendor.query()
-      .where('project_uuid', projectUuid)
-      .whereIn('vendor_uuid', vendorIds)
-      .update({ isActive: false })
+    return []
   }
   private static async resolveCurrencyId(currencyCode: string): Promise<number> {
     const currency = await Currency.query()
