@@ -2,7 +2,7 @@
 import Sidebar from "#components/sidebar.svelte";
 import Logo from '#components/logo.svelte';
 import { UserIcon } from '@lucide/svelte';
-import { onMount } from 'svelte';
+import { onMount, untrack } from 'svelte';
 import { SegmentedControl } from "@skeletonlabs/skeleton-svelte";
 
 interface ChatMessage {
@@ -51,9 +51,9 @@ const {
 let activeTab = $state<'convo' | 'outreach' | 'overview'>('convo');
 
 // ── Chat state ─────────────────────────────────────────────
-let idCounter = conversationHistory.length;
+let idCounter = untrack(() => conversationHistory.length);
 let messages = $state<ChatMessage[]>(
-    conversationHistory.map((m, i) => ({ id: i, role: m.role, content: m.content }))
+    untrack(() => conversationHistory.map((m, i) => ({ id: i, role: m.role, content: m.content })))
 );
 let input = $state('');
 let isLoading = $state(false);
@@ -113,17 +113,23 @@ function retryMessage(retryPrompt: string, retryVariables: Record<string, any> =
 }
 
 // ── Overview state ─────────────────────────────────────────
-let localProject = $state({ ...project });
-let localLinked = $state<Vendor[]>([...linkedVendors]);
+let localProject = $state(untrack(() => ({ ...project })));
+let localLinked = $state<Vendor[]>(untrack(() => [...linkedVendors]));
+let localAllVendors = $state<Vendor[]>(untrack(() => [...allVendors]));
 let editMode = $state(false);
 let saving = $state(false);
 let saveError = $state<string | null>(null);
 let fieldErrors = $state<Record<string, string>>({});
 let attachingVendor = $state(false);
 let selectedVendorUuid = $state('');
+let showNewContactForm = $state(false);
+let newContactName = $state('');
+let newContactEmail = $state('');
+let newContactErrors = $state<{ name?: string; email?: string }>({});
+let creatingContact = $state(false);
 
 let unlinkedVendors = $derived(
-    allVendors.filter((v) => !localLinked.some((l) => l.uuid === v.uuid))
+    localAllVendors.filter((v) => !localLinked.some((l) => l.uuid === v.uuid))
 );
 
 async function patchProject(body: Record<string, unknown>) {
@@ -174,7 +180,7 @@ async function attachVendor() {
         const newList = [...localLinked.map((v) => v.uuid), selectedVendorUuid];
         const res = await patchProject({ vendors: newList });
         if (res.ok) {
-            const vendor = allVendors.find((v) => v.uuid === selectedVendorUuid)!;
+            const vendor = localAllVendors.find((v) => v.uuid === selectedVendorUuid)!;
             localLinked = [...localLinked, vendor];
             selectedVendorUuid = '';
         }
@@ -188,6 +194,41 @@ async function detachVendor(vendorUuid: string) {
     const res = await patchProject({ vendors: newList });
     if (res.ok) {
         localLinked = localLinked.filter((v) => v.uuid !== vendorUuid);
+    }
+}
+
+async function createAndAttachContact(e: Event) {
+    e.preventDefault();
+    newContactErrors = {};
+    if (!newContactName.trim()) newContactErrors.name = 'Name is required.';
+    if (!newContactEmail.trim()) newContactErrors.email = 'Email is required.';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newContactEmail.trim())) newContactErrors.email = 'Must be a valid email address.';
+    if (newContactErrors.name || newContactErrors.email) return;
+
+    creatingContact = true;
+    try {
+        const createRes = await fetch('/contacts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            body: JSON.stringify({ name: newContactName.trim(), email: newContactEmail.trim() }),
+        });
+        if (!createRes.ok) {
+            const data = await createRes.json().catch(() => ({}));
+            newContactErrors = data?.errors ?? { email: 'Failed to create contact.' };
+            return;
+        }
+        const { contact } = await createRes.json();
+        const newList = [...localLinked.map((v) => v.uuid), contact.uuid];
+        const patchRes = await patchProject({ vendors: newList });
+        if (patchRes.ok) {
+            localLinked = [...localLinked, contact];
+            localAllVendors = [...localAllVendors, contact];
+            newContactName = '';
+            newContactEmail = '';
+            showNewContactForm = false;
+        }
+    } finally {
+        creatingContact = false;
     }
 }
 
@@ -431,7 +472,7 @@ onMount(() => {
         {/if}
 
         {#if unlinkedVendors.length > 0}
-            <div class="flex gap-2 items-center">
+            <div class="flex gap-2 items-center mb-3">
                 <select class="select flex-1" bind:value={selectedVendorUuid} disabled={attachingVendor}>
                     <option value="">Attach a contact…</option>
                     {#each unlinkedVendors as v (v.uuid)}
@@ -444,6 +485,40 @@ onMount(() => {
                     {attachingVendor ? 'Attaching…' : 'Attach'}
                 </button>
             </div>
+        {/if}
+
+        {#if showNewContactForm}
+            <form onsubmit={createAndAttachContact} novalidate class="space-y-2 pt-1">
+                <div class="flex gap-2">
+                    <div class="flex-1">
+                        <input class="input w-full text-sm" type="text" bind:value={newContactName}
+                            placeholder="Name" disabled={creatingContact} />
+                        {#if newContactErrors.name}
+                            <p class="text-error-500 text-xs mt-0.5">{newContactErrors.name}</p>
+                        {/if}
+                    </div>
+                    <div class="flex-1">
+                        <input class="input w-full text-sm" type="email" bind:value={newContactEmail}
+                            placeholder="Email" disabled={creatingContact} />
+                        {#if newContactErrors.email}
+                            <p class="text-error-500 text-xs mt-0.5">{newContactErrors.email}</p>
+                        {/if}
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button class="btn btn-sm preset-filled-primary-500" type="submit" disabled={creatingContact}>
+                        {creatingContact ? 'Adding…' : 'Add & Attach'}
+                    </button>
+                    <button class="btn btn-sm preset-tonal" type="button"
+                        onclick={() => { showNewContactForm = false; newContactName = ''; newContactEmail = ''; newContactErrors = {}; }}>
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        {:else}
+            <button class="btn btn-sm preset-tonal" onclick={() => showNewContactForm = true}>
+                + New contact
+            </button>
         {/if}
     </section>
 

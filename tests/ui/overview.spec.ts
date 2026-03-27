@@ -283,8 +283,8 @@ test.describe('contacts section', () => {
     await page.getByRole('button', { name: 'Attach' }).click()
 
     await expect(page.getByText('Acme Corp')).toBeVisible()
-    // Acme Corp was the only unlinked vendor, so the attach UI disappears
-    await expect(page.getByRole('button', { name: 'Attach' })).not.toBeVisible()
+    // After successful attach, no vendor is selected, so attach is disabled.
+    await expect(page.getByRole('button', { name: 'Attach' })).toBeDisabled()
   })
 
   test('detach contact removes from list', async ({ page }) => {

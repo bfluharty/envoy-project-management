@@ -16,16 +16,22 @@ export default async function globalSetup() {
   const page = await browser.newPage()
 
   try {
-    // Login
-    await page.goto('http://localhost:8080/login')
-    await page.waitForLoadState('domcontentloaded')
-    await page.fill('input[name=email]', 'alice@example.com')
-    await page.fill('input[name=password]', 'hashedpassword1')
-    await page.click('button[type=submit]')
+    // Login through HTTP to avoid UI render flakiness on /login.
+    const loginResponse = await page.request.post('http://localhost:8080/login', {
+      form: {
+        email: 'alice@example.com',
+        password: 'hashedpassword1',
+      },
+    })
+
+    if (!loginResponse.ok() && ![302, 303].includes(loginResponse.status())) {
+      throw new Error(`Global setup login failed with status ${loginResponse.status()}`)
+    }
 
     // Wait for the dashboard to fully load — this is when Vite re-optimizes
     // home.svelte's skeleton-svelte imports. Use a long timeout to allow for
     // the automatic full-reload Vite triggers after re-optimization.
+    await page.goto('http://localhost:8080/dashboard')
     await page.waitForURL('**/dashboard', { waitUntil: 'load', timeout: 60000 })
     await page.waitForLoadState('networkidle', { timeout: 30000 })
 

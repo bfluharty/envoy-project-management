@@ -9,6 +9,7 @@
 
 import router from '@adonisjs/core/services/router'
 import { middleware } from './kernel.js'
+const ContactsController = () => import('#controllers/web/contacts_controller')
 const ProjectsController = () => import('#controllers/web/projects/projects_controller')
 const ConvoController = () => import('#controllers/web/projects/convo_controller')
 const OverviewController = () => import('#controllers/web/projects/overview_controller')
@@ -59,6 +60,17 @@ router
     router.post('/disconnect', [InboxController, 'disconnect']).as('inbox.disconnect')
   })
   .prefix('/inbox')
+  .middleware(middleware.auth())
+
+// UI routes for contacts
+router
+  .group(() => {
+    router.get('/', [ContactsController, 'index'])
+    router.post('/', [ContactsController, 'store'])
+    router.patch('/:uuid', [ContactsController, 'update'])
+    router.delete('/:uuid', [ContactsController, 'destroy'])
+  })
+  .prefix('/contacts')
   .middleware(middleware.auth())
 
 // UI routes for projects
