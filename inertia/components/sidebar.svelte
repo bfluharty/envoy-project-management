@@ -83,6 +83,7 @@ function handleLogout() {
 		onclick={toggleDrawer}
 		class="btn-icon btn-icon-lg hover:preset-tonal-surface transition-all duration-200"
 		aria-label="Toggle menu"
+		aria-expanded={drawerOpen}
 	>
 		{#if drawerOpen}
 			<XIcon class="size-6" />
@@ -98,6 +99,7 @@ function handleLogout() {
 		class="lg:hidden fixed inset-0 z-40 bg-black/50"
 		onclick={closeDrawer}
 		aria-label="Close menu"
+		tabindex="-1"
 	></button>
 {/if}
 
@@ -165,8 +167,8 @@ function handleLogout() {
 		<Navigation.Footer>
 			{#if user}
 				<div class="px-2 py-2 border-t border-surface-200-800 flex items-center space-x-2">
-					<div class="w-2 h-2 bg-primary-500 rounded-full animate-pulse"></div>
-					<p class="text-sm text-light text-surface-200">
+					<div class="w-2 h-2 bg-primary-500 rounded-full motion-safe:animate-pulse"></div>
+					<p class="text-sm text-surface-400">
 						Welcome, <span class="font-semibold text-surface-900-100">{user.fullName || user.email || 'User'}</span>
 					</p>
 				</div>
@@ -184,7 +186,7 @@ function handleLogout() {
 	</Navigation>
 
 	<!-- Main Content -->
-	<main class="flex justify-center items-center flex-col pt-16 lg:pt-0 min-h-screen overflow-y-auto">
+	<main class="flex justify-center items-center flex-col pt-[4.5rem] lg:pt-0 min-h-screen overflow-y-auto">
 		{@render children()}
 	</main>
 </div>

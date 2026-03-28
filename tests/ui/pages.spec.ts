@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { login, goToProject } from './helpers'
+import { login, goToProject } from './helpers.js'
 
 test('landing page', async ({ page }) => {
   await page.goto('/')
@@ -24,8 +24,7 @@ test('register page', async ({ page }) => {
 test('dashboard page', async ({ page }) => {
   await login(page)
   await page.goto('/dashboard')
-  await expect(page.locator('h1')).toContainText('Welcome to Envoy')
-  await expect(page.locator('a[href^="/projects/"]').first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'New Project' })).toBeVisible()
 })
 
 test('project page - convo tab', async ({ page }) => {

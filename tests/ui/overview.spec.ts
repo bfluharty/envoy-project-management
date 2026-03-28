@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { login, goToProject, PROJECT_ALPHA_UUID } from './helpers'
+import { login, goToProject, PROJECT_ALPHA_UUID } from './helpers.js'
 
 // Data Analytics Dashboard — Alice owns it, no linked vendors, Acme Corp available to attach
 const NO_VENDOR_PROJECT_UUID = 'b3c4d5e6-f7a8-4b0c-8d2e-3f4a5b6c7d8e'
@@ -122,7 +122,7 @@ test.describe('overview project details read mode', () => {
     await page.getByRole('button', { name: 'Edit' }).click()
     await page.getByLabel('Budget').fill('0')
     await page.getByRole('button', { name: 'Save' }).click()
-    await page.waitForFunction(() => !document.querySelector('form'))
+    await page.waitForFunction("!document.querySelector('form')")
 
     // Budget row should be hidden when value is 0
     const budgetLabel = page.getByText('Budget', { exact: false }).filter({ hasText: 'Budget' })
@@ -141,6 +141,7 @@ test.describe('overview edit mode', () => {
     const originalDescription = 'First project'
 
     await page.getByRole('button', { name: 'Edit' }).click()
+    await expect(page.getByLabel('Project Name')).toBeVisible()
     await expect(page.getByLabel('Description')).toBeVisible()
 
     await page.getByLabel('Description').fill('changed description')
@@ -279,12 +280,12 @@ test.describe('contacts section', () => {
       }
     })
 
-    await page.getByRole('combobox').selectOption({ value: ACME_UUID })
-    await page.getByRole('button', { name: 'Attach' }).click()
+    await page.getByRole('button', { name: 'Edit' }).nth(1).click()
+    await page.getByRole('button', { name: '+ Attach existing' }).click()
+    await page.getByRole('checkbox', { name: /Acme Corp/ }).check()
+    await page.getByRole('button', { name: /Attach/ }).click()
 
     await expect(page.getByText('Acme Corp')).toBeVisible()
-    // After successful attach, no vendor is selected, so attach is disabled.
-    await expect(page.getByRole('button', { name: 'Attach' })).toBeDisabled()
   })
 
   test('detach contact removes from list', async ({ page }) => {
@@ -304,6 +305,7 @@ test.describe('contacts section', () => {
       }
     })
 
+    await page.getByRole('button', { name: 'Edit' }).nth(1).click()
     await page.getByRole('button', { name: 'Detach' }).click()
 
     await expect(page.getByText('Acme Corp')).not.toBeVisible()
@@ -314,7 +316,7 @@ test.describe('contacts section', () => {
     ).toBeVisible()
   })
 
-  test('attach button is disabled while request is in-flight', async ({ page }) => {
+  test('contact is disabled while attach request is in-flight', async ({ page }) => {
     await login(page)
     await goToProject(page, NO_VENDOR_PROJECT_UUID)
     await page.getByRole('radio', { name: 'overview' }).click({ force: true })
@@ -340,11 +342,13 @@ test.describe('contacts section', () => {
       }
     })
 
-    await page.getByRole('combobox').selectOption({ value: ACME_UUID })
-    await page.getByRole('button', { name: 'Attach' }).click()
+    await page.getByRole('button', { name: 'Edit' }).nth(1).click()
+    await page.getByRole('button', { name: '+ Attach existing' }).click()
+    await page.getByRole('checkbox', { name: /Acme Corp/ }).check()
+    await page.getByRole('button', { name: /Attach/ }).click()
 
-    // Button should be disabled while the request is pending
-    await expect(page.getByRole('button', { name: /Attaching/ })).toBeDisabled()
+    // Attach button shows attaching state and is disabled while the request is pending
+    await expect(page.getByRole('button', { name: 'Attaching…' })).toBeDisabled()
 
     // Unblock the request
     resolveRequest!()

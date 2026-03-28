@@ -2,6 +2,7 @@
 import Sidebar from '#components/sidebar.svelte';
 import { page } from '@inertiajs/svelte';
 import { untrack } from 'svelte';
+import { isValidEmail } from '../../utils/format';
 
 interface Contact {
   uuid: string;
@@ -14,6 +15,10 @@ const { contacts: initialContacts }: { contacts: Contact[] } = $props();
 // Local reactive list
 let contacts = $state<Contact[]>(untrack(() => [...initialContacts]));
 
+// Page-level edit mode
+let pageEditMode = $state(false);
+let showAddForm = $state(false);
+
 // Add form state
 let addName = $state('');
 let addEmail = $state('');
@@ -25,22 +30,33 @@ let editing = $state<Record<string, { name: string; email: string } | null>>({})
 let saving = $state<Record<string, boolean>>({});
 let editErrors = $state<Record<string, { name?: string; email?: string }>>({});
 
+// Confirmation guard for destructive remove action
+let pendingRemove = $state<string | null>(null);
+
 // Inertia shared errors (for add form redirect-back errors)
 const pageErrors = $derived(($page.props.errors as Record<string, string[]>) ?? {});
+
+function exitEditMode() {
+  pageEditMode = false;
+  showAddForm = false;
+  addName = '';
+  addEmail = '';
+  addErrors = {};
+  pendingRemove = null;
+  // Cancel all open inline edits
+  for (const uuid of Object.keys(editing)) {
+    editing[uuid] = null;
+    editErrors[uuid] = {};
+  }
+}
 
 async function submitAdd(e: Event) {
   e.preventDefault();
   addErrors = {};
 
-  // Client-side validation
-  if (!addName.trim()) {
-    addErrors = { ...addErrors, name: 'Name is required.' };
-  }
-  if (!addEmail.trim()) {
-    addErrors = { ...addErrors, email: 'Email is required.' };
-  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addEmail.trim())) {
-    addErrors = { ...addErrors, email: 'Must be a valid email address.' };
-  }
+  if (!addName.trim()) addErrors = { ...addErrors, name: 'Name is required.' };
+  if (!addEmail.trim()) addErrors = { ...addErrors, email: 'Email is required.' };
+  else if (!isValidEmail(addEmail)) addErrors = { ...addErrors, email: 'Must be a valid email address.' };
   if (addErrors.name || addErrors.email) return;
 
   addSubmitting = true;
@@ -56,12 +72,13 @@ async function submitAdd(e: Event) {
       contacts = [...contacts, data.contact];
       addName = '';
       addEmail = '';
+      showAddForm = false;
     } else {
       if (data?.errors) addErrors = data.errors;
       else addErrors = { email: data?.error ?? 'Something went wrong. Please try again.' };
     }
   } catch {
-    addErrors = { name: undefined, email: 'Something went wrong. Please try again.' };
+    addErrors = { email: 'Something went wrong. Please try again.' };
   } finally {
     addSubmitting = false;
   }
@@ -82,14 +99,9 @@ async function saveEdit(uuid: string) {
   if (!draft) return;
 
   editErrors[uuid] = {};
-  if (!draft.name.trim()) {
-    editErrors[uuid] = { ...editErrors[uuid], name: 'Name is required.' };
-  }
-  if (!draft.email.trim()) {
-    editErrors[uuid] = { ...editErrors[uuid], email: 'Email is required.' };
-  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim())) {
-    editErrors[uuid] = { ...editErrors[uuid], email: 'Must be a valid email address.' };
-  }
+  if (!draft.name.trim()) editErrors[uuid] = { ...editErrors[uuid], name: 'Name is required.' };
+  if (!draft.email.trim()) editErrors[uuid] = { ...editErrors[uuid], email: 'Email is required.' };
+  else if (!isValidEmail(draft.email)) editErrors[uuid] = { ...editErrors[uuid], email: 'Must be a valid email address.' };
   if (editErrors[uuid].name || editErrors[uuid].email) return;
 
   saving[uuid] = true;
@@ -124,6 +136,7 @@ async function deactivate(uuid: string) {
     });
     if (res.ok) {
       contacts = contacts.filter((c) => c.uuid !== uuid);
+      pendingRemove = null;
     }
   } catch {
     // silently ignore
@@ -136,142 +149,138 @@ async function deactivate(uuid: string) {
 </svelte:head>
 
 <Sidebar>
-  <div class="w-full max-w-2xl px-6 py-10 space-y-10">
+  <div class="w-full max-w-2xl px-6 py-10 space-y-6">
 
-    <h1 class="text-2xl font-semibold">Contacts</h1>
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+      <h1 class="text-2xl font-semibold">Contacts</h1>
+      {#if !pageEditMode}
+        <button class="btn btn-sm preset-tonal" onclick={() => { pageEditMode = true; }}>
+          Edit
+        </button>
+      {:else}
+        <button class="btn btn-sm preset-tonal" onclick={exitEditMode}>
+          Done
+        </button>
+      {/if}
+    </div>
+
+    {#if pageEditMode}
+      <!-- New contact panel -->
+      {#if showAddForm}
+        <form onsubmit={submitAdd} novalidate class="card preset-outlined-surface-200-800 p-3 space-y-3">
+          {#if pageErrors.name || pageErrors.email}
+            <p class="text-error-500 text-sm">{pageErrors.name?.[0] ?? pageErrors.email?.[0]}</p>
+          {/if}
+          <label class="label" for="addName">
+            <span class="text-sm">Name</span>
+            <input id="addName" class="input w-full" type="text"
+              bind:value={addName} disabled={addSubmitting} />
+            {#if addErrors.name}
+              <p class="text-error-500 text-sm">{addErrors.name}</p>
+            {/if}
+          </label>
+          <label class="label" for="addEmail">
+            <span class="text-sm">Email</span>
+            <input id="addEmail" class="input w-full" type="email"
+              bind:value={addEmail} disabled={addSubmitting} />
+            {#if addErrors.email}
+              <p class="text-error-500 text-sm">{addErrors.email}</p>
+            {/if}
+          </label>
+          <div class="flex gap-2">
+            <button class="btn btn-sm preset-filled-primary-500" type="submit" disabled={addSubmitting}>
+              {addSubmitting ? 'Adding…' : 'Add Contact'}
+            </button>
+            <button class="btn btn-sm preset-tonal" type="button"
+              onclick={() => { showAddForm = false; addName = ''; addEmail = ''; addErrors = {}; }}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      {:else}
+        <button class="btn btn-sm preset-tonal" onclick={() => showAddForm = true}>
+          + New contact
+        </button>
+      {/if}
+    {/if}
 
     <!-- Contact list -->
-    <section>
-      {#if contacts.length === 0}
-        <p class="text-surface-400 text-sm italic">
-          No contacts yet. Add your first contact to get started.
-        </p>
-      {:else}
-        <ul class="divide-y divide-surface-200-800">
-          {#each contacts as contact (contact.uuid)}
-            {@const draft = editing[contact.uuid]}
-            {@const isSaving = saving[contact.uuid] ?? false}
-            {@const errs = editErrors[contact.uuid] ?? {}}
-            <li class="py-3">
-              {#if draft}
-                <!-- Inline edit mode -->
-                <div class="space-y-2">
-                  <div class="flex gap-2">
-                    <div class="flex-1">
-                      <input
-                        class="input w-full text-sm"
-                        type="text"
-                        bind:value={draft.name}
-                        placeholder="Name"
-                        disabled={isSaving}
-                      />
-                      {#if errs.name}
-                        <p class="text-error-500 text-xs mt-0.5">{errs.name}</p>
-                      {/if}
-                    </div>
-                    <div class="flex-1">
-                      <input
-                        class="input w-full text-sm"
-                        type="email"
-                        bind:value={draft.email}
-                        placeholder="Email"
-                        disabled={isSaving}
-                      />
-                      {#if errs.email}
-                        <p class="text-error-500 text-xs mt-0.5">{errs.email}</p>
-                      {/if}
-                    </div>
-                  </div>
-                  <div class="flex gap-2">
-                    <button
-                      class="btn btn-sm preset-filled-primary-500"
-                      onclick={() => saveEdit(contact.uuid)}
-                      disabled={isSaving}
-                    >
-                      {isSaving ? 'Saving…' : 'Save'}
-                    </button>
-                    <button
-                      class="btn btn-sm preset-tonal"
-                      onclick={() => cancelEdit(contact.uuid)}
-                      disabled={isSaving}
-                    >
-                      Cancel
-                    </button>
-                  </div>
+    {#if contacts.length === 0}
+      <p class="text-surface-400 text-sm italic">
+        No contacts yet. Add your first contact to get started.
+      </p>
+    {:else}
+      <ul class="divide-y divide-surface-200-800">
+        {#each contacts as contact (contact.uuid)}
+          {@const draft = editing[contact.uuid]}
+          {@const isSaving = saving[contact.uuid] ?? false}
+          {@const errs = editErrors[contact.uuid] ?? {}}
+          <li class="py-3">
+            {#if draft && pageEditMode}
+              <!-- Inline edit mode -->
+              <div class="space-y-3">
+                <label class="label" for="edit-name-{contact.uuid}">
+                  <span class="text-sm">Name</span>
+                  <input id="edit-name-{contact.uuid}" class="input w-full" type="text"
+                    bind:value={draft.name} disabled={isSaving} />
+                  {#if errs.name}
+                    <p class="text-error-500 text-sm">{errs.name}</p>
+                  {/if}
+                </label>
+                <label class="label" for="edit-email-{contact.uuid}">
+                  <span class="text-sm">Email</span>
+                  <input id="edit-email-{contact.uuid}" class="input w-full" type="email"
+                    bind:value={draft.email} disabled={isSaving} />
+                  {#if errs.email}
+                    <p class="text-error-500 text-sm">{errs.email}</p>
+                  {/if}
+                </label>
+                <div class="flex gap-2">
+                  <button class="btn btn-sm preset-filled-primary-500"
+                    onclick={() => saveEdit(contact.uuid)} disabled={isSaving}>
+                    {isSaving ? 'Saving…' : 'Save'}
+                  </button>
+                  <button class="btn btn-sm preset-tonal"
+                    onclick={() => cancelEdit(contact.uuid)} disabled={isSaving}>
+                    Cancel
+                  </button>
                 </div>
-              {:else}
-                <!-- Read mode -->
-                <div class="flex items-center justify-between gap-4">
-                  <div class="min-w-0">
-                    <p class="text-sm font-medium truncate">{contact.name}</p>
-                    <p class="text-xs text-surface-400 truncate">{contact.email}</p>
-                  </div>
+              </div>
+            {:else}
+              <!-- Read mode -->
+              <div class="flex items-center justify-between gap-4">
+                <div class="min-w-0">
+                  <p class="text-sm font-medium truncate">{contact.name}</p>
+                  <p class="text-xs text-surface-400 truncate">{contact.email}</p>
+                </div>
+                {#if pageEditMode}
                   <div class="flex gap-2 shrink-0">
-                    <button
-                      class="btn btn-sm preset-tonal"
-                      onclick={() => startEdit(contact)}
-                    >
+                    <button class="btn btn-sm preset-tonal" onclick={() => startEdit(contact)}>
                       Edit
                     </button>
-                    <button
-                      class="btn btn-sm preset-tonal-error"
-                      onclick={() => deactivate(contact.uuid)}
-                    >
-                      Remove
-                    </button>
+                    {#if pendingRemove === contact.uuid}
+                      <span class="flex items-center gap-1 text-sm">
+                        <span class="text-error-500">Remove?</span>
+                        <button class="btn btn-sm preset-tonal-error"
+                          onclick={() => deactivate(contact.uuid)}
+                          aria-label="Confirm remove {contact.name}">Yes</button>
+                        <button class="btn btn-sm preset-tonal"
+                          onclick={() => pendingRemove = null}>Cancel</button>
+                      </span>
+                    {:else}
+                      <button class="btn btn-sm preset-tonal-error"
+                        onclick={() => pendingRemove = contact.uuid}
+                        aria-label="Remove {contact.name}">Remove</button>
+                    {/if}
                   </div>
-                </div>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </section>
-
-    <!-- Add contact form -->
-    <section>
-      <h2 class="text-base font-semibold mb-3">Add Contact</h2>
-      <form onsubmit={submitAdd} novalidate class="space-y-3">
-        {#if pageErrors.name || pageErrors.email}
-          <p class="text-error-500 text-sm">
-            {pageErrors.name?.[0] ?? pageErrors.email?.[0]}
-          </p>
-        {/if}
-        <div class="flex gap-3">
-          <div class="flex-1">
-            <input
-              class="input w-full text-sm"
-              type="text"
-              bind:value={addName}
-              placeholder="Name"
-              disabled={addSubmitting}
-            />
-            {#if addErrors.name}
-              <p class="text-error-500 text-xs mt-0.5">{addErrors.name}</p>
+                {/if}
+              </div>
             {/if}
-          </div>
-          <div class="flex-1">
-            <input
-              class="input w-full text-sm"
-              type="email"
-              bind:value={addEmail}
-              placeholder="Email"
-              disabled={addSubmitting}
-            />
-            {#if addErrors.email}
-              <p class="text-error-500 text-xs mt-0.5">{addErrors.email}</p>
-            {/if}
-          </div>
-        </div>
-        <button
-          class="btn btn-sm preset-filled-primary-500"
-          type="submit"
-          disabled={addSubmitting}
-        >
-          {addSubmitting ? 'Adding…' : 'Add Contact'}
-        </button>
-      </form>
-    </section>
+          </li>
+        {/each}
+      </ul>
+    {/if}
 
   </div>
 </Sidebar>

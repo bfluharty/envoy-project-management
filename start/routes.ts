@@ -21,7 +21,12 @@ const InboxController = () => import('#controllers/web/inbox_controller')
 
 // Public landing page (no auth required)
 router
-  .get('/', ({ inertia }) => inertia.render('landing'))
+  .get('/', ({ inertia, auth, response }) => {
+    if (auth.user) {
+      return response.redirect().toRoute('dashboard')
+    }
+    return inertia.render('landing')
+  })
   .as('landing')
   .middleware(middleware.silentAuth())
 
