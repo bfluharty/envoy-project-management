@@ -3,7 +3,7 @@
     "allow": [
       "Read(//d/documents/**)",
       "Bash(npm run:*)",
-      "Skill(playwright-cli)"
+      "Skill(playwright-cli *:*)"
     ]
   }
 }

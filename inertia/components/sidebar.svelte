@@ -4,15 +4,24 @@ import Logo from './logo.svelte';
 import { Navigation } from "@skeletonlabs/skeleton-svelte";
 import { router, page } from '@inertiajs/svelte'
 import { showNewProjectForm } from '../stores/ui';
+import UserStatus from './user_status.svelte';
 
 const { children } = $props();
 
-// Access user and projects from global Inertia shared data
 const user = $derived($page.props.user);
 const projects = $derived($page.props.projects || []);
 
-// Drawer state for mobile
 let drawerOpen = $state(false);
+let dialogEl = $state<HTMLDialogElement | null>(null);
+
+$effect(() => {
+	if (!dialogEl) return;
+	if (drawerOpen) {
+		dialogEl.showModal();
+	} else if (dialogEl.open) {
+		dialogEl.close();
+	}
+});
 
 function toggleDrawer() {
 	drawerOpen = !drawerOpen;
@@ -22,10 +31,13 @@ function closeDrawer() {
 	drawerOpen = false;
 }
 
+function handleDialogClose() {
+	drawerOpen = false;
+}
+
 const isFormVisible = $derived($showNewProjectForm);
 
 function handleNewProject() {
-	// Navigate to dashboard and show the form
 	router.visit('/dashboard', {
 		onSuccess: () => {
 			showNewProjectForm.set(true);
@@ -42,29 +54,23 @@ const _linksSidebar = $derived({
 	}))
 });
 
-// Get current path for active state (Inertia's $page.url is a string)
 const currentPath = $derived($page.url);
-
-// Base styles for sidebar links
 const _anchorBase = "btn justify-start px-2 w-full";
 
-// Helper to get classes for nav items with active state
 function getNavClasses(href: string, exactMatch: boolean = false): string {
-	// Don't highlight dashboard when form is visible
 	if (href === '/dashboard' && isFormVisible) {
 		return `${_anchorBase} hover:preset-tonal`;
 	}
-	const isActive = exactMatch 
+	const isActive = exactMatch
 		? currentPath === href
 		: currentPath === href || currentPath.startsWith(href + '/');
-	return isActive 
-		? `${_anchorBase} preset-filled-primary-500` 
+	return isActive
+		? `${_anchorBase} preset-filled-primary-500`
 		: `${_anchorBase} hover:preset-tonal`;
 }
 
-// Get classes for new project button
 const newProjectClasses = $derived(
-	isFormVisible 
+	isFormVisible
 		? `${_anchorBase} preset-filled-primary-500`
 		: `${_anchorBase} hover:preset-tonal`
 );
@@ -73,6 +79,72 @@ function handleLogout() {
 	router.post('/logout')
 }
 </script>
+
+{#snippet navContent()}
+	<Navigation.Header>
+		<a href="/" class="btn-icon btn-icon-lg preset-filled-primary-500" onclick={closeDrawer}>
+			<Logo class="size-6" />
+		</a>
+	</Navigation.Header>
+	<Navigation.Content>
+		<Navigation.Group>
+			<Navigation.Menu>
+				<a href="/dashboard" class={getNavClasses('/dashboard')} onclick={closeDrawer}>
+					<HouseIcon class="size-4 shrink-0" />
+					<span class="truncate">Dashboard</span>
+				</a>
+				<a href="/contacts" class={getNavClasses('/contacts')} onclick={closeDrawer}>
+					<UsersIcon class="size-4 shrink-0" />
+					<span class="truncate">Contacts</span>
+				</a>
+				<a href="/inbox/emails" class={getNavClasses('/inbox/emails')} onclick={closeDrawer}>
+					<MailIcon class="size-4 shrink-0" />
+					<span class="truncate">Inbox</span>
+				</a>
+				<button onclick={() => { handleNewProject(); closeDrawer(); }} class={newProjectClasses}>
+					<PlusIcon class="size-4 shrink-0" />
+					<span class="truncate">New Project</span>
+				</button>
+			</Navigation.Menu>
+		</Navigation.Group>
+		{#each Object.entries(_linksSidebar) as [category, links]}
+			<Navigation.Group>
+				<Navigation.Label class="capitalize pl-2">{category}</Navigation.Label>
+				<Navigation.Menu>
+					{#each links as link (link)}
+						{@const Icon = link.icon}
+						<a
+							href={link.href}
+							class={getNavClasses(link.href)}
+							title={link.label}
+							aria-label={link.label}
+							onclick={closeDrawer}
+						>
+							<Icon class="size-4 shrink-0" />
+							<span class="truncate min-w-0">{link.label}</span>
+						</a>
+					{/each}
+				</Navigation.Menu>
+			</Navigation.Group>
+		{/each}
+	</Navigation.Content>
+	<Navigation.Footer>
+		{#if user}
+			<div class="px-2 py-2 border-t border-surface-200-800">
+				<UserStatus {user} />
+			</div>
+		{/if}
+		<button
+			onclick={() => { handleLogout(); closeDrawer(); }}
+			class="{_anchorBase} hover:preset-tonal"
+			title="Logout"
+			aria-label="Logout"
+		>
+			<LogOutIcon class="size-4 shrink-0" />
+			<span class="truncate">Logout</span>
+		</button>
+	</Navigation.Footer>
+{/snippet}
 
 <!-- Mobile Header -->
 <header class="lg:hidden fixed top-0 left-0 right-0 z-50 navbar bg-surface-100-900 border-b border-surface-200-800 px-6 py-3 flex items-center justify-between">
@@ -84,6 +156,7 @@ function handleLogout() {
 		class="btn-icon btn-icon-lg hover:preset-tonal-surface transition-all duration-200"
 		aria-label="Toggle menu"
 		aria-expanded={drawerOpen}
+		aria-controls="mobile-nav"
 	>
 		{#if drawerOpen}
 			<XIcon class="size-6" />
@@ -93,100 +166,68 @@ function handleLogout() {
 	</button>
 </header>
 
-<!-- Mobile Drawer Backdrop -->
-{#if drawerOpen}
-	<button
-		class="lg:hidden fixed inset-0 z-40 bg-black/50"
-		onclick={closeDrawer}
-		aria-label="Close menu"
-		tabindex="-1"
-	></button>
-{/if}
-
-<div class="w-full min-h-screen lg:grid lg:grid-cols-[auto_1fr]">
-	<!-- Sidebar Navigation -->
-	<Navigation 
-		layout="sidebar" 
-		class="fixed lg:sticky top-0 left-0 z-50 h-screen w-64 lg:w-auto grid grid-rows-[auto_1fr_auto] gap-4 bg-surface-50-950 border-r border-surface-200-800 overflow-y-auto transform transition-transform duration-300 ease-in-out {drawerOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 px-4"
+<!-- Mobile Navigation Dialog — blocks VoiceOver from content behind it -->
+<dialog
+	id="mobile-nav"
+	bind:this={dialogEl}
+	class="lg:hidden"
+	onclose={handleDialogClose}
+	onclick={(e) => { if (e.target === e.currentTarget) closeDrawer(); }}
+	aria-label="Navigation menu"
+>
+	<Navigation
+		layout="sidebar"
+		class="h-full w-full grid grid-rows-[auto_1fr_auto] gap-4 bg-surface-50-950 border-r border-surface-200-800 overflow-y-auto px-4"
 	>
-		<Navigation.Header>
-			<a
-				href="/"
-				class="btn-icon btn-icon-lg preset-filled-primary-500"
-				onclick={closeDrawer}
-			>
-				<Logo class="size-6" />
-			</a>
-		</Navigation.Header>
-		<Navigation.Content>
-			<Navigation.Group>
-				<Navigation.Menu>
-					<a href="/dashboard" class={getNavClasses('/dashboard')} onclick={closeDrawer}>
-						<HouseIcon class="size-4" />
-						<span>Dashboard</span>
-					</a>
-					<a href="/contacts" class={getNavClasses('/contacts')} onclick={closeDrawer}>
-						<UsersIcon class="size-4" />
-						<span>Contacts</span>
-					</a>
-					<a href="/projects" class={getNavClasses('/projects', true)} onclick={closeDrawer}>
-						<DatabaseIcon class="size-4" />
-						<span>Projects <span class="text-xs">(JSON)</span></span>
-					</a>
-					<a href="/inbox/emails" class={getNavClasses('/inbox/emails')} onclick={closeDrawer}>
-						<MailIcon class="size-4" />
-						<span>Inbox</span>
-					</a>
-					<button onclick={() => { handleNewProject(); closeDrawer(); }} class={newProjectClasses}>
-						<PlusIcon class="size-4" />
-						<span>New Project</span>
-					</button>
-				</Navigation.Menu>
-			</Navigation.Group>
-			{#each Object.entries(_linksSidebar) as [category, links]}
-				<Navigation.Group>
-					<Navigation.Label class="capitalize pl-2">{category}</Navigation.Label>
-					<Navigation.Menu>
-						{#each links as link (link)}
-							{@const Icon = link.icon}
-							<a
-								href={link.href}
-								class={getNavClasses(link.href)}
-								title={link.label}
-								aria-label={link.label}
-								onclick={closeDrawer}
-							>
-								<Icon class="size-4" />
-								<span>{link.label}</span>
-							</a>
-						{/each}
-					</Navigation.Menu>
-				</Navigation.Group>
-			{/each}
-		</Navigation.Content>
-		<Navigation.Footer>
-			{#if user}
-				<div class="px-2 py-2 border-t border-surface-200-800 flex items-center space-x-2">
-					<div class="w-2 h-2 bg-primary-500 rounded-full motion-safe:animate-pulse"></div>
-					<p class="text-sm text-surface-400">
-						Welcome, <span class="font-semibold text-surface-900-100">{user.fullName || user.email || 'User'}</span>
-					</p>
-				</div>
-			{/if}
-			<button
-				onclick={() => { handleLogout(); closeDrawer(); }}
-				class="{_anchorBase} hover:preset-tonal"
-				title="Logout"
-				aria-label="Logout"
-			>
-				<LogOutIcon class="size-4" />
-				<span>Logout</span>
-			</button>
-		</Navigation.Footer>
+		{@render navContent()}
+	</Navigation>
+</dialog>
+
+<div class="w-full min-h-dvh lg:grid lg:grid-cols-[auto_1fr]">
+	<!-- Desktop Sidebar -->
+	<Navigation
+		layout="sidebar"
+		class="hidden lg:grid sticky top-0 h-dvh grid-rows-[auto_1fr_auto] gap-4 bg-surface-50-950 border-r border-surface-200-800 overflow-y-auto px-4"
+	>
+		{@render navContent()}
 	</Navigation>
 
 	<!-- Main Content -->
-	<main class="flex justify-center items-center flex-col pt-[4.5rem] lg:pt-0 min-h-screen overflow-y-auto">
+	<main class="flex justify-start lg:justify-center items-center flex-col pt-[4.5rem] lg:pt-0 min-h-[calc(100dvh-4.5rem-1px)] lg:min-h-dvh box-border overflow-y-auto">
 		{@render children()}
 	</main>
 </div>
+
+<style>
+	dialog {
+		margin: 0;
+		padding: 0;
+		border: none;
+		background: transparent;
+		width: 85vw;
+		max-width: 22rem;
+		height: 100dvh;
+		max-height: 100dvh;
+		top: 0;
+		left: 0;
+	}
+
+	dialog::backdrop {
+		background: rgb(0 0 0 / 0.5);
+		animation: fade-in 200ms ease-out;
+	}
+
+	dialog[open] {
+		animation: slide-in 250ms ease-out;
+	}
+
+	@keyframes slide-in {
+		from { transform: translateX(-100%); }
+		to { transform: translateX(0); }
+	}
+
+	@keyframes fade-in {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+</style>

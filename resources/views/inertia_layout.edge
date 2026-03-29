@@ -51,6 +51,21 @@
     }
   </style>
 
+  <!-- Apply saved color-mode before paint to prevent FOUC -->
+  <script>
+    (function () {
+      var mode = localStorage.getItem('color-mode') || 'system';
+      var html = document.documentElement;
+      if (mode === 'dark') {
+        html.classList.add('dark');
+      } else if (mode === 'light') {
+        html.classList.add('light');
+      } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        html.classList.add('dark');
+      }
+    })();
+  </script>
+
   @vite(['inertia/app/app.ts', `inertia/pages/${page.component}.svelte`])
   @inertiaHead()
   @stack('dumper')

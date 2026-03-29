@@ -322,7 +322,7 @@ onMount(() => {
 
 <Sidebar>
 
-<div class="flex flex-col w-full h-[calc(100vh-4.5rem)] lg:h-screen">
+<div class="flex flex-col w-full h-[calc(100dvh-4.5rem)] lg:h-dvh">
 
 <h1 class="sr-only">{project.name}</h1>
 

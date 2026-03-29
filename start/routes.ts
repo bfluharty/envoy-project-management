@@ -21,13 +21,31 @@ const InboxController = () => import('#controllers/web/inbox_controller')
 
 // Public landing page (no auth required)
 router
-  .get('/', ({ inertia, auth, response }) => {
-    if (auth.user) {
-      return response.redirect().toRoute('dashboard')
-    }
+  .get('/', ({ inertia }) => {
     return inertia.render('landing')
   })
   .as('landing')
+  .middleware(middleware.silentAuth())
+
+router
+  .get('/privacy', ({ inertia }) => {
+    return inertia.render('privacy')
+  })
+  .as('privacy')
+  .middleware(middleware.silentAuth())
+
+router
+  .get('/terms', ({ inertia }) => {
+    return inertia.render('terms')
+  })
+  .as('terms')
+  .middleware(middleware.silentAuth())
+
+router
+  .get('/contact', ({ inertia }) => {
+    return inertia.render('contact')
+  })
+  .as('contact')
   .middleware(middleware.silentAuth())
 
 // Auth routes (guest only)
