@@ -25,6 +25,7 @@ export default class ProjectService {
       .where('user_uuid', userUuid)
       .andWhere('uuid', projectUuid)
       .andWhere('is_active', true)
+      .preload('budgetCurrency')
       .first()
 
     if (!project) {
@@ -45,6 +46,7 @@ export default class ProjectService {
   public static async createProject(userUuid: string, request: ProjectRequest) {
     const mappedRequest = await this.mapRequest(request, userUuid)
     const project = await Project.create(mappedRequest)
+    await project.load('budgetCurrency')
     const errors = await this.handleVendorUpdates(project.uuid, userUuid, request.vendors)
     const projectVendors = await ProjectVendor.query()
       .where('project_uuid', project.uuid)
@@ -83,6 +85,7 @@ export default class ProjectService {
     const updatedProject = await Project.query()
       .where('user_uuid', userUuid)
       .andWhere('uuid', projectUuid)
+      .preload('budgetCurrency')
       .first()
 
     const combinedProject = updatedProject?.toJSON() || {}

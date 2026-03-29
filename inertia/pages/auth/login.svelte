@@ -1,7 +1,6 @@
 <script lang="ts">
   import { router } from '@inertiajs/svelte'
-  import Navbar from '#components/navbar.svelte'
-  import PublicFooter from '#components/public_footer.svelte'
+  import AuthPageShell from '#components/auth_page_shell.svelte'
 
   const { flashMessage = null }: { flashMessage: { type?: string; message?: string } | null } = $props()
 
@@ -37,21 +36,14 @@
   })
 </script>
 
-<svelte:head>
-  <title>Envoy - Login</title>
-</svelte:head>
-
-<div class="min-h-dvh bg-surface-50-950 flex flex-col">
-  <Navbar showGuestCta={false} />
-  <main class="flex-1 flex items-center justify-center px-6 sm:px-8">
-    <div class="max-w-md w-full space-y-8">
+<AuthPageShell pageTitle="Login" showGuestCta={false}>
       <div class="text-center">
         <h2 class="text-3xl font-bold">Sign in to your account</h2>
         <p class="mt-2 text-surface-600-400">
-          Or <a href="/register" class="text-primary-500 hover:text-primary-400">create a new account</a>
+          Or <a href="/register" class="text-primary-500 hover:text-primary-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 rounded">create a new account</a>
         </p>
         <p class="mt-1">
-          <a href="/forgot-password" class="text-primary-500/80 hover:text-primary-500 text-sm">Forgot password?</a>
+          <a href="/forgot-password" class="text-primary-500/80 hover:text-primary-500 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 rounded">Forgot password?</a>
         </p>
       </div>
 
@@ -124,7 +116,4 @@
         </svg>
         Continue with Google
       </a>
-    </div>
-  </main>
-  <PublicFooter />
-</div>
+</AuthPageShell>

@@ -131,6 +131,14 @@ router
   })
   .prefix('/api')
 
+// Fallback route for unknown GET pages (must stay last)
+router
+  .get('/*', ({ inertia, response }) => {
+    response.status(404)
+    return inertia.render('errors/not_found')
+  })
+  .middleware(middleware.silentAuth())
+
 // API routes for vendors
 router
   .group(() => {

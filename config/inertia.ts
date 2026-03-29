@@ -16,14 +16,14 @@ const inertiaConfig = defineConfig({
       const url = env.get('BACKEND_URL') ?? env.get('APP_URL')
       return url ? url.replace(/\/$/, '') : ''
     },
-    user: (ctx) => ctx.inertia.always(() => ctx.auth.user),
+    user: (ctx) => ctx.inertia.always(() => ctx.auth?.user ?? null),
     flash: (ctx) => ({
-      success: ctx.session.flashMessages.get('success'),
-      error: ctx.session.flashMessages.get('error'),
+      success: ctx.session?.flashMessages?.get('success') ?? null,
+      error: ctx.session?.flashMessages?.get('error') ?? null,
     }),
     projects: async (ctx) => {
       // Only fetch projects if user is authenticated
-      if (!ctx.auth.user) return []
+      if (!ctx.auth?.user) return []
 
       try {
         const projectModule = await import('#models/project')

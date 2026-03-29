@@ -4,6 +4,7 @@
   import type { LocationData } from '#components/location_search.svelte';
   import { router } from '@inertiajs/svelte'
   import { page } from '@inertiajs/svelte'
+  import { onDestroy } from 'svelte'
   import { Steps } from '@skeletonlabs/skeleton-svelte';
   import { showNewProjectForm } from '../stores/ui';
   import { FolderPlusIcon, FolderIcon, ChevronRightIcon } from '@lucide/svelte';
@@ -72,10 +73,14 @@
   let budgetAmount = $state<string>(draft.budgetAmount ?? '');
   let budgetCurrency = $state<string>(draft.budgetCurrency ?? 'USD');
   let goals = $state<string>(draft.goals ?? '');
+  let draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Persist draft to localStorage whenever any field changes
+  // Debounce draft persistence to keep typing responsive.
   $effect(() => {
     if (typeof localStorage === 'undefined') return;
+    if (draftSaveTimer) {
+      clearTimeout(draftSaveTimer);
+    }
     const data = {
       currentStep,
       title,
@@ -88,7 +93,23 @@
       budgetCurrency,
       goals,
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    draftSaveTimer = setTimeout(() => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      draftSaveTimer = null;
+    }, 250);
+
+    return () => {
+      if (draftSaveTimer) {
+        clearTimeout(draftSaveTimer);
+      }
+    };
+  });
+
+  onDestroy(() => {
+    if (draftSaveTimer) {
+      clearTimeout(draftSaveTimer);
+      draftSaveTimer = null;
+    }
   });
 
   function toggleForm() {
@@ -130,17 +151,13 @@
   }
 
   function buildPayload() {
-    const startDateIso = toIsoDateTime(startDate);
-    const endDateIso = toIsoDateTime(endDate);
-    const deadlineIso = toIsoDateTime(deadline);
-
     return {
       title: title.trim(),
       ...(description.trim() ? { description: description.trim() } : {}),
       ...(location ? { location } : {}),
-      ...(startDateIso ? { startDate: startDateIso } : {}),
-      ...(endDateIso ? { endDate: endDateIso } : {}),
-      ...(deadlineIso ? { deadline: deadlineIso } : {}),
+      ...(startDate ? { startDate } : {}),
+      ...(endDate ? { endDate } : {}),
+      ...(deadline ? { deadline } : {}),
       ...(budgetAmount !== '' ? { budgetAmount: Number(budgetAmount) } : {}),
       ...(budgetCurrency ? { budgetCurrency } : {}),
       ...(goals.trim() ? { goals: goals.trim() } : {}),
@@ -165,13 +182,6 @@
       },
     });
   }
-
-  function toIsoDateTime(value: string) {
-    if (!value) return undefined;
-    const dateTime = new Date(`${value}T00:00:00.000Z`);
-    if (Number.isNaN(dateTime.getTime())) return undefined;
-    return dateTime.toISOString();
-  }
 </script>
 
 <svelte:head>
@@ -184,7 +194,7 @@
     <div class="w-full max-w-2xl px-6 py-10 space-y-6">
       <header>
         <h1 class="text-2xl font-semibold">Create New Project</h1>
-        <p class="text-surface-400">Step through the details or skip ahead to get started.</p>
+        <p class="text-surface-600-400">Step through the details or skip ahead to get started.</p>
       </header>
 
       {#if flash.error}
@@ -211,7 +221,7 @@
                 <Steps.Indicator class="size-7 shrink-0 rounded-full text-xs font-semibold flex items-center justify-center transition-colors duration-200
                   group-data-[state=complete]:bg-primary-500/20 group-data-[state=complete]:text-primary-500
                   group-data-[state=current]:bg-primary-500 group-data-[state=current]:text-white
-                  group-data-[state=incomplete]:bg-surface-200-800 group-data-[state=incomplete]:text-surface-400">
+                  group-data-[state=incomplete]:bg-surface-200-800 group-data-[state=incomplete]:text-surface-700-300">
                   {#if i < currentStep}
                     <svg class="size-3.5" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                       <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -223,7 +233,7 @@
                 <span class="text-xs leading-tight text-center w-14 transition-colors duration-200
                   group-data-[state=complete]:text-primary-500
                   group-data-[state=current]:text-surface-900-100 group-data-[state=current]:font-medium
-                  group-data-[state=incomplete]:text-surface-400">
+                  group-data-[state=incomplete]:text-surface-700-300">
                   {step.label}
                 </span>
               </Steps.Trigger>
@@ -237,12 +247,12 @@
         </Steps.List>
 
         <!-- Step content -->
-        <div class="@container card preset-outlined-surface-200-800 p-4 sm:p-6">
+        <div class="@container card preset-outlined-surface-200-800 border border-surface-200-800 bg-surface-50-950/50 backdrop-blur-md p-4 sm:p-6">
           <Steps.Content index={0} class="space-y-6">
             <section class="space-y-4">
               <div>
                 <h2 class="h4">Essentials</h2>
-                <p class="text-sm text-surface-400 mt-0.5">Give your project a name to get started.</p>
+                <p class="text-sm text-surface-600-400 mt-0.5">Give your project a name to get started.</p>
               </div>
               <div class="space-y-4">
                 <label class="label">
@@ -267,7 +277,7 @@
             <section class="space-y-4">
               <div>
                 <h2 class="h4">Where & When</h2>
-                <p class="text-sm text-surface-400 mt-0.5">Set a location and timeline for the project.</p>
+                <p class="text-sm text-surface-600-400 mt-0.5">Set a location and timeline for the project.</p>
               </div>
               <label class="label" for="create-location"><span>Location</span></label>
               <LocationSearch
@@ -308,7 +318,7 @@
             <section class="space-y-4">
               <div>
                 <h2 class="h4">Budget</h2>
-                <p class="text-sm text-surface-400 mt-0.5">Set a budget to track project spending.</p>
+                <p class="text-sm text-surface-600-400 mt-0.5">Set a budget to track project spending.</p>
               </div>
               <label class="label">
                 <span>Amount</span>
@@ -339,7 +349,7 @@
             <section class="space-y-4">
               <div>
                 <h2 class="h4">Goals</h2>
-                <p class="text-sm text-surface-400 mt-0.5">What does success look like for this project?</p>
+                <p class="text-sm text-surface-600-400 mt-0.5">What does success look like for this project?</p>
               </div>
               <label class="label">
                 <span>Project Goals</span>
@@ -381,7 +391,7 @@
         </div>
         <div class="space-y-2">
           <h1 class="text-2xl font-bold">No projects yet</h1>
-          <p class="text-surface-400">Plan projects, manage contacts, and draft outreach — all in one place.</p>
+          <p class="text-surface-600-400">Plan projects, manage contacts, and draft outreach - all in one place.</p>
         </div>
         <button class="btn preset-filled-primary-500" onclick={toggleForm}>
           Create your first project
@@ -392,19 +402,19 @@
       <div class="w-full max-w-md p-6 space-y-5">
         <div>
           <h1 class="text-2xl font-bold">Jump back in{user?.fullName ? `, ${user.fullName.split(' ')[0]}` : ''}</h1>
-          <p class="text-surface-400 text-sm mt-1">Pick up where you left off.</p>
+          <p class="text-surface-600-400 text-sm mt-1">Pick up where you left off.</p>
         </div>
         <ul class="space-y-2">
           {#each recentProjects as project (project.uuid)}
             <li>
               <a
                 href="/projects/{project.uuid}"
-                class="flex items-center gap-3 p-3 card hover:preset-tonal rounded-lg transition-colors">
+                class="flex items-center gap-3 p-3 card hover:preset-tonal rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500">
                 <FolderIcon class="size-4 text-primary-500 shrink-0" />
                 <div class="flex-1 min-w-0">
                   <p class="font-medium text-sm truncate">{project.title}</p>
                   {#if project.description}
-                    <p class="text-xs text-surface-400 truncate">{project.description}</p>
+                    <p class="text-xs text-surface-600-400 truncate">{project.description}</p>
                   {/if}
                 </div>
                 <ChevronRightIcon class="size-4 text-surface-400 shrink-0" />

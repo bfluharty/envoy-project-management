@@ -17,7 +17,7 @@
       <div class="space-y-4">
         <div class="flex justify-center">
           <div class="w-24 h-24 flex items-center justify-center">
-            <Logo class="w-24 h-24 text-primary-200 animate-pulse duration-1000" />
+            <Logo class="w-24 h-24 text-primary-200 motion-safe:animate-pulse duration-1000" />
           </div>
         </div>
         <h1 class="text-4xl sm:text-5xl font-bold">Welcome to Envoy</h1>
@@ -28,7 +28,7 @@
 
       {#if $page.props.user}
       <div class="flex flex-col items-center gap-3 w-full max-w-md mx-auto px-6 sm:px-0">
-        <p class="text-surface-400 text-sm">Welcome back, <span class="font-semibold text-surface-900-100">{$page.props.user.fullName || $page.props.user.email}</span></p>
+        <p class="text-surface-600-400 text-sm">Welcome back, <span class="font-semibold text-surface-900-100">{$page.props.user.fullName || $page.props.user.email}</span></p>
         <a href="/dashboard" class="btn preset-filled-primary-500">
           Go to Dashboard
         </a>

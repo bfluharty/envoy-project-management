@@ -29,6 +29,8 @@ let addErrors = $state<{ name?: string; email?: string }>({});
 let editing = $state<Record<string, { name: string; email: string } | null>>({});
 let saving = $state<Record<string, boolean>>({});
 let editErrors = $state<Record<string, { name?: string; email?: string }>>({});
+let deleting = $state<Record<string, boolean>>({});
+let deleteError = $state<string | null>(null);
 
 // Confirmation guard for destructive remove action
 let pendingRemove = $state<string | null>(null);
@@ -43,6 +45,7 @@ function exitEditMode() {
   addEmail = '';
   addErrors = {};
   pendingRemove = null;
+  deleteError = null;
   // Cancel all open inline edits
   for (const uuid of Object.keys(editing)) {
     editing[uuid] = null;
@@ -129,6 +132,8 @@ async function saveEdit(uuid: string) {
 }
 
 async function deactivate(uuid: string) {
+  deleteError = null;
+  deleting[uuid] = true;
   try {
     const res = await fetch(`/contacts/${uuid}`, {
       method: 'DELETE',
@@ -137,9 +142,14 @@ async function deactivate(uuid: string) {
     if (res.ok) {
       contacts = contacts.filter((c) => c.uuid !== uuid);
       pendingRemove = null;
+    } else {
+      const data = await res.json().catch(() => ({}));
+      deleteError = data?.error ?? 'Failed to remove contact. Please try again.';
     }
   } catch {
-    // silently ignore
+    deleteError = 'Failed to remove contact. Please try again.';
+  } finally {
+    deleting[uuid] = false;
   }
 }
 </script>
@@ -166,11 +176,22 @@ async function deactivate(uuid: string) {
     </div>
 
     {#if pageEditMode}
+      {#if deleteError}
+        <p role="alert" class="text-error-500 text-sm">{deleteError}</p>
+      {/if}
+
       <!-- New contact panel -->
       {#if showAddForm}
-        <form onsubmit={submitAdd} novalidate class="card preset-outlined-surface-200-800 p-3 space-y-3">
+        <form onsubmit={submitAdd} novalidate class="card preset-outlined-surface-200-800 border border-surface-200-800 bg-surface-50-950/50 backdrop-blur-md p-3 space-y-3">
           {#if pageErrors.name || pageErrors.email}
-            <p class="text-error-500 text-sm">{pageErrors.name?.[0] ?? pageErrors.email?.[0]}</p>
+            <div class="space-y-1">
+              {#if pageErrors.name}
+                <p class="text-error-500 text-sm">{pageErrors.name[0]}</p>
+              {/if}
+              {#if pageErrors.email}
+                <p class="text-error-500 text-sm">{pageErrors.email[0]}</p>
+              {/if}
+            </div>
           {/if}
           <label class="label" for="addName">
             <span class="text-sm">Name</span>
@@ -207,7 +228,7 @@ async function deactivate(uuid: string) {
 
     <!-- Contact list -->
     {#if contacts.length === 0}
-      <p class="text-surface-400 text-sm italic">
+      <p class="text-surface-600-400 text-sm italic">
         No contacts yet. Add your first contact to get started.
       </p>
     {:else}
@@ -252,7 +273,7 @@ async function deactivate(uuid: string) {
               <div class="flex items-center justify-between gap-4">
                 <div class="min-w-0">
                   <p class="text-sm font-medium truncate">{contact.name}</p>
-                  <p class="text-xs text-surface-400 truncate">{contact.email}</p>
+                  <p class="text-xs text-surface-600-400 truncate">{contact.email}</p>
                 </div>
                 {#if pageEditMode}
                   <div class="flex gap-2 shrink-0">
@@ -264,12 +285,15 @@ async function deactivate(uuid: string) {
                         <span class="text-error-500">Remove?</span>
                         <button class="btn btn-sm preset-tonal-error"
                           onclick={() => deactivate(contact.uuid)}
+                          disabled={deleting[contact.uuid]}
                           aria-label="Confirm remove {contact.name}">Yes</button>
                         <button class="btn btn-sm preset-tonal"
+                          disabled={deleting[contact.uuid]}
                           onclick={() => pendingRemove = null}>Cancel</button>
                       </span>
                     {:else}
                       <button class="btn btn-sm preset-tonal-error"
+                        disabled={deleting[contact.uuid]}
                         onclick={() => pendingRemove = contact.uuid}
                         aria-label="Remove {contact.name}">Remove</button>
                     {/if}

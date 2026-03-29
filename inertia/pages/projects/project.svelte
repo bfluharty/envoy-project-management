@@ -4,7 +4,7 @@ import Logo from '#components/logo.svelte';
 import LocationSearch from '#components/location_search.svelte';
 import type { LocationData } from '#components/location_search.svelte';
 import { UserIcon } from '@lucide/svelte';
-import { onMount, untrack } from 'svelte';
+import { onDestroy, onMount, untrack } from 'svelte';
 import { formatDate, formatCurrency } from '../../utils/format';
 
 interface ChatMessage {
@@ -32,6 +32,7 @@ interface Project {
     endDate: string | null;
     deadline: string | null;
     budgetAmount: number | null;
+    budgetCurrency: string | null;
     goals: string | null;
 }
 
@@ -50,11 +51,11 @@ const {
 } = $props();
 
 // ── Tab state ──────────────────────────────────────────────
-const TAB_KEY = `tab-${project.uuid}`;
+const getTabKey = () => `tab-${project.uuid}`;
 const VALID_TABS = ['convo', 'outreach', 'overview'] as const;
 const isReload = typeof performance !== 'undefined' &&
     (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload';
-const storedTab = isReload && typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(TAB_KEY) : null;
+const storedTab = isReload && typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(getTabKey()) : null;
 let activeTab = $state<'convo' | 'outreach' | 'overview'>(
     VALID_TABS.includes(storedTab as any) ? (storedTab as 'convo' | 'outreach' | 'overview') : 'convo'
 );
@@ -143,6 +144,18 @@ let newContactEmail = $state('');
 let newContactErrors = $state<{ name?: string; email?: string }>({});
 let creatingContact = $state(false);
 let opSuccessMsg = $state('');
+let opSuccessTimer: ReturnType<typeof setTimeout> | null = null;
+
+function setOperationSuccess(message: string) {
+    opSuccessMsg = message;
+    if (opSuccessTimer) {
+        clearTimeout(opSuccessTimer);
+    }
+    opSuccessTimer = setTimeout(() => {
+        opSuccessMsg = '';
+        opSuccessTimer = null;
+    }, 3000);
+}
 
 let unlinkedVendors = $derived(
     localAllVendors.filter((v) => !localLinked.some((l) => l.uuid === v.uuid))
@@ -160,7 +173,7 @@ let hasNoDetails = $derived(
     !editMode &&
     !localProject.description && !localProject.startDate && !localProject.endDate
     && !localProject.deadline && !localProject.goals
-    && (localProject.budgetAmount === null || localProject.budgetAmount === 0)
+    && localProject.budgetAmount === null
     && !localProject.location
 );
 
@@ -187,6 +200,7 @@ async function saveDetails(event: Event) {
             endDate: localProject.endDate || undefined,
             deadline: localProject.deadline || undefined,
             budgetAmount: localProject.budgetAmount ?? undefined,
+            budgetCurrency: localProject.budgetCurrency ?? undefined,
             goals: localProject.goals ?? undefined,
         });
         if (res.ok) {
@@ -194,8 +208,7 @@ async function saveDetails(event: Event) {
             localProject = { ...localProject, ...data.project };
             savedProject = { ...savedProject, ...data.project };
             editMode = false;
-            opSuccessMsg = 'Project details saved.';
-            setTimeout(() => { opSuccessMsg = ''; }, 3000);
+            setOperationSuccess('Project details saved.');
         } else if (res.status >= 500) {
             saveError = 'Failed to save. Please try again.';
         } else {
@@ -236,8 +249,7 @@ async function attachSelectedVendors() {
             selectedVendorUuids = new Set();
             contactSearchQuery = '';
             activeContactPanel = null;
-            opSuccessMsg = `${uuids.length} contact${uuids.length > 1 ? 's' : ''} attached.`;
-            setTimeout(() => { opSuccessMsg = ''; }, 3000);
+            setOperationSuccess(`${uuids.length} contact${uuids.length > 1 ? 's' : ''} attached.`);
         } else {
             vendorError = 'Failed to attach contacts. Please try again.';
         }
@@ -256,8 +268,7 @@ async function detachVendor(vendorUuid: string) {
         const res = await patchProject({ vendors: newList });
         if (res.ok) {
             localLinked = localLinked.filter((v) => v.uuid !== vendorUuid);
-            opSuccessMsg = 'Contact detached.';
-            setTimeout(() => { opSuccessMsg = ''; }, 3000);
+            setOperationSuccess('Contact detached.');
         } else {
             vendorError = 'Failed to detach contact. Please try again.';
         }
@@ -295,8 +306,7 @@ async function createAndAttachContact(e: Event) {
             newContactName = '';
             newContactEmail = '';
             activeContactPanel = null;
-            opSuccessMsg = 'Contact created and attached.';
-            setTimeout(() => { opSuccessMsg = ''; }, 3000);
+            setOperationSuccess('Contact created and attached.');
         } else {
             // Contact was created but linking failed — surface it in the dropdown
             localAllVendors = [...localAllVendors, contact];
@@ -314,6 +324,13 @@ onMount(() => {
         sendChat(OPENING_PROMPT, OPENING_VARIABLES);
     }
 });
+
+onDestroy(() => {
+    if (opSuccessTimer) {
+        clearTimeout(opSuccessTimer);
+        opSuccessTimer = null;
+    }
+});
 </script>
 
 <svelte:head>
@@ -322,7 +339,7 @@ onMount(() => {
 
 <Sidebar>
 
-<div class="flex flex-col w-full h-[calc(100dvh-4.5rem)] lg:h-dvh">
+<div class="flex flex-col w-full h-[calc(100dvh-var(--mobile-header-height,4.5rem))] lg:h-dvh">
 
 <h1 class="sr-only">{project.name}</h1>
 
@@ -344,7 +361,7 @@ onMount(() => {
                         localProject = { ...savedProject };
                     }
                     activeTab = tab;
-                    sessionStorage.setItem(TAB_KEY, tab);
+                    sessionStorage.setItem(getTabKey(), tab);
                 }}>
                 {tab}
             </button>
@@ -395,7 +412,9 @@ onMount(() => {
         {/each}
     </div>
     <form class="p-4 flex gap-2 bg-surface-50-950/50 backdrop-blur-md border-t border-surface-200-800" onsubmit={sendMessage}>
+        <label for="project-message" class="sr-only">Message</label>
         <input
+            id="project-message"
             class="input flex-1"
             type="text"
             bind:value={input}
@@ -413,7 +432,7 @@ onMount(() => {
 {#if activeTab === 'outreach'}
 <div class="flex-1 overflow-y-auto p-6">
     <h2 class="text-lg font-semibold mb-4">Outreach</h2>
-    <p class="text-surface-400 text-sm italic">Outreach coming soon.</p>
+    <p class="text-surface-600-400 text-sm italic">Outreach coming soon.</p>
 </div>
 {/if}
 
@@ -421,7 +440,7 @@ onMount(() => {
 {#if activeTab === 'overview'}
 <div class="flex-1 overflow-y-auto @container">
 <div class="p-6 w-full max-w-5xl mx-auto">
-<div class="grid grid-cols-1 @lg:grid-cols-2 gap-8 items-start">
+<div class="grid grid-cols-1 @4xl:grid-cols-2 gap-8 items-start">
 
     <!-- Project Details -->
     <section>
@@ -435,7 +454,7 @@ onMount(() => {
         </div>
 
         {#if editMode}
-            <form onsubmit={saveDetails} class="space-y-4">
+            <form onsubmit={saveDetails} class="space-y-4 rounded-xl border border-surface-200-800 bg-surface-50-950/50 backdrop-blur-md p-4">
                 {#if saveError}
                     <p role="alert" class="text-error-500 text-sm">{saveError}</p>
                 {/if}
@@ -534,48 +553,48 @@ onMount(() => {
             <dl class="space-y-3 text-sm">
                 {#if localProject.description}
                     <div>
-                        <dt class="text-surface-400 text-xs uppercase tracking-wide mb-0.5">Description</dt>
+                        <dt class="text-surface-600-400 text-xs uppercase tracking-wide mb-0.5">Description</dt>
                         <dd>{localProject.description}</dd>
                     </div>
                 {/if}
                 {#if localProject.location}
                     <div>
-                        <dt class="text-surface-400 text-xs uppercase tracking-wide mb-0.5">Location</dt>
+                        <dt class="text-surface-600-400 text-xs uppercase tracking-wide mb-0.5">Location</dt>
                         <dd>{localProject.location.formatted_address || localProject.location.city}</dd>
                     </div>
                 {/if}
                 {#if localProject.startDate}
                     <div>
-                        <dt class="text-surface-400 text-xs uppercase tracking-wide mb-0.5">Start Date</dt>
+                        <dt class="text-surface-600-400 text-xs uppercase tracking-wide mb-0.5">Start Date</dt>
                         <dd>{formatDate(localProject.startDate)}</dd>
                     </div>
                 {/if}
                 {#if localProject.endDate}
                     <div>
-                        <dt class="text-surface-400 text-xs uppercase tracking-wide mb-0.5">End Date</dt>
+                        <dt class="text-surface-600-400 text-xs uppercase tracking-wide mb-0.5">End Date</dt>
                         <dd>{formatDate(localProject.endDate)}</dd>
                     </div>
                 {/if}
                 {#if localProject.deadline}
                     <div>
-                        <dt class="text-surface-400 text-xs uppercase tracking-wide mb-0.5">Deadline</dt>
+                        <dt class="text-surface-600-400 text-xs uppercase tracking-wide mb-0.5">Deadline</dt>
                         <dd>{formatDate(localProject.deadline)}</dd>
                     </div>
                 {/if}
-                {#if localProject.budgetAmount !== null && localProject.budgetAmount !== 0}
+                {#if localProject.budgetAmount !== null}
                     <div>
-                        <dt class="text-surface-400 text-xs uppercase tracking-wide mb-0.5">Budget</dt>
-                        <dd>{formatCurrency(localProject.budgetAmount)}</dd>
+                        <dt class="text-surface-600-400 text-xs uppercase tracking-wide mb-0.5">Budget</dt>
+                        <dd>{formatCurrency(localProject.budgetAmount, localProject.budgetCurrency ?? 'USD')}</dd>
                     </div>
                 {/if}
                 {#if localProject.goals}
                     <div>
-                        <dt class="text-surface-400 text-xs uppercase tracking-wide mb-0.5">Goals</dt>
+                        <dt class="text-surface-600-400 text-xs uppercase tracking-wide mb-0.5">Goals</dt>
                         <dd class="whitespace-pre-wrap">{localProject.goals}</dd>
                     </div>
                 {/if}
                 {#if hasNoDetails}
-                    <p class="text-surface-400 text-sm italic">No details added yet.</p>
+                    <p class="text-surface-600-400 text-sm italic">No details added yet.</p>
                 {/if}
             </dl>
         {/if}
@@ -622,7 +641,7 @@ onMount(() => {
 
             <!-- Attach existing panel -->
             {#if activeContactPanel === 'attach'}
-                <div id="panel-attach-contact" class="card preset-outlined-surface-200-800 p-3 mb-4 space-y-3">
+                <div id="panel-attach-contact" class="card preset-outlined-surface-200-800 border border-surface-200-800 bg-surface-50-950/50 backdrop-blur-md p-3 mb-4 space-y-3">
                     <label class="label" for="contactSearch">
                         <span class="text-sm">Search contacts</span>
                         <input id="contactSearch" type="search" class="input w-full"
@@ -644,14 +663,14 @@ onMount(() => {
                                             aria-label="{v.name}, {v.email}" />
                                         <span class="flex-1 text-sm">
                                             <span class="font-medium">{v.name}</span>
-                                            <span class="text-surface-400 ml-2 text-xs">{v.email}</span>
+                                            <span class="text-surface-600-400 ml-2 text-xs">{v.email}</span>
                                         </span>
                                     </label>
                                 </li>
                             {/each}
                         </ul>
                     {:else if contactSearchQuery.trim()}
-                        <p class="text-surface-400 text-sm italic">No contacts match "{contactSearchQuery}"</p>
+                        <p class="text-surface-600-400 text-sm italic">No contacts match "{contactSearchQuery}"</p>
                     {/if}
                     <div class="flex gap-2 items-center">
                         <button class="btn btn-sm preset-filled-primary-500"
@@ -669,7 +688,7 @@ onMount(() => {
 
             <!-- New contact panel -->
             {#if activeContactPanel === 'new'}
-                <form id="panel-new-contact" onsubmit={createAndAttachContact} novalidate class="card preset-outlined-surface-200-800 p-3 mb-4 space-y-3">
+                <form id="panel-new-contact" onsubmit={createAndAttachContact} novalidate class="card preset-outlined-surface-200-800 border border-surface-200-800 bg-surface-50-950/50 backdrop-blur-md p-3 mb-4 space-y-3">
                     <label class="label" for="newContactName">
                         <span class="text-sm">Name</span>
                         <input id="newContactName" class="input w-full" type="text" bind:value={newContactName}
@@ -701,7 +720,7 @@ onMount(() => {
 
         <!-- Contact list -->
         {#if localLinked.length === 0}
-            <p class="text-surface-400 text-sm italic">
+            <p class="text-surface-600-400 text-sm italic">
                 No contacts yet. Attach contacts here so Envoy can draft outreach emails for them.
             </p>
         {:else}
@@ -710,12 +729,12 @@ onMount(() => {
                     <li class="flex items-center justify-between py-2">
                         <div>
                             <p class="text-sm font-medium">{vendor.name}</p>
-                            <p class="text-xs text-surface-400">{vendor.email}</p>
+                            <p class="text-xs text-surface-600-400">{vendor.email}</p>
                         </div>
                         {#if contactEditMode}
                             {#if pendingDetach === vendor.uuid}
                                 <span class="flex gap-1 items-center text-xs">
-                                    <span class="text-surface-400">Remove?</span>
+                                    <span class="text-surface-600-400">Remove?</span>
                                     <button class="btn btn-sm preset-filled-error-500"
                                         onclick={() => detachVendor(vendor.uuid)}>Yes</button>
                                     <button class="btn btn-sm preset-tonal"

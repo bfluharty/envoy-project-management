@@ -6,7 +6,8 @@ import { DateTime } from 'luxon'
  */
 export function formatDate(iso: string | null | undefined): string | null {
   if (!iso) return null
-  const dt = DateTime.fromISO(iso)
+  const normalized = iso.includes('T') ? iso.split('T')[0] : iso
+  const dt = DateTime.fromISO(normalized)
   if (!dt.isValid) return null
   return dt.toLocaleString(DateTime.DATE_FULL)
 }

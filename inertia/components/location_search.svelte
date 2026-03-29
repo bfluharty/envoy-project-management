@@ -48,7 +48,7 @@ let isConfirmed = $state(false);
 let timerId: ReturnType<typeof setTimeout> | null = null;
 let controller: AbortController | null = null;
 
-const listboxId = `location-listbox-${id}`;
+const listboxId = $derived(`location-listbox-${id}`);
 
 // Sync display string when parent resets or changes value (only when dropdown is closed)
 $effect(() => {

@@ -48,6 +48,7 @@ export default class OverviewController {
         endDate: combinedProject.endDate ?? null,
         deadline: combinedProject.deadline ?? null,
         budgetAmount: combinedProject.budgetAmount ?? null,
+        budgetCurrency: combinedProject.budgetCurrency?.code ?? null,
         goals: combinedProject.goals ?? null,
       }
 

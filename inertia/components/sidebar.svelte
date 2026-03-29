@@ -183,7 +183,7 @@ function handleLogout() {
 	</Navigation>
 </dialog>
 
-<div class="w-full min-h-dvh lg:grid lg:grid-cols-[auto_1fr]">
+<div class="w-full min-h-dvh lg:grid lg:grid-cols-[auto_1fr]" style="--mobile-header-height: 4.5rem;">
 	<!-- Desktop Sidebar -->
 	<Navigation
 		layout="sidebar"
@@ -193,7 +193,7 @@ function handleLogout() {
 	</Navigation>
 
 	<!-- Main Content -->
-	<main class="flex justify-start lg:justify-center items-center flex-col pt-[4.5rem] lg:pt-0 min-h-[calc(100dvh-4.5rem-1px)] lg:min-h-dvh box-border overflow-y-auto">
+	<main class="flex justify-start lg:justify-center items-center flex-col pt-[var(--mobile-header-height)] lg:pt-0 min-h-[calc(100dvh-var(--mobile-header-height)-1px)] lg:min-h-dvh box-border overflow-y-auto">
 		{@render children()}
 	</main>
 </div>
@@ -219,6 +219,13 @@ function handleLogout() {
 
 	dialog[open] {
 		animation: slide-in 250ms ease-out;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		dialog::backdrop,
+		dialog[open] {
+			animation: none;
+		}
 	}
 
 	@keyframes slide-in {

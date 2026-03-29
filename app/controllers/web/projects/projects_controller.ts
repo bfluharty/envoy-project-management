@@ -77,6 +77,7 @@ export default class ProjectsController {
         endDate: project.endDate ?? null,
         deadline: project.deadline ?? null,
         budgetAmount: project.budgetAmount ?? null,
+        budgetCurrency: project.budgetCurrency?.code ?? null,
         goals: project.goals ?? null,
       },
       linkedVendors,

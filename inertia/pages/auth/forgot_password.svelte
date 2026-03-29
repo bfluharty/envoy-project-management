@@ -1,7 +1,6 @@
 <script lang="ts">
   import { router } from '@inertiajs/svelte'
-  import Navbar from '#components/navbar.svelte'
-  import PublicFooter from '#components/public_footer.svelte'
+  import AuthPageShell from '#components/auth_page_shell.svelte'
 
   const { flashMessage = null }: { flashMessage: { type?: string; message?: string } | null } = $props()
 
@@ -35,14 +34,7 @@
   })
 </script>
 
-<svelte:head>
-  <title>Envoy - Forgot Password</title>
-</svelte:head>
-
-<div class="min-h-dvh bg-surface-50-950 flex flex-col">
-  <Navbar showGuestCta={true} />
-  <main class="flex-1 flex items-center justify-center px-6 sm:px-8">
-    <div class="max-w-md w-full space-y-8">
+<AuthPageShell pageTitle="Forgot Password" showGuestCta={true}>
       <div class="text-center">
         <h2 class="text-3xl font-bold">Forgot your password?</h2>
         <p class="mt-2 text-surface-600-400">
@@ -85,7 +77,4 @@
           {processing ? 'Sending...' : 'Send reset link'}
         </button>
       </form>
-    </div>
-  </main>
-  <PublicFooter />
-</div>
+</AuthPageShell>
