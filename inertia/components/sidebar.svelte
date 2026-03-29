@@ -147,7 +147,7 @@ function handleLogout() {
 {/snippet}
 
 <!-- Mobile Header -->
-<header class="lg:hidden fixed top-0 left-0 right-0 z-50 navbar bg-surface-100-900 border-b border-surface-200-800 px-6 py-3 flex items-center justify-between">
+<header class="lg:hidden fixed top-0 left-0 right-0 z-50 navbar bg-surface-50-950/85 backdrop-blur-md border-b border-surface-200-800 px-6 py-3 flex items-center justify-between">
 	<a href="/" class="btn-icon btn-icon-lg preset-filled-primary-500">
 		<Logo class="size-6" />
 	</a>
@@ -177,7 +177,7 @@ function handleLogout() {
 >
 	<Navigation
 		layout="sidebar"
-		class="h-full w-full grid grid-rows-[auto_1fr_auto] gap-4 bg-surface-50-950 border-r border-surface-200-800 overflow-y-auto px-4"
+		class="h-full w-full grid grid-rows-[auto_1fr_auto] gap-4 bg-surface-50-950/85 backdrop-blur-md border-r border-surface-200-800 overflow-y-auto px-4"
 	>
 		{@render navContent()}
 	</Navigation>

@@ -5,7 +5,7 @@
   const currentYear = new Date().getFullYear();
 </script>
 
-<footer class="border-t border-surface-200-800 px-4 py-6">
+<footer class="bg-surface-50-950/85 backdrop-blur-md border-t border-surface-200-800 px-4 py-6">
   <div class="mx-auto max-w-5xl w-full min-w-0 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 md:items-start">
     <div class="min-w-0 flex flex-col md:flex-row md:items-start gap-3 md:gap-4">
       <a href="/" class="hidden md:inline-flex text-surface-500 hover:text-surface-900-100 transition-colors" aria-label="Envoy home">

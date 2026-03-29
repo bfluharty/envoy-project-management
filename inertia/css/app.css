@@ -16,6 +16,22 @@ html        { color-scheme: light dark; }
 html.dark   { color-scheme: dark; }
 html.light  { color-scheme: light; }
 
+/* Mesh gradient background */
+body {
+  background-image:
+    radial-gradient(at 20% 20%, color-mix(in oklab, var(--color-primary-500) 18%, transparent) 0px, transparent 50%),
+    radial-gradient(at 80% 10%, color-mix(in oklab, var(--color-tertiary-500) 12%, transparent) 0px, transparent 45%),
+    radial-gradient(at 70% 85%, color-mix(in oklab, var(--color-secondary-500) 14%, transparent) 0px, transparent 50%);
+  background-attachment: fixed;
+}
+
+@dark body {
+  background-image:
+    radial-gradient(at 20% 20%, color-mix(in oklab, var(--color-primary-500) 12%, transparent) 0px, transparent 50%),
+    radial-gradient(at 80% 10%, color-mix(in oklab, var(--color-tertiary-500) 8%, transparent) 0px, transparent 45%),
+    radial-gradient(at 70% 85%, color-mix(in oklab, var(--color-secondary-500) 10%, transparent) 0px, transparent 50%);
+}
+
 /* Skeleton loading animation for better UX */
 .skeleton-pulse {
   animation: pulse 1.5s ease-in-out infinite;

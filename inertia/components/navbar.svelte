@@ -20,7 +20,7 @@ function handleLogout() {
 }
 </script>
 
-<nav aria-label="Site" class="navbar bg-surface-100-900 border-b border-surface-200-800 px-4 sm:px-6 py-3 flex justify-between items-center w-full overflow-x-clip">
+<nav aria-label="Site" class="navbar bg-surface-50-950/85 backdrop-blur-md border-b border-surface-200-800 px-4 sm:px-6 py-3 flex justify-between items-center w-full overflow-x-clip">
   <a href="/" aria-label="Home" class="inline-flex">
     <Logo class="size-6" />
   </a>

@@ -7,7 +7,7 @@
   <title>Envoy - Privacy</title>
 </svelte:head>
 
-<div class="min-h-dvh bg-surface-50-950 flex flex-col overflow-x-clip">
+<div class="min-h-dvh flex flex-col overflow-x-clip">
   <Navbar showGuestCta={true} />
   <main class="flex-1 min-h-0 px-6 sm:px-8 py-8 sm:py-10">
     <section class="mx-auto max-w-3xl space-y-6">

@@ -11,7 +11,7 @@
 </svelte:head>
 
 
-<div class="min-h-dvh bg-surface-50-950 flex flex-col overflow-x-clip">
+<div class="min-h-dvh flex flex-col overflow-x-clip">
   <div class="flex-1 flex items-start sm:items-center justify-center px-6 sm:px-8 pt-12 sm:pt-6 pb-10 sm:pb-12">
     <div class="max-w-4xl w-full text-center space-y-8">
       <div class="space-y-4">

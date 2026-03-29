@@ -330,7 +330,7 @@ onMount(() => {
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">{opSuccessMsg}</div>
 
 <!-- Tab bar -->
-<div class="flex justify-center lg:justify-end shrink-0 px-4 lg:px-6 py-3 lg:py-2 bg-surface-200-800">
+<div class="flex justify-center lg:justify-end shrink-0 px-4 lg:px-6 py-3 lg:py-2 bg-surface-50-950/50 backdrop-blur-md border-b border-surface-200-800">
     <div role="radiogroup" aria-label="Page section" class="flex gap-1">
         {#each (['convo', 'outreach', 'overview'] as const) as tab}
             <button
@@ -354,7 +354,7 @@ onMount(() => {
 
 <!-- Convo tab -->
 {#if activeTab === 'convo'}
-<div class="flex flex-col flex-1 overflow-hidden w-full bg-surface-50-950">
+<div class="flex flex-col flex-1 overflow-hidden w-full">
     <div class="flex-1 overflow-y-auto p-4 space-y-4"
          aria-live="polite" aria-atomic="false" aria-label="Conversation">
         {#each messages as msg (msg.id)}
@@ -394,7 +394,7 @@ onMount(() => {
             </div>
         {/each}
     </div>
-    <form class="p-4 flex gap-2 bg-surface-100-900" onsubmit={sendMessage}>
+    <form class="p-4 flex gap-2 bg-surface-50-950/50 backdrop-blur-md border-t border-surface-200-800" onsubmit={sendMessage}>
         <input
             class="input flex-1"
             type="text"
