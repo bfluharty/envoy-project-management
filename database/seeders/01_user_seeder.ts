@@ -21,6 +21,14 @@ export default class extends BaseSeeder {
         isActive: true,
         entitlementId: 2,
       },
+      {
+        uuid: 'c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b41',
+        fullName: 'Ryan Envoy',
+        email: 'envoyryan@gmail.com',
+        password: 'hashedpassword3', // This will be automatically hashed by AdonisJS
+        isActive: true,
+        entitlementId: 2,
+      },
     ])
   }
 }

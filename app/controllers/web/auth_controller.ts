@@ -13,6 +13,8 @@ import {
 } from '#validators/auth_validator'
 import { randomBytes } from 'node:crypto'
 import { DateTime } from 'luxon'
+import { getGoogleAuthUrl, getGoogleUser } from '#services/google_auth_service'
+import UserInboxConnection from '#models/user_inbox_connection'
 
 export default class AuthController {
   /**
@@ -82,6 +84,7 @@ export default class AuthController {
       session.flash('success', 'Account created successfully! Please log in.')
       return response.redirect().toRoute('auth.login')
     } catch (error: unknown) {
+      logger.error(error, 'Registration failed')
       if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
         session.flash('error', 'Registration failed. Please check your details and try again.')
       } else {
@@ -98,6 +101,81 @@ export default class AuthController {
     await auth.use('web').logout()
     session.flash('success', 'You have been logged out')
     return response.redirect().toRoute('landing')
+  }
+
+  /**
+   * Redirect to Google OAuth consent screen
+   */
+  async googleRedirect({ response }: HttpContext) {
+    const url = getGoogleAuthUrl()
+    return response.redirect(url)
+  }
+
+  /**
+   * Handle Google OAuth callback
+   */
+  async googleCallback({ auth, request, response, session }: HttpContext) {
+    const code = request.input('code')
+    if (!code) {
+      session.flash('error', 'Google authentication failed. Please try again.')
+      return response.redirect().toRoute('auth.login')
+    }
+
+    try {
+      const googleProfile = await getGoogleUser(code)
+
+      // Try to find existing user by googleId or email
+      let user = await User.findBy('googleId', googleProfile.googleId)
+      if (!user) {
+        user = await User.findBy('email', googleProfile.email)
+      }
+
+      if (user) {
+        // Link Google ID if not already set
+        if (!user.googleId) {
+          user.googleId = googleProfile.googleId
+          await user.save()
+        }
+      } else {
+        // Create new user
+        user = await User.create({
+          fullName: googleProfile.fullName,
+          email: googleProfile.email,
+          googleId: googleProfile.googleId,
+          password: null,
+          entitlementId: 1,
+          isActive: true,
+        })
+      }
+
+      // Sync Gmail inbox connection
+      await UserInboxConnection.updateOrCreate(
+        { userUuid: user.uuid, provider: 'gmail', email: googleProfile.email },
+        {
+          accessToken: googleProfile.accessToken,
+          refreshToken: googleProfile.refreshToken,
+          accessTokenExpiresAt: googleProfile.expiresAt
+            ? DateTime.fromJSDate(googleProfile.expiresAt)
+            : null,
+          scopes: googleProfile.scopes,
+        }
+      )
+
+      await auth.use('web').login(user)
+      session.flash('success', 'Welcome!')
+
+      const intendedUrl = session.get('auth.intended_url')
+      if (intendedUrl) {
+        session.forget('auth.intended_url')
+        return response.redirect(intendedUrl)
+      }
+
+      return response.redirect().toRoute('dashboard')
+    } catch (error) {
+      logger.error(error, 'Google OAuth callback failed')
+      session.flash('error', 'Google authentication failed. Please try again.')
+      return response.redirect().toRoute('auth.login')
+    }
   }
 
   async showForgotPassword({ inertia, session }: HttpContext) {

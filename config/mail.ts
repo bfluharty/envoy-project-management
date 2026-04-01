@@ -11,10 +11,12 @@ const RESEND_API_BASE_URL = 'https://api.resend.com'
  */
 export default defineConfig({
   default: 'resend',
+
   from: {
     address: env.get('MAIL_FROM_ADDRESS') ?? RESEND_DEFAULT_FROM_ADDRESS,
     name: env.get('MAIL_FROM_NAME') ?? RESEND_DEFAULT_FROM_NAME,
   },
+
   mailers: {
     resend: transports.resend({
       key: env.get('RESEND_API_KEY') ?? '',
