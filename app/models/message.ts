@@ -41,7 +41,7 @@ export default class Message extends BaseModel {
   @column()
   declare bcc?: string
 
-  @column({ columnName: 'sent_timestamp' })
+  @column.dateTime({ columnName: 'sent_timestamp' })
   declare sentTimestamp: DateTime
 
   @column({ columnName: 'communication_uuid' })
@@ -61,6 +61,9 @@ export default class Message extends BaseModel {
 
   @column({ columnName: 'provider_thread_id' })
   declare providerThreadId: string | null
+
+  @column()
+  declare direction: string
 
   @belongsTo(() => Communication, { foreignKey: 'communicationUuid', localKey: 'uuid' })
   declare communication: BelongsTo<typeof Communication>

@@ -4,6 +4,7 @@ import { BaseModel, column, belongsTo, hasMany, beforeCreate } from '@adonisjs/l
 import { v4 as uuidv4 } from 'uuid'
 import Vendor from './vendor.js'
 import Message from './message.js'
+import ProjectVendor from './project_vendor.js'
 
 export default class VendorConversation extends BaseModel {
   static table = 'envoy_schema.vendor_conversations'
@@ -33,8 +34,14 @@ export default class VendorConversation extends BaseModel {
   @column({ columnName: 'vendor_uuid' })
   declare vendorUuid: string
 
+  @column({ columnName: 'project_vendor_uuid' })
+  declare projectVendorUuid: string | null
+
   @belongsTo(() => Vendor, { foreignKey: 'vendorUuid', localKey: 'uuid' })
   declare vendor: BelongsTo<typeof Vendor>
+
+  @belongsTo(() => ProjectVendor, { foreignKey: 'projectVendorUuid', localKey: 'uuid' })
+  declare projectVendor: BelongsTo<typeof ProjectVendor>
 
   @hasMany(() => Message, { foreignKey: 'vendorConversationUuid', localKey: 'uuid' })
   declare messages: HasMany<typeof Message>

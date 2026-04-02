@@ -1,5 +1,5 @@
 <script lang="ts">
-import { FolderIcon, HouseIcon, DatabaseIcon, LogOutIcon, PlusIcon, XIcon, MenuIcon, MailIcon, UsersIcon } from "@lucide/svelte";
+import { FolderIcon, HouseIcon, Settings2Icon, PlusIcon, XIcon, MenuIcon, UsersIcon, LogOutIcon } from "@lucide/svelte";
 import Logo from './logo.svelte';
 import { Navigation } from "@skeletonlabs/skeleton-svelte";
 import { router, page } from '@inertiajs/svelte'
@@ -75,8 +75,18 @@ const newProjectClasses = $derived(
 		: `${_anchorBase} hover:preset-tonal`
 );
 
+let isLoggingOut = $state(false);
+
 function handleLogout() {
-	router.post('/logout')
+	isLoggingOut = true;
+	router.post('/logout', {}, {
+		onFinish: () => {
+			isLoggingOut = false;
+		},
+		onError: () => {
+			isLoggingOut = false;
+		}
+	});
 }
 </script>
 
@@ -96,10 +106,6 @@ function handleLogout() {
 				<a href="/contacts" class={getNavClasses('/contacts')} onclick={closeDrawer}>
 					<UsersIcon class="size-4 shrink-0" />
 					<span class="truncate">Contacts</span>
-				</a>
-				<a href="/inbox/emails" class={getNavClasses('/inbox/emails')} onclick={closeDrawer}>
-					<MailIcon class="size-4 shrink-0" />
-					<span class="truncate">Inbox</span>
 				</a>
 				<button onclick={() => { handleNewProject(); closeDrawer(); }} class={newProjectClasses}>
 					<PlusIcon class="size-4 shrink-0" />
@@ -134,15 +140,20 @@ function handleLogout() {
 				<UserStatus {user} />
 			</div>
 		{/if}
-		<button
-			onclick={() => { handleLogout(); closeDrawer(); }}
-			class="{_anchorBase} hover:preset-tonal"
-			title="Logout"
-			aria-label="Logout"
-		>
-			<LogOutIcon class="size-4 shrink-0" />
-			<span class="truncate">Logout</span>
-		</button>
+		<div class="grid grid-cols-2 gap-2">
+			<a href="/account" class={getNavClasses('/account', true)} onclick={closeDrawer}>
+				<Settings2Icon class="size-4 shrink-0" />
+				<span class="truncate">Account</span>
+			</a>
+			<button
+				onclick={() => { handleLogout(); closeDrawer(); }}
+				disabled={isLoggingOut}
+				class="{_anchorBase} hover:preset-tonal disabled:opacity-50"
+			>
+				<LogOutIcon class="size-4 shrink-0" />
+				<span class="truncate">{isLoggingOut ? 'Logging out...' : 'Logout'}</span>
+			</button>
+		</div>
 	</Navigation.Footer>
 {/snippet}
 
@@ -193,7 +204,7 @@ function handleLogout() {
 	</Navigation>
 
 	<!-- Main Content -->
-	<main class="flex justify-start lg:justify-center items-center flex-col pt-[var(--mobile-header-height)] lg:pt-0 min-h-[calc(100dvh-var(--mobile-header-height)-1px)] lg:min-h-dvh box-border overflow-y-auto">
+	<main class="flex min-h-0 min-w-0 flex-col items-stretch justify-start pt-[var(--mobile-header-height)] lg:pt-0 min-h-[calc(100dvh-var(--mobile-header-height)-1px)] lg:min-h-dvh box-border overflow-y-auto">
 		{@render children()}
 	</main>
 </div>

@@ -1,6 +1,5 @@
 <script lang="ts">
   import Logo from '#components/logo.svelte';
-  import ThemeToggle from '#components/theme_toggle.svelte';
 
   const currentYear = new Date().getFullYear();
 </script>
@@ -17,9 +16,6 @@
           <span aria-hidden="true">-</span>
           <span>{currentYear}</span>
         </p>
-        <div class="w-fit">
-          <ThemeToggle />
-        </div>
       </div>
     </div>
 

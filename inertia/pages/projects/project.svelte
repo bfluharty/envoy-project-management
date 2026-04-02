@@ -1,9 +1,13 @@
 <script lang="ts">
 import Sidebar from "#components/sidebar.svelte";
+import ProjectOutreachPanel from '#components/project_outreach_panel.svelte';
+import ProjectSectionChrome from '#components/project_section_chrome.svelte';
 import Logo from '#components/logo.svelte';
+import UserAvatar, { type AvatarData } from '#components/user_avatar.svelte';
 import LocationSearch from '#components/location_search.svelte';
 import type { LocationData } from '#components/location_search.svelte';
-import { UserIcon } from '@lucide/svelte';
+import { page } from '@inertiajs/svelte';
+import { RefreshCwIcon } from '@lucide/svelte';
 import { onDestroy, onMount, untrack } from 'svelte';
 import { formatDate, formatCurrency } from '../../utils/format';
 
@@ -36,6 +40,52 @@ interface Project {
     goals: string | null;
 }
 
+interface OutreachMessage {
+    uuid: string;
+    direction: 'inbound' | 'outbound';
+    subject: string;
+    from: string;
+    to: string;
+    body: string;
+    sentAt: string;
+    messageId?: string;
+    references?: string;
+    threadId?: string;
+}
+
+interface OutreachCard {
+    threadUuid: string;
+    projectVendorUuid: string;
+    draftUuid: string | null;
+    vendor: Vendor;
+    status: string;
+    subject: string;
+    body: string;
+    sentAt: string | null;
+    lastActivityAt: string | null;
+    needsAttention: boolean;
+    lastError: string | null;
+    replyReceived: boolean;
+    thread: {
+        uuid: string;
+        messages: OutreachMessage[];
+    };
+}
+
+interface OutreachStateResponse {
+    cards?: OutreachCard[];
+    senderMode?: 'connected_inbox' | 'envoy_system';
+    createdThreadUuid?: string;
+    revisedReplyBody?: string;
+    revisedThreadUuid?: string;
+}
+
+interface SharedUser {
+    fullName?: string | null;
+    email?: string;
+    avatar?: AvatarData;
+}
+
 const {
     project,
     hasPriorConversation,
@@ -53,12 +103,24 @@ const {
 // ── Tab state ──────────────────────────────────────────────
 const getTabKey = () => `tab-${project.uuid}`;
 const VALID_TABS = ['convo', 'outreach', 'overview'] as const;
+type ProjectTab = typeof VALID_TABS[number];
 const isReload = typeof performance !== 'undefined' &&
     (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload';
 const storedTab = isReload && typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(getTabKey()) : null;
-let activeTab = $state<'convo' | 'outreach' | 'overview'>(
-    VALID_TABS.includes(storedTab as any) ? (storedTab as 'convo' | 'outreach' | 'overview') : 'convo'
+let activeTab = $state<ProjectTab>(
+    VALID_TABS.includes(storedTab as any) ? (storedTab as ProjectTab) : 'convo'
 );
+
+function handleTabChange(tab: ProjectTab) {
+    if (editMode && tab !== 'overview') {
+        if (!confirm('You have unsaved changes. Leave this tab anyway?')) return;
+        editMode = false;
+        localProject = { ...savedProject };
+    }
+
+    activeTab = tab;
+    sessionStorage.setItem(getTabKey(), tab);
+}
 
 // ── Chat state ─────────────────────────────────────────────
 let idCounter = untrack(() => conversationHistory.length);
@@ -122,6 +184,403 @@ function retryMessage(retryPrompt: string, retryVariables: Record<string, any> =
     messages = messages.filter((m) => !m.isError);
     sendChat(retryPrompt, retryVariables);
 }
+
+// Outreach state
+let outreachCards = $state<OutreachCard[]>([]);
+let outreachLoaded = $state(false);
+let outreachLoading = $state(false);
+let outreachSyncing = $state(false);
+let outreachInitialLoadAttempted = $state(false);
+let outreachError = $state<string | null>(null);
+let outreachSenderMode = $state<'connected_inbox' | 'envoy_system'>('envoy_system');
+let sendingDraftUuid = $state<string | null>(null);
+let creatingDraftProjectVendorUuid = $state<string | null>(null);
+let revisingDraftUuid = $state<string | null>(null);
+let reviseDraftUuid = $state<string | null>(null);
+let reviseInstructions = $state('');
+let selectedOutreachThreadUuid = $state<string | null>(null);
+let composeThreadUuid = $state<string | null>(null);
+let outreachPane = $state<'read' | 'create'>('read');
+let newThreadVendorUuid = $state(untrack(() => linkedVendors[0]?.uuid ?? ''));
+let replyThreadUuid = $state<string | null>(null);
+let replySubject = $state('');
+let replyBody = $state('');
+let replyInReplyTo = $state<string | undefined>(undefined);
+let replyReferences = $state<string | undefined>(undefined);
+let replyThreadId = $state<string | undefined>(undefined);
+let sendingReply = $state(false);
+let revisingReplyThreadUuid = $state<string | null>(null);
+let showReplyReviseComposer = $state(false);
+let replyReviseInstructions = $state('');
+let replyRevisionOriginalBody = $state('');
+let replyRevisionSuggestedBody = $state('');
+let currentUser = $derived(($page.props.user as SharedUser | undefined) ?? undefined);
+let currentUserName = $derived(currentUser?.fullName ?? 'You');
+let currentUserAvatar = $derived(
+    currentUser?.avatar ?? {
+        url: null,
+        source: 'generated' as const,
+        initials: 'Y',
+        displayName: currentUserName,
+    }
+);
+
+let selectedOutreachCard = $derived(
+    selectedOutreachThreadUuid
+        ? outreachCards.find((card) => card.threadUuid === selectedOutreachThreadUuid) ?? null
+        : outreachPane === 'create'
+            ? null
+            : outreachCards[0] ?? null
+);
+
+let composeOutreachCard = $derived(
+    composeThreadUuid
+        ? outreachCards.find((card) => card.threadUuid === composeThreadUuid) ?? null
+        : null
+);
+
+function getDefaultOutreachPane(card: OutreachCard | null) {
+    if (!card) return 'read';
+    return card.status === 'draft' || card.status === 'error' || card.status === 'empty' ? 'create' : 'read';
+}
+
+function selectOutreachCard(card: OutreachCard) {
+    selectedOutreachThreadUuid = card.threadUuid;
+    composeThreadUuid = card.threadUuid;
+    outreachPane = getDefaultOutreachPane(card);
+    reviseDraftUuid = null;
+    reviseInstructions = '';
+    showReplyReviseComposer = false;
+    replyReviseInstructions = '';
+    replyRevisionOriginalBody = '';
+    replyRevisionSuggestedBody = '';
+    closeReplyComposer();
+}
+
+function applyOutreachState(data: OutreachStateResponse) {
+    outreachCards = data.cards ?? [];
+    outreachSenderMode = data.senderMode ?? 'envoy_system';
+    outreachLoaded = true;
+
+    if (!newThreadVendorUuid && linkedVendors.length > 0) {
+        newThreadVendorUuid = linkedVendors[0].uuid;
+    }
+
+    const selectedCardStillExists = selectedOutreachThreadUuid
+        ? outreachCards.some((card) => card.threadUuid === selectedOutreachThreadUuid)
+        : false;
+
+    if (!selectedCardStillExists && outreachPane !== 'create') {
+        const nextCard = outreachCards[0] ?? null;
+        selectedOutreachThreadUuid = nextCard?.threadUuid ?? null;
+        outreachPane = getDefaultOutreachPane(nextCard);
+    }
+
+    if (composeThreadUuid && !outreachCards.some((card) => card.threadUuid === composeThreadUuid)) {
+        composeThreadUuid = null;
+    }
+
+    if (replyThreadUuid && !outreachCards.some((card) => card.threadUuid === replyThreadUuid)) {
+        closeReplyComposer();
+    }
+}
+
+async function requestOutreach(url: string, init?: RequestInit) {
+    const res = await fetch(url, {
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        ...init,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.developerText ?? data.error ?? 'Outreach request failed');
+    }
+    applyOutreachState(data);
+    return data as OutreachStateResponse;
+}
+
+async function createDraftForVendorUuid(vendorUuid: string) {
+    if (!vendorUuid || creatingDraftProjectVendorUuid) return;
+    creatingDraftProjectVendorUuid = vendorUuid;
+    outreachError = null;
+
+    try {
+        const data = await requestOutreach(`/api/projects/${project.uuid}/outreach/drafts`, {
+            method: 'POST',
+            body: JSON.stringify({
+                vendorUuid,
+            }),
+        });
+        const createdThreadUuid =
+            data.createdThreadUuid
+            ?? outreachCards.find((card) => card.vendor.uuid === vendorUuid && card.status === 'draft')?.threadUuid
+            ?? null;
+        selectedOutreachThreadUuid = createdThreadUuid;
+        composeThreadUuid = createdThreadUuid;
+        outreachPane = 'create';
+        showReplyReviseComposer = false;
+        replyReviseInstructions = '';
+    } catch (error) {
+        outreachError = error instanceof Error ? error.message : 'Failed to create outreach draft.';
+    } finally {
+        creatingDraftProjectVendorUuid = null;
+    }
+}
+
+function startNewThread() {
+    selectedOutreachThreadUuid = null;
+    composeThreadUuid = null;
+    outreachPane = 'create';
+    reviseDraftUuid = null;
+    reviseInstructions = '';
+    showReplyReviseComposer = false;
+    replyReviseInstructions = '';
+    closeReplyComposer();
+
+    if (!newThreadVendorUuid && linkedVendors.length > 0) {
+        newThreadVendorUuid = linkedVendors[0].uuid;
+    }
+}
+
+async function loadOutreach(sync = false) {
+    if (outreachLoading || outreachSyncing) return;
+
+    outreachError = null;
+    if (sync) {
+        outreachSyncing = true;
+    } else {
+        outreachLoading = true;
+    }
+
+    try {
+        await requestOutreach(
+            sync
+                ? `/api/projects/${project.uuid}/outreach/sync`
+                : `/api/projects/${project.uuid}/outreach`,
+            sync ? { method: 'POST' } : undefined
+        );
+    } catch (error) {
+        outreachError = error instanceof Error ? error.message : 'Failed to load outreach.';
+    } finally {
+        outreachLoading = false;
+        outreachSyncing = false;
+    }
+}
+
+function updateDraftField(draftUuid: string, field: 'subject' | 'body', value: string) {
+    outreachCards = outreachCards.map((card) =>
+        card.draftUuid === draftUuid
+            ? {
+                ...card,
+                [field]: value,
+            }
+            : card
+    );
+}
+
+function buildReplyReferences(message: OutreachMessage | undefined) {
+    if (!message?.messageId) return undefined;
+    if (message.references?.trim()) return `${message.references.trim()} ${message.messageId}`;
+    return message.messageId;
+}
+
+function reSubject(subject: string) {
+    const trimmed = (subject || '').trim();
+    if (!trimmed) return 'Re: Project Outreach';
+    return /^re:\s/i.test(trimmed) ? trimmed : `Re: ${trimmed}`;
+}
+
+function openReplyComposer(card: OutreachCard, message?: OutreachMessage) {
+    const target = message ?? card.thread.messages[card.thread.messages.length - 1];
+    replyThreadUuid = card.threadUuid;
+    replySubject = reSubject(target?.subject ?? card.subject);
+    replyBody = '';
+    replyInReplyTo = target?.messageId;
+    replyReferences = buildReplyReferences(target);
+    replyThreadId = target?.threadId ?? card.thread.messages.find((entry) => entry.threadId)?.threadId;
+    showReplyReviseComposer = false;
+    replyReviseInstructions = '';
+    replyRevisionOriginalBody = '';
+    replyRevisionSuggestedBody = '';
+    outreachError = null;
+    outreachPane = 'read';
+}
+
+function closeReplyComposer() {
+    replyThreadUuid = null;
+    replySubject = '';
+    replyBody = '';
+    replyInReplyTo = undefined;
+    replyReferences = undefined;
+    replyThreadId = undefined;
+    showReplyReviseComposer = false;
+    replyReviseInstructions = '';
+    replyRevisionOriginalBody = '';
+    replyRevisionSuggestedBody = '';
+}
+
+function clearReplyRevisionPreview() {
+    replyRevisionOriginalBody = '';
+    replyRevisionSuggestedBody = '';
+}
+
+function applySuggestedReplyRevision() {
+    if (!replyRevisionSuggestedBody.trim()) return;
+    replyBody = replyRevisionSuggestedBody;
+    clearReplyRevisionPreview();
+    showReplyReviseComposer = false;
+    setOperationSuccess('Revision applied to reply.');
+}
+
+async function sendDraft(card: OutreachCard) {
+    if (!card.draftUuid || sendingDraftUuid) return;
+    sendingDraftUuid = card.draftUuid;
+    outreachError = null;
+
+    try {
+        await requestOutreach(`/api/projects/${project.uuid}/outreach/drafts/${card.draftUuid}/send`, {
+            method: 'POST',
+            body: JSON.stringify({
+                subject: card.subject,
+                body: card.body,
+            }),
+        });
+        reviseDraftUuid = null;
+        reviseInstructions = '';
+        outreachPane = 'read';
+        setOperationSuccess('Outreach email sent.');
+    } catch (error) {
+        outreachError = error instanceof Error ? error.message : 'Failed to send outreach email.';
+    } finally {
+        sendingDraftUuid = null;
+    }
+}
+
+async function reviseDraft(card: OutreachCard) {
+    if (!card.draftUuid || !reviseInstructions.trim() || revisingDraftUuid) return;
+    revisingDraftUuid = card.draftUuid;
+    outreachError = null;
+
+    try {
+        await requestOutreach(`/api/projects/${project.uuid}/outreach/drafts/${card.draftUuid}/revise`, {
+            method: 'POST',
+            body: JSON.stringify({
+                instructions: reviseInstructions,
+                subject: card.subject,
+                body: card.body,
+            }),
+        });
+        outreachPane = 'create';
+        reviseDraftUuid = null;
+        reviseInstructions = '';
+        setOperationSuccess('Draft revised.');
+    } catch (error) {
+        outreachError = error instanceof Error ? error.message : 'Failed to revise outreach draft.';
+    } finally {
+        revisingDraftUuid = null;
+  }
+}
+
+async function cancelDraft(card: OutreachCard) {
+    if (!card.draftUuid) return;
+    outreachError = null;
+
+    try {
+        await requestOutreach(`/api/projects/${project.uuid}/outreach/drafts/${card.draftUuid}`, {
+            method: 'DELETE',
+        });
+
+        reviseDraftUuid = null;
+        reviseInstructions = '';
+        showReplyReviseComposer = false;
+        replyReviseInstructions = '';
+        closeReplyComposer();
+
+        if (composeThreadUuid === card.threadUuid) {
+            composeThreadUuid = null;
+        }
+
+        if (selectedOutreachThreadUuid === card.threadUuid) {
+            selectedOutreachThreadUuid = outreachCards[0]?.threadUuid ?? null;
+        }
+
+        if (outreachCards.length === 0) {
+            startNewThread();
+        } else {
+            outreachPane = selectedOutreachThreadUuid ? getDefaultOutreachPane(selectedOutreachCard) : 'read';
+        }
+
+        setOperationSuccess('Draft canceled.');
+    } catch (error) {
+        outreachError = error instanceof Error ? error.message : 'Failed to cancel outreach draft.';
+    }
+}
+
+async function sendReply(card: OutreachCard) {
+    if (!card.threadUuid || !replyBody.trim() || sendingReply) return;
+    sendingReply = true;
+    outreachError = null;
+
+    try {
+        await requestOutreach(`/api/projects/${project.uuid}/outreach/threads/${card.threadUuid}/replies`, {
+            method: 'POST',
+            body: JSON.stringify({
+                subject: replySubject,
+                body: replyBody,
+                inReplyTo: replyInReplyTo,
+                references: replyReferences,
+                threadId: replyThreadId,
+            }),
+        });
+        closeReplyComposer();
+        outreachPane = 'read';
+        setOperationSuccess('Reply sent.');
+    } catch (error) {
+        outreachError = error instanceof Error ? error.message : 'Failed to send reply.';
+    } finally {
+        sendingReply = false;
+    }
+}
+
+async function reviseReply(card: OutreachCard) {
+    if (!card.threadUuid || !replyReviseInstructions.trim() || revisingReplyThreadUuid) return;
+    revisingReplyThreadUuid = card.threadUuid;
+    outreachError = null;
+    const originalBody = replyBody;
+
+    try {
+        const data = await requestOutreach(`/api/projects/${project.uuid}/outreach/threads/${card.threadUuid}/replies/revise`, {
+            method: 'POST',
+            body: JSON.stringify({
+                instructions: replyReviseInstructions,
+                body: replyBody.trim() || undefined,
+            }),
+        });
+
+        if (typeof data.revisedReplyBody === 'string' && data.revisedReplyBody.trim()) {
+            replyRevisionOriginalBody = originalBody;
+            replyRevisionSuggestedBody = data.revisedReplyBody;
+        }
+
+        setOperationSuccess('Revision ready to review.');
+    } catch (error) {
+        outreachError = error instanceof Error ? error.message : 'Failed to revise reply.';
+    } finally {
+        revisingReplyThreadUuid = null;
+    }
+}
+
+$effect(() => {
+    if (
+        activeTab === 'outreach' &&
+        !outreachLoaded &&
+        !outreachInitialLoadAttempted &&
+        !outreachLoading &&
+        !outreachSyncing
+    ) {
+        outreachInitialLoadAttempted = true;
+        loadOutreach(true);
+    }
+});
 
 // ── Overview state ─────────────────────────────────────────
 let localProject = $state(untrack(() => ({ ...project })));
@@ -339,77 +798,65 @@ onDestroy(() => {
 
 <Sidebar>
 
-<div class="flex flex-col w-full h-[calc(100dvh-var(--mobile-header-height,4.5rem))] lg:h-dvh">
-
-<h1 class="sr-only">{project.name}</h1>
+<div class="flex min-h-0 min-w-0 flex-col w-full h-[calc(100dvh-var(--mobile-header-height,4.5rem))] lg:h-dvh" style="contain: layout;">
 
 <!-- Screen reader live region for operation feedback -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">{opSuccessMsg}</div>
 
-<!-- Tab bar -->
-<div class="flex justify-center lg:justify-end shrink-0 px-4 lg:px-6 py-3 lg:py-2 bg-surface-50-950/50 backdrop-blur-md border-b border-surface-200-800">
-    <div role="radiogroup" aria-label="Page section" class="flex gap-1">
-        {#each (['convo', 'outreach', 'overview'] as const) as tab}
-            <button
-                role="radio"
-                aria-checked={activeTab === tab}
-                class="btn btn-sm capitalize {activeTab === tab ? 'preset-filled-primary-500' : 'hover:preset-tonal'}"
-                onclick={() => {
-                    if (editMode && tab !== 'overview') {
-                        if (!confirm('You have unsaved changes. Leave this tab anyway?')) return;
-                        editMode = false;
-                        localProject = { ...savedProject };
-                    }
-                    activeTab = tab;
-                    sessionStorage.setItem(getTabKey(), tab);
-                }}>
-                {tab}
-            </button>
-        {/each}
-    </div>
-</div>
-
 <!-- Convo tab -->
 {#if activeTab === 'convo'}
-<div class="flex flex-col flex-1 overflow-hidden w-full">
-    <div class="flex-1 overflow-y-auto p-4 space-y-4"
+<div class="flex min-h-0 min-w-0 flex-col flex-1 overflow-hidden w-full">
+    <div class="min-h-0 flex-1 overflow-y-auto"
          aria-live="polite" aria-atomic="false" aria-label="Conversation">
-        {#each messages as msg (msg.id)}
-            <div class="flex items-start gap-2" class:justify-end={msg.role === 'user'}>
-                {#if msg.role === 'assistant'}
-                    <div class="avatar size-8 mt-1.5" aria-hidden="true">
-                        <Logo class="size-8" />
-                    </div>
-                {/if}
-                <div class="card max-w-lg p-3 text-sm"
-                    class:preset-filled-surface-100-900={msg.role === 'assistant'}
-                    class:preset-filled-primary-500={msg.role === 'user'}>
-                    {#if msg.isTyping}
-                        <span class="inline-flex gap-1 items-center h-4" role="status" aria-label="Assistant is typing">
-                            <span class="w-1.5 h-1.5 rounded-full bg-current motion-safe:animate-bounce [animation-delay:0ms]" aria-hidden="true"></span>
-                            <span class="w-1.5 h-1.5 rounded-full bg-current motion-safe:animate-bounce [animation-delay:150ms]" aria-hidden="true"></span>
-                            <span class="w-1.5 h-1.5 rounded-full bg-current motion-safe:animate-bounce [animation-delay:300ms]" aria-hidden="true"></span>
-                        </span>
-                    {:else if msg.isError}
-                        <div role="alert">
-                            <p>{msg.content}</p>
-                            <button
-                                class="btn btn-sm preset-filled-error-500 mt-2"
-                                onclick={() => retryMessage(msg.retryPrompt!, msg.retryVariables ?? {})}>
-                                Retry
-                            </button>
+        <ProjectSectionChrome
+            activeTab={activeTab}
+            onSelectTab={handleTabChange}
+            sectionLabel="Conversation"
+            projectName={project.name}
+            description="Use Envoy to capture missing details, refine the brief, and keep project planning in one thread."
+        />
+        <div class="mx-auto w-full max-w-4xl p-4 sm:p-6 space-y-4">
+            {#each messages as msg (msg.id)}
+                <div class="flex items-start gap-2" class:justify-end={msg.role === 'user'}>
+                    {#if msg.role === 'assistant'}
+                        <div class="avatar size-8 mt-1.5" aria-hidden="true">
+                            <Logo class="size-8" />
                         </div>
-                    {:else}
-                        {msg.content}
+                    {/if}
+                    <div class="card max-w-lg p-3 text-sm"
+                        class:preset-filled-surface-100-900={msg.role === 'assistant'}
+                        class:preset-filled-primary-500={msg.role === 'user'}>
+                        {#if msg.isTyping}
+                            <span class="inline-flex gap-1 items-center h-4" role="status" aria-label="Assistant is typing">
+                                <span class="w-1.5 h-1.5 rounded-full bg-current motion-safe:animate-bounce [animation-delay:0ms]" aria-hidden="true"></span>
+                                <span class="w-1.5 h-1.5 rounded-full bg-current motion-safe:animate-bounce [animation-delay:150ms]" aria-hidden="true"></span>
+                                <span class="w-1.5 h-1.5 rounded-full bg-current motion-safe:animate-bounce [animation-delay:300ms]" aria-hidden="true"></span>
+                            </span>
+                        {:else if msg.isError}
+                            <div role="alert">
+                                <p>{msg.content}</p>
+                                <button
+                                    class="btn btn-sm preset-filled-error-500 mt-2"
+                                    onclick={() => retryMessage(msg.retryPrompt!, msg.retryVariables ?? {})}>
+                                    Retry
+                                </button>
+                            </div>
+                        {:else}
+                            {msg.content}
+                        {/if}
+                    </div>
+                    {#if msg.role === 'user'}
+                        <UserAvatar
+                            avatar={currentUserAvatar}
+                            size="sm"
+                            decorative={true}
+                            testId="chat-user-avatar"
+                            class="mt-1.5"
+                        />
                     {/if}
                 </div>
-                {#if msg.role === 'user'}
-                    <div class="avatar size-8 mt-1.5 preset-filled-primary-500" aria-hidden="true">
-                        <UserIcon class="size-4" />
-                    </div>
-                {/if}
-            </div>
-        {/each}
+            {/each}
+        </div>
     </div>
     <form class="p-4 flex gap-2 bg-surface-50-950/50 backdrop-blur-md border-t border-surface-200-800" onsubmit={sendMessage}>
         <label for="project-message" class="sr-only">Message</label>
@@ -430,20 +877,131 @@ onDestroy(() => {
 
 <!-- Outreach tab -->
 {#if activeTab === 'outreach'}
-<div class="flex-1 overflow-y-auto p-6">
-    <h2 class="text-lg font-semibold mb-4">Outreach</h2>
-    <p class="text-surface-600-400 text-sm italic">Outreach coming soon.</p>
+<div class="min-h-0 flex-1 overflow-y-auto w-full">
+    <ProjectSectionChrome
+        activeTab={activeTab}
+        onSelectTab={handleTabChange}
+        sectionLabel="Outreach"
+        projectName={project.name}
+        description="Review drafts, send outreach, and reply to vendor threads without leaving this project."
+        note={outreachSenderMode === 'connected_inbox'
+            ? 'Envoy will send from your connected inbox by default.'
+            : 'No inbox connected. Envoy will send from the system mailbox until you connect one in Account.'}
+    >
+        {#snippet actions()}
+
+            <button class="btn btn-sm preset-tonal" type="button" onclick={() => loadOutreach(true)} disabled={outreachSyncing}>
+                    <RefreshCwIcon class={`size-4 shrink-0 ${outreachSyncing ? 'animate-spin' : ''}`} />
+                    <span>{outreachSyncing ? 'Refreshing…' : 'Refresh'}</span>
+                </button>
+                <a href="/account#email-accounts" class="btn btn-sm preset-tonal">Manage Email Accounts</a>
+        {/snippet}
+    </ProjectSectionChrome>
+    <div class="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6">
+
+        {#if outreachError}
+            <div class="rounded-xl border border-error-500/30 bg-error-500/10 p-4 text-sm text-error-500">
+                {outreachError}
+            </div>
+        {/if}
+
+        {#if outreachLoading}
+            <div class="rounded-xl border border-surface-200-800 bg-surface-50-950/50 p-6 text-sm text-surface-600-400">
+                Loading outreach…
+            </div>
+        {:else}
+            {#if linkedVendors.length === 0}
+                <div class="rounded-xl border border-dashed border-surface-200-800 bg-surface-50-950/30 p-4 text-sm text-surface-600-400">
+                    No contacts are linked to this project yet. Add one in the Overview tab, then create your first outreach message.
+                </div>
+            {/if}
+            <ProjectOutreachPanel
+                cards={outreachCards}
+                contacts={linkedVendors}
+                currentUserName={currentUserName}
+                selectedCard={selectedOutreachCard}
+                composeCard={composeOutreachCard}
+                outreachPane={outreachPane}
+                newThreadVendorUuid={newThreadVendorUuid}
+                creatingDraftProjectVendorUuid={creatingDraftProjectVendorUuid}
+                sendingDraftUuid={sendingDraftUuid}
+                revisingDraftUuid={revisingDraftUuid}
+                reviseDraftUuid={reviseDraftUuid}
+                reviseInstructions={reviseInstructions}
+                replyThreadUuid={replyThreadUuid}
+                replySubject={replySubject}
+                replyBody={replyBody}
+                sendingReply={sendingReply}
+                revisingReplyThreadUuid={revisingReplyThreadUuid}
+                showReplyReviseComposer={showReplyReviseComposer}
+                replyReviseInstructions={replyReviseInstructions}
+                replyRevisionOriginalBody={replyRevisionOriginalBody}
+                replyRevisionSuggestedBody={replyRevisionSuggestedBody}
+                onSelectCard={selectOutreachCard}
+                onStartNewThread={startNewThread}
+                onCreateDraftForVendorUuid={createDraftForVendorUuid}
+                onUpdateDraftField={updateDraftField}
+                onSendDraft={sendDraft}
+                onCancelDraft={cancelDraft}
+                onToggleRevise={(card) => {
+                    reviseDraftUuid = reviseDraftUuid === card.draftUuid ? null : card.draftUuid;
+                    reviseInstructions = '';
+                }}
+                onReviseDraft={reviseDraft}
+                onChangeReviseInstructions={(value) => {
+                    reviseInstructions = value;
+                }}
+                onChangeNewThreadVendorUuid={(value) => {
+                    newThreadVendorUuid = value;
+                }}
+                onCancelRevise={() => {
+                    reviseDraftUuid = null;
+                    reviseInstructions = '';
+                }}
+                onOpenReplyComposer={openReplyComposer}
+                onSendReply={sendReply}
+                onCloseReplyComposer={closeReplyComposer}
+                onReplySubjectChange={(value) => {
+                    replySubject = value;
+                }}
+                onReplyBodyChange={(value) => {
+                    replyBody = value;
+                    clearReplyRevisionPreview();
+                }}
+                onToggleReplyRevise={() => {
+                    showReplyReviseComposer = !showReplyReviseComposer;
+                }}
+                onChangeReplyReviseInstructions={(value) => {
+                    replyReviseInstructions = value;
+                }}
+                onReviseReply={reviseReply}
+                onApplySuggestedReplyRevision={applySuggestedReplyRevision}
+                onDismissSuggestedReplyRevision={clearReplyRevisionPreview}
+                onCancelReplyRevise={() => {
+                    showReplyReviseComposer = false;
+                    replyReviseInstructions = '';
+                    clearReplyRevisionPreview();
+                }}
+            />
+        {/if}
+        </div>
 </div>
 {/if}
-
 <!-- Overview tab -->
 {#if activeTab === 'overview'}
-<div class="flex-1 overflow-y-auto @container">
-<div class="p-6 w-full max-w-5xl mx-auto">
+<div class="min-h-0 flex-1 overflow-y-auto @container">
+<ProjectSectionChrome
+    activeTab={activeTab}
+    onSelectTab={handleTabChange}
+    sectionLabel="Overview"
+    projectName={project.name}
+    description="Keep the project brief, timeline, budget, and key contacts together in one place."
+/>
+    <div class="p-4 sm:p-6 w-full max-w-6xl mx-auto">
 <div class="grid grid-cols-1 @4xl:grid-cols-2 gap-8 items-start">
 
     <!-- Project Details -->
-    <section>
+    <section class="rounded-2xl border border-surface-200-800 bg-surface-50-950/40 backdrop-blur-md p-5">
         <div class="flex items-center justify-between mb-4">
             <h2 class="text-lg font-semibold">Project Details</h2>
             {#if !editMode}
@@ -454,7 +1012,7 @@ onDestroy(() => {
         </div>
 
         {#if editMode}
-            <form onsubmit={saveDetails} class="space-y-4 rounded-xl border border-surface-200-800 bg-surface-50-950/50 backdrop-blur-md p-4">
+            <form onsubmit={saveDetails} class="space-y-4">
                 {#if saveError}
                     <p role="alert" class="text-error-500 text-sm">{saveError}</p>
                 {/if}
@@ -581,7 +1139,7 @@ onDestroy(() => {
                         <dd>{formatDate(localProject.deadline)}</dd>
                     </div>
                 {/if}
-                {#if localProject.budgetAmount !== null}
+                {#if localProject.budgetAmount !== null && localProject.budgetAmount !== 0}
                     <div>
                         <dt class="text-surface-600-400 text-xs uppercase tracking-wide mb-0.5">Budget</dt>
                         <dd>{formatCurrency(localProject.budgetAmount, localProject.budgetCurrency ?? 'USD')}</dd>
@@ -601,7 +1159,7 @@ onDestroy(() => {
     </section>
 
     <!-- Contacts -->
-    <section>
+    <section class="rounded-2xl border border-surface-200-800 bg-surface-50-950/40 backdrop-blur-md p-5">
         <div class="flex items-center justify-between mb-4">
             <h2 class="text-lg font-semibold">Contacts</h2>
             {#if !contactEditMode}
@@ -762,3 +1320,5 @@ onDestroy(() => {
 </div><!-- end outer flex column -->
 
 </Sidebar>
+
+

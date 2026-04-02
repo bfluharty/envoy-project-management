@@ -50,7 +50,9 @@
           </aside>
         {/if}
         {#if flashMessage?.type === 'success'}
-          <aside class="card preset-tonal-success p-4">
+          <aside
+            class="card border border-success-500/20 bg-success-500/10 p-4 text-surface-950 dark:border-surface-200-800 dark:bg-surface-100-900/40 dark:text-surface-50"
+          >
             <p>{flashMessage.message}</p>
           </aside>
         {/if}

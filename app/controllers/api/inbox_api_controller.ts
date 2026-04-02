@@ -49,17 +49,16 @@ export default class InboxAPIController {
 
     if (!connection) {
       return response.badRequest({
-        error: 'No inbox connected. Connect an inbox in Settings → Inbox.',
+        error: 'No inbox connected. Connect an inbox in Settings > Inbox.',
       })
     }
 
-    let conversationUuid = vendorConversationUuid
-    if (!conversationUuid) {
+    if (!vendorConversationUuid) {
       return response.badRequest({ error: 'Missing vendorConversationUuid' })
     }
 
     const conversation = await VendorConversation.query()
-      .where('uuid', conversationUuid)
+      .where('uuid', vendorConversationUuid)
       .where('user_id', user.id)
       .first()
 
@@ -79,7 +78,7 @@ export default class InboxAPIController {
     )
 
     try {
-      const message = await sendReplyAndRecord(connection, conversationUuid, {
+      const message = await sendReplyAndRecord(connection, vendorConversationUuid, {
         to,
         subject,
         body: replyBody,

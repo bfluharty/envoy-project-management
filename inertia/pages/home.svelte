@@ -399,32 +399,45 @@
       </div>
     {:else}
       <!-- Populated state -->
-      <div class="w-full max-w-md p-6 space-y-5">
-        <div>
-          <h1 class="text-2xl font-bold">Jump back in{user?.fullName ? `, ${user.fullName.split(' ')[0]}` : ''}</h1>
-          <p class="text-surface-600-400 text-sm mt-1">Pick up where you left off.</p>
-        </div>
-        <ul class="space-y-2">
-          {#each recentProjects as project (project.uuid)}
-            <li>
-              <a
-                href="/projects/{project.uuid}"
-                class="flex items-center gap-3 p-3 card hover:preset-tonal rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500">
-                <FolderIcon class="size-4 text-primary-500 shrink-0" />
-                <div class="flex-1 min-w-0">
-                  <p class="font-medium text-sm truncate">{project.title}</p>
-                  {#if project.description}
-                    <p class="text-xs text-surface-600-400 truncate">{project.description}</p>
-                  {/if}
-                </div>
-                <ChevronRightIcon class="size-4 text-surface-400 shrink-0" />
-              </a>
-            </li>
-          {/each}
-        </ul>
-        <button class="btn preset-filled-primary-500 w-full" onclick={toggleForm}>
-          + New project
-        </button>
+      <div class="w-full max-w-5xl p-6 space-y-8">
+        <header class="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 class="text-3xl font-bold">Jump back in{user?.fullName ? `, ${user.fullName.split(' ')[0]}` : ''}</h1>
+            <p class="text-surface-600-400 text-sm mt-2">Pick up where you left off or start a fresh project.</p>
+          </div>
+          <button class="btn preset-filled-primary-500" onclick={toggleForm}>
+            + New project
+          </button>
+        </header>
+
+        <section class="rounded-2xl border border-surface-200-800 bg-surface-50-950/40 backdrop-blur-md p-5 sm:p-6 space-y-5">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 class="text-lg font-semibold">Recent projects</h2>
+              <p class="text-sm text-surface-600-400 mt-1">Your latest workspaces, ready to reopen.</p>
+            </div>
+            <p class="text-xs uppercase tracking-[0.18em] text-surface-600-400">{recentProjects.length} shown</p>
+          </div>
+
+          <ul class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {#each recentProjects as project (project.uuid)}
+              <li>
+                <a
+                  href="/projects/{project.uuid}"
+                  class="flex h-full items-start gap-3 rounded-xl border border-surface-200-800 bg-surface-100-900/20 p-4 transition-colors hover:bg-surface-100-900/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500">
+                  <FolderIcon class="size-4 text-primary-500 shrink-0 mt-0.5" />
+                  <div class="flex-1 min-w-0">
+                    <p class="font-medium text-sm truncate">{project.title}</p>
+                    {#if project.description}
+                      <p class="text-xs text-surface-600-400 mt-1 line-clamp-2">{project.description}</p>
+                    {/if}
+                  </div>
+                  <ChevronRightIcon class="size-4 text-surface-400 shrink-0 mt-0.5" />
+                </a>
+              </li>
+            {/each}
+          </ul>
+        </section>
       </div>
     {/if}
   {/if}

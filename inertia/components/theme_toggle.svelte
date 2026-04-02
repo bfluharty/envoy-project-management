@@ -20,7 +20,7 @@
   ]
 </script>
 
-<div role="group" aria-label="Color theme" class="flex items-center rounded-lg border border-surface-200-800 p-0.5 gap-0.5">
+<div role="group" aria-label="Color theme" class="inline-flex w-fit items-center rounded-lg border border-surface-200-800 p-0.5 gap-0.5">
   {#each options as { value, Icon, label }}
     <button
       onclick={() => colorMode.set(value)}

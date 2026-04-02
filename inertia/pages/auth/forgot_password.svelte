@@ -38,7 +38,8 @@
       <div class="text-center">
         <h2 class="text-3xl font-bold">Forgot your password?</h2>
         <p class="mt-2 text-surface-600-400">
-          Enter your email and we'll send you a link to reset it.
+          Enter your email and we'll send you a link to reset it. If you originally signed in
+          with Google, you can use this to set up password login too.
           <a href="/login" class="text-primary-500 hover:text-primary-400 block mt-2">Back to sign in</a>
         </p>
       </div>
@@ -50,7 +51,9 @@
           </aside>
         {/if}
         {#if flashMessage?.type === 'success'}
-          <aside class="card preset-tonal-success p-4">
+          <aside
+            class="card border border-success-500/20 bg-success-500/10 p-4 text-surface-950 dark:border-surface-200-800 dark:bg-surface-100-900/40 dark:text-surface-50"
+          >
             <p>{flashMessage.message}</p>
           </aside>
         {/if}

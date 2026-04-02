@@ -36,6 +36,7 @@ export async function getGoogleUser(code: string): Promise<{
   googleId: string
   email: string
   fullName: string
+  picture: string | null
   accessToken: string
   refreshToken: string | null
   expiresAt: Date | null
@@ -59,6 +60,7 @@ export async function getGoogleUser(code: string): Promise<{
     googleId: profile.id,
     email: profile.email,
     fullName: profile.name || profile.email.split('@')[0],
+    picture: typeof profile.picture === 'string' ? profile.picture : null,
     accessToken: tokens.access_token!,
     refreshToken: tokens.refresh_token || null,
     expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : null,

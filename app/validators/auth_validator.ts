@@ -25,3 +25,11 @@ export const resetPasswordValidator = vine.compile(
     passwordConfirmation: vine.string().confirmed({ confirmationField: 'password' }),
   })
 )
+
+export const changePasswordValidator = vine.compile(
+  vine.object({
+    currentPassword: vine.string().minLength(1),
+    password: vine.string().minLength(8).maxLength(255),
+    passwordConfirmation: vine.string().confirmed({ confirmationField: 'password' }),
+  })
+)

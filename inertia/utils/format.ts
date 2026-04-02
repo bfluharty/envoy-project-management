@@ -12,6 +12,13 @@ export function formatDate(iso: string | null | undefined): string | null {
   return dt.toLocaleString(DateTime.DATE_FULL)
 }
 
+export function formatDateTime(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const dt = DateTime.fromISO(iso)
+  if (!dt.isValid) return formatDate(iso)
+  return dt.toLocaleString(DateTime.DATETIME_FULL)
+}
+
 /**
  * Format a numeric amount as currency.
  * @param amount - Numeric value

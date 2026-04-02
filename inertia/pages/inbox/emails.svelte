@@ -22,10 +22,8 @@
     messages: Message[]
   }
 
-  /** One email row for inbox-style view: message + its conversation (vendor) */
   type EmailRow = { conv: Conversation; msg: Message }
 
-  /** Thread list item: either a thread header or a message row inside a thread */
   type ThreadListItem =
     | { type: 'thread'; conv: Conversation }
     | { type: 'message'; conv: Conversation; msg: Message }
@@ -33,7 +31,6 @@
   const { conversations = [], hasConnections = false, syncError = null } = $props()
   const flash = $derived($page.props.flash || {})
 
-  /** Conversations as threads: sorted by latest message, each with messages chronological (oldest first). */
   const threads = $derived(
     [...conversations]
       .map((conv) => ({
@@ -49,7 +46,6 @@
       )
   )
 
-  /** Thread view: thread header row then indented message rows for each thread. */
   const threadListItems = $derived(
     threads.flatMap(({ conv, messages }) => [
       { type: 'thread' as const, conv },
@@ -57,32 +53,27 @@
     ])
   )
 
-  /** Base subject for thread title (strip leading Re:) */
   function threadSubject(conv: Conversation): string {
     const first = conv.messages[0]?.subject ?? ''
     return first.replace(/^(\s*Re:\s*)+/i, '').trim() || '(no subject)'
   }
 
   let viewMode = $state<'by_vendor' | 'all_emails'>('all_emails')
-  /** Selected email in "all emails" view for detail panel */
   let selectedEmail = $state<EmailRow | null>(null)
   let replyingToConvUuid = $state<string | null>(null)
   let replyingToMessageUuid = $state<string | null>(null)
   let replyBody = $state('')
   let replySubject = $state('')
-  /** Reply To address: sender of the message we're replying to (the vendor), so we don't send to ourselves */
   let replyToEmail = $state('')
   let sendLoading = $state(false)
   let apiError = $state<string | null>(null)
 
-  /** Extract email from "From" header (e.g. "Name <a@b.com>" or "a@b.com") */
   function parseFromHeader(from: string): string {
     const match = from.match(/<([^>]+)>/)
     if (match) return match[1].trim().toLowerCase()
     return from.trim().toLowerCase()
   }
 
-  /** Display label for "From" (name if present, else email) */
   function fromDisplayLabel(from: string): string {
     const trimmed = (from || '').trim()
     const angle = trimmed.indexOf('<')
@@ -90,7 +81,7 @@
       const name = trimmed.slice(0, angle).replace(/^["']|["']$/g, '').trim()
       if (name) return name
     }
-    return trimmed || '—'
+    return trimmed || '-'
   }
 
   function formatDate(iso: string) {
@@ -108,17 +99,16 @@
   function bodyPreview(body: string, maxLen = 200) {
     if (!body) return ''
     const text = body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-    return text.length <= maxLen ? text : text.slice(0, maxLen) + '…'
+    return text.length <= maxLen ? text : text.slice(0, maxLen) + '...'
   }
 
   function reSubject(subject: string) {
-    const s = (subject || '').trim()
-    if (!s) return 'Re: (no subject)'
-    if (/^re:\s/i.test(s)) return s
-    return `Re: ${s}`
+    const trimmed = (subject || '').trim()
+    if (!trimmed) return 'Re: (no subject)'
+    if (/^re:\s/i.test(trimmed)) return trimmed
+    return `Re: ${trimmed}`
   }
 
-  /** Open reply form for a specific message (or the last in the conversation if msg is omitted). */
   function openReplyForm(conv: Conversation, msg?: Message) {
     const target = msg ?? conv.messages[conv.messages.length - 1]
     replySubject = target ? reSubject(target.subject || '') : ''
@@ -143,7 +133,6 @@
     apiError = null
   }
 
-  /** Build References header for reply threading: parent References + parent Message-ID, or just Message-ID. */
   function buildReferences(msg: Message | undefined): string | undefined {
     if (!msg?.messageId) return undefined
     if (msg.references?.trim()) return `${msg.references.trim()} ${msg.messageId}`
@@ -153,30 +142,24 @@
   async function sendReply(conv: Conversation) {
     apiError = null
     sendLoading = true
+
     const replyingToMsg = replyingToMessageUuid
-      ? conv.messages.find((m) => m.uuid === replyingToMessageUuid)
+      ? conv.messages.find((message) => message.uuid === replyingToMessageUuid)
       : undefined
     const inReplyTo = replyingToMsg?.messageId
     const references = buildReferences(replyingToMsg)
-    // Use threadId from the message we're replying to, or from any message in the conversation (e.g. our sent replies now store it)
-    const threadId = replyingToMsg?.threadId ?? conv.messages.find((m) => m.threadId)?.threadId
+    const threadId =
+      replyingToMsg?.threadId ?? conv.messages.find((message) => message.threadId)?.threadId
     const payload = {
       vendorConversationUuid: conv.uuid,
-      to: conv.vendorEmail,
+      to: replyToEmail || conv.vendorEmail,
       subject: replySubject,
       body: replyBody,
       ...(inReplyTo && { inReplyTo }),
       ...(references && { references }),
       ...(threadId && { threadId }),
     }
-    console.log('[inbox reply] Sending to backend:', {
-      to: payload.to,
-      subject: payload.subject,
-      vendorConversationUuid: payload.vendorConversationUuid,
-      bodyLength: payload.body.length,
-      inReplyTo: payload.inReplyTo,
-      hasReferences: !!payload.references,
-    })
+
     try {
       const res = await fetch('/api/inbox/reply', {
         method: 'POST',
@@ -198,7 +181,7 @@
 </script>
 
 <svelte:head>
-  <title>Vendor emails – Inbox</title>
+  <title>Vendor emails - Inbox</title>
 </svelte:head>
 
 <Sidebar>
@@ -210,7 +193,8 @@
           Vendor emails
         </h1>
         <p class="text-surface-600-400 mt-1">
-          Emails from vendors synced from your connected inbox. This page syncs automatically when you open it.
+          Emails from vendors synced from your connected inbox. This page syncs automatically when
+          you open it.
         </p>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
@@ -219,7 +203,10 @@
           type="button"
           class="btn preset-tonal btn-sm"
           class:preset-filled-primary={viewMode === 'all_emails'}
-          onclick={() => { viewMode = 'all_emails'; selectedEmail = null }}
+          onclick={() => {
+            viewMode = 'all_emails'
+            selectedEmail = null
+          }}
         >
           <ListIcon class="size-4 inline mr-1" />
           All emails
@@ -228,7 +215,10 @@
           type="button"
           class="btn preset-tonal btn-sm"
           class:preset-filled-primary={viewMode === 'by_vendor'}
-          onclick={() => { viewMode = 'by_vendor'; selectedEmail = null }}
+          onclick={() => {
+            viewMode = 'by_vendor'
+            selectedEmail = null
+          }}
         >
           <LayoutGridIcon class="size-4 inline mr-1" />
           By vendor
@@ -239,16 +229,26 @@
 
     {#if syncError}
       <div class="alert preset-tonal-error p-4 rounded-lg">
-        <span>Sync failed: {syncError}. Ensure the email service is running (e.g. <code class="text-sm bg-surface-200-800 px-1 rounded">sam local start-api</code> in envoy-email-service) and <code class="text-sm bg-surface-200-800 px-1 rounded">EMAIL_SERVICE_URL</code> is set in .env.</span>
+        <span>
+          Sync failed: {syncError}. Ensure the email service is running (for example
+          <code class="text-sm bg-surface-200-800 px-1 rounded">sam local start-api</code>
+          in `envoy-email-service`) and <code class="text-sm bg-surface-200-800 px-1 rounded"
+            >EMAIL_SERVICE_URL</code
+          > is set in `.env`.
+        </span>
       </div>
     {/if}
+
     {#if flash.error}
       <div class="alert preset-tonal-error p-4 rounded-lg">
         <span>{flash.error}</span>
       </div>
     {/if}
+
     {#if flash.success}
-      <div class="alert preset-tonal-success p-4 rounded-lg">
+      <div
+        class="alert rounded-lg border border-success-500/20 bg-success-500/10 p-4 text-surface-950 dark:border-surface-200-800 dark:bg-surface-100-900/40 dark:text-surface-50"
+      >
         <span>{flash.success}</span>
       </div>
     {/if}
@@ -258,90 +258,153 @@
         <MailIcon class="size-12 mx-auto mb-3 opacity-50" />
         <p>No vendor emails yet.</p>
         {#if !hasConnections}
-          <p class="text-sm mt-1">Connect an inbox in <a href="/inbox/settings" class="link">Settings</a> first. When you open this page with an inbox connected, we call the email service to sync.</p>
+          <p class="text-sm mt-1">
+            Connect an inbox in <a href="/inbox/settings" class="link">Settings</a> first. When
+            you open this page with an inbox connected, we call the email service to sync.
+          </p>
         {:else}
-          <p class="text-sm mt-1">We synced from the email service; only emails from senders that match a vendor in your project are shown.</p>
+          <p class="text-sm mt-1">
+            We synced from the email service; only emails from senders that match a vendor in your
+            project are shown.
+          </p>
         {/if}
       </div>
     {:else if viewMode === 'all_emails'}
       <div class="flex flex-col lg:flex-row gap-6">
-        <div class="flex-1 min-w-0 overflow-auto rounded-xl border border-surface-200-800 bg-surface-100-900/40 overflow-hidden">
+        <div
+          class="flex-1 min-w-0 overflow-auto rounded-xl border border-surface-200-800 bg-surface-100-900/40 overflow-hidden"
+        >
           <table class="table w-full text-left border-collapse">
             <thead>
               <tr class="border-b border-surface-200-800 bg-surface-200-800/30">
-                <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-surface-600-400">Vendor</th>
-                <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-surface-600-400">Subject</th>
-                <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-surface-600-400 w-28">From</th>
-                <th class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-surface-600-400 shrink-0 w-36">Date</th>
+                <th
+                  class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-surface-600-400"
+                >
+                  Vendor
+                </th>
+                <th
+                  class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-surface-600-400"
+                >
+                  Subject
+                </th>
+                <th
+                  class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-surface-600-400 w-28"
+                >
+                  From
+                </th>
+                <th
+                  class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-surface-600-400 shrink-0 w-36"
+                >
+                  Date
+                </th>
               </tr>
             </thead>
             <tbody>
               {#each threadListItems as item (item.type === 'thread' ? item.conv.uuid : item.conv.uuid + ':' + item.msg.uuid)}
                 {#if item.type === 'thread'}
-                  {@const latest = item.conv.messages.length ? item.conv.messages.reduce((a, m) => (new Date(m.sentAt) > new Date(a.sentAt) ? m : a), item.conv.messages[0]) : null}
+                  {@const latest = item.conv.messages.length
+                    ? item.conv.messages.reduce(
+                        (a, m) => (new Date(m.sentAt) > new Date(a.sentAt) ? m : a),
+                        item.conv.messages[0]
+                      )
+                    : null}
                   <tr
                     class="border-b border-surface-200-800/80 cursor-pointer transition-colors bg-surface-100-900/50 hover:bg-surface-200-800/40 first:border-t-0"
                     onclick={() => latest && selectEmail({ conv: item.conv, msg: latest })}
                   >
                     <td class="px-4 py-3.5">
                       <div class="flex items-center gap-2">
-                        <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-500/20 text-sm font-semibold text-primary-600">
+                        <span
+                          class="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-500/20 text-sm font-semibold text-primary-600"
+                        >
                           {(item.conv.vendorName || 'V').charAt(0).toUpperCase()}
                         </span>
                         <div>
                           <span class="font-semibold">{item.conv.vendorName}</span>
-                          <span class="block text-xs text-surface-600-400">{item.conv.vendorEmail}</span>
+                          <span class="block text-xs text-surface-600-400">
+                            {item.conv.vendorEmail}
+                          </span>
                         </div>
                       </div>
                     </td>
                     <td class="px-4 py-3.5">
                       <span class="font-medium">{threadSubject(item.conv)}</span>
-                      <span class="block text-sm text-surface-600-400 mt-0.5">{item.conv.messages.length} message{item.conv.messages.length === 1 ? '' : 's'}</span>
+                      <span class="block text-sm text-surface-600-400 mt-0.5">
+                        {item.conv.messages.length} message{item.conv.messages.length === 1
+                          ? ''
+                          : 's'}
+                      </span>
                     </td>
-                    <td class="px-4 py-3.5 text-sm text-surface-600-400 w-28">—</td>
-                    <td class="px-4 py-3.5 text-sm text-surface-600-400 shrink-0 w-36">{latest ? formatDate(latest.sentAt) : '—'}</td>
+                    <td class="px-4 py-3.5 text-sm text-surface-600-400 w-28">-</td>
+                    <td class="px-4 py-3.5 text-sm text-surface-600-400 shrink-0 w-36">
+                      {latest ? formatDate(latest.sentAt) : '-'}
+                    </td>
                   </tr>
                 {:else}
                   <tr
                     class="border-b border-surface-200-800/60 cursor-pointer transition-colors {selectedEmail?.conv.uuid === item.conv.uuid && selectedEmail?.msg.uuid === item.msg.uuid ? 'bg-primary-500/15 ring-inset ring-1 ring-primary-500/30' : 'hover:bg-surface-200-800/30'} bg-surface-100-900/30"
-                    onclick={() => selectEmail(selectedEmail?.conv.uuid === item.conv.uuid && selectedEmail?.msg.uuid === item.msg.uuid ? null : { conv: item.conv, msg: item.msg })}
+                    onclick={() =>
+                      selectEmail(
+                        selectedEmail?.conv.uuid === item.conv.uuid &&
+                          selectedEmail?.msg.uuid === item.msg.uuid
+                          ? null
+                          : { conv: item.conv, msg: item.msg }
+                      )}
                   >
-                    <td class="px-4 py-2.5 pl-12 border-l-2 border-surface-200-800/80" aria-hidden="true" />
+                    <td
+                      class="px-4 py-2.5 pl-12 border-l-2 border-surface-200-800/80"
+                      aria-hidden="true"
+                    />
                     <td class="px-4 py-2.5">
                       <span class="text-sm font-medium">{item.msg.subject || '(no subject)'}</span>
-                      <span class="block text-xs text-surface-600-400 truncate max-w-[240px] mt-0.5">{bodyPreview(item.msg.body, 70)}</span>
+                      <span class="block text-xs text-surface-600-400 truncate max-w-[240px] mt-0.5">
+                        {bodyPreview(item.msg.body, 70)}
+                      </span>
                     </td>
-                    <td class="px-4 py-2.5 text-sm text-surface-600-400 w-28">{fromDisplayLabel(item.msg.from)}</td>
-                    <td class="px-4 py-2.5 text-sm text-surface-600-400 shrink-0 w-36">{formatDate(item.msg.sentAt)}</td>
+                    <td class="px-4 py-2.5 text-sm text-surface-600-400 w-28">
+                      {fromDisplayLabel(item.msg.from)}
+                    </td>
+                    <td class="px-4 py-2.5 text-sm text-surface-600-400 shrink-0 w-36">
+                      {formatDate(item.msg.sentAt)}
+                    </td>
                   </tr>
                 {/if}
               {/each}
             </tbody>
           </table>
         </div>
+
         {#if selectedEmail}
           <aside class="w-full lg:w-[440px] shrink-0">
             <div class="card preset-outlined-surface-200-800 overflow-hidden sticky top-4 rounded-xl">
               <div class="p-5 border-b border-surface-200-800 bg-surface-100-900/80">
                 <div class="flex items-start gap-3">
-                  <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-500/20 text-base font-semibold text-primary-600">
+                  <span
+                    class="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-500/20 text-base font-semibold text-primary-600"
+                  >
                     {(selectedEmail.conv.vendorName || 'V').charAt(0).toUpperCase()}
                   </span>
                   <div class="min-w-0 flex-1">
                     <h3 class="font-semibold text-lg">{selectedEmail.conv.vendorName}</h3>
                     <p class="text-sm text-surface-600-400">{selectedEmail.conv.vendorEmail}</p>
                     <p class="mt-2 font-medium">{selectedEmail.msg.subject || '(no subject)'}</p>
-                    <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-surface-600-400">
+                    <div
+                      class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-surface-600-400"
+                    >
                       <span>{formatDate(selectedEmail.msg.sentAt)}</span>
-                      <span>·</span>
+                      <span>&middot;</span>
                       <span>From: {fromDisplayLabel(selectedEmail.msg.from)}</span>
                     </div>
                   </div>
                 </div>
               </div>
+
               <div class="p-5 max-h-80 overflow-y-auto bg-surface-200-800/20">
-                <p class="text-sm whitespace-pre-wrap break-words leading-relaxed">{selectedEmail.msg.body || '(no body)'}</p>
+                <p class="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                  {selectedEmail.msg.body || '(no body)'}
+                </p>
               </div>
+
               <div class="p-5 border-t border-surface-200-800 space-y-3">
                 <div class="flex flex-wrap gap-2">
                   <button
@@ -353,28 +416,53 @@
                     Write reply
                   </button>
                 </div>
+
                 {#if replyingToConvUuid === selectedEmail.conv.uuid && replyingToMessageUuid === selectedEmail.msg.uuid}
                   <div class="space-y-3 pt-2 border-t border-surface-200-800">
                     {#if apiError}
                       <p class="text-sm text-red-500">{apiError}</p>
                     {/if}
+
                     <div>
                       <label class="block text-sm font-medium mb-1">To</label>
-                      <input type="text" class="input w-full bg-surface-200-800" value={selectedEmail.conv.vendorEmail} readonly />
+                      <input
+                        type="text"
+                        class="input w-full bg-surface-200-800"
+                        value={replyToEmail || selectedEmail.conv.vendorEmail}
+                        readonly
+                      />
                     </div>
+
                     <div>
                       <label class="block text-sm font-medium mb-1">Subject</label>
-                      <input type="text" class="input w-full bg-surface-200-800" bind:value={replySubject} />
+                      <input
+                        type="text"
+                        class="input w-full bg-surface-200-800"
+                        bind:value={replySubject}
+                      />
                     </div>
+
                     <div>
                       <label class="block text-sm font-medium mb-1">Message</label>
-                      <textarea class="input w-full bg-surface-200-800 min-h-[100px]" bind:value={replyBody} placeholder="Type your reply…" />
+                      <textarea
+                        class="input w-full bg-surface-200-800 min-h-[100px]"
+                        bind:value={replyBody}
+                        placeholder="Type your reply..."
+                      />
                     </div>
+
                     <div class="flex gap-2">
-                      <button type="button" class="btn preset-filled-primary" disabled={sendLoading} onclick={() => sendReply(selectedEmail.conv)}>
-                        {sendLoading ? 'Sending…' : 'Send reply'}
+                      <button
+                        type="button"
+                        class="btn preset-filled-primary"
+                        disabled={sendLoading}
+                        onclick={() => sendReply(selectedEmail.conv)}
+                      >
+                        {sendLoading ? 'Sending...' : 'Send reply'}
                       </button>
-                      <button type="button" class="btn preset-tonal" onclick={closeReplyForm}>Cancel</button>
+                      <button type="button" class="btn preset-tonal" onclick={closeReplyForm}>
+                        Cancel
+                      </button>
                     </div>
                   </div>
                 {/if}
@@ -391,6 +479,7 @@
               <h2 class="font-semibold">{conv.vendorName}</h2>
               <p class="text-sm text-surface-600-400">{conv.vendorEmail}</p>
             </div>
+
             <ul class="divide-y divide-surface-200-800">
               {#each conv.messages as msg (msg.uuid)}
                 <li class="p-4">
@@ -398,11 +487,11 @@
                     <span class="font-medium">{msg.subject || '(no subject)'}</span>
                     <span class="text-sm text-surface-600-400">{formatDate(msg.sentAt)}</span>
                   </div>
-                  <p class="text-sm text-surface-600-400 mt-0.5">
-                    From: {msg.from} → To: {msg.to}
-                  </p>
+                  <p class="text-sm text-surface-600-400 mt-0.5">From: {msg.from} -> To: {msg.to}</p>
                   {#if msg.body}
-                    <p class="mt-2 text-sm whitespace-pre-wrap break-words">{bodyPreview(msg.body)}</p>
+                    <p class="mt-2 text-sm whitespace-pre-wrap break-words">
+                      {bodyPreview(msg.body)}
+                    </p>
                   {/if}
                   <div class="mt-3 flex flex-wrap gap-2">
                     <button
@@ -417,30 +506,30 @@
                 </li>
               {/each}
             </ul>
+
             <div class="p-4 border-t border-surface-200-800 bg-surface-100-900 flex flex-wrap gap-2">
-              <button
-                type="button"
-                class="btn preset-tonal"
-                onclick={() => openReplyForm(conv)}
-              >
+              <button type="button" class="btn preset-tonal" onclick={() => openReplyForm(conv)}>
                 <SendIcon class="size-4 inline mr-1" />
                 Write reply (latest)
               </button>
             </div>
+
             {#if replyingToConvUuid === conv.uuid}
               <div class="p-4 border-t border-surface-200-800 space-y-3">
                 {#if apiError}
                   <p class="text-sm text-red-500">{apiError}</p>
                 {/if}
+
                 <div>
                   <label class="block text-sm font-medium mb-1">To</label>
                   <input
                     type="text"
                     class="input w-full bg-surface-200-800"
-                    value={conv.vendorEmail}
+                    value={replyToEmail || conv.vendorEmail}
                     readonly
                   />
                 </div>
+
                 <div>
                   <label class="block text-sm font-medium mb-1">Subject</label>
                   <input
@@ -449,14 +538,16 @@
                     bind:value={replySubject}
                   />
                 </div>
+
                 <div>
                   <label class="block text-sm font-medium mb-1">Message</label>
                   <textarea
                     class="input w-full bg-surface-200-800 min-h-[120px]"
                     bind:value={replyBody}
-                    placeholder="Type or paste your reply…"
+                    placeholder="Type or paste your reply..."
                   />
                 </div>
+
                 <div class="flex gap-2">
                   <button
                     type="button"
@@ -464,7 +555,7 @@
                     disabled={sendLoading}
                     onclick={() => sendReply(conv)}
                   >
-                    {sendLoading ? 'Sending…' : 'Send reply'}
+                    {sendLoading ? 'Sending...' : 'Send reply'}
                   </button>
                   <button type="button" class="btn preset-tonal" onclick={closeReplyForm}>
                     Cancel
