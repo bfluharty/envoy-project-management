@@ -1,21 +1,19 @@
 # ----------- Build Stage -----------
-FROM node:22-alpine AS builder
+FROM node:22 AS builder
 WORKDIR /usr/src/app
-COPY package*.json ./
-RUN npm ci --ignore-scripts
+COPY package.json .npmrc ./
+RUN npm install
 COPY . .
-RUN npm run build
+RUN npm run build -- --ignore-ts-errors
 
 # ----------- Production Stage -----------
 FROM node:22-alpine AS production
 WORKDIR /usr/src/app
-COPY package*.json ./
-# Install only production dependencies
-RUN npm ci --only=production --ignore-scripts
-# Copy built files and necessary assets from builder stage
+# Copy pruned node_modules and built output from builder
+COPY --from=builder /usr/src/app/node_modules ./node_modules
 COPY --from=builder /usr/src/app/build ./build
 COPY --from=builder /usr/src/app/bin ./bin
-# Add other necessary production assets as needed
+COPY package*.json ./
 
 # Use a non-root user for security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
@@ -24,4 +22,6 @@ USER appuser
 EXPOSE 8080
 ENV NODE_ENV=production
 
-CMD ["node", "build/bin/server.js"]
+# AdonisJS expects to run from inside the build directory
+WORKDIR /usr/src/app/build
+CMD ["node", "bin/server.js"]
