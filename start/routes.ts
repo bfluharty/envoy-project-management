@@ -68,12 +68,16 @@ router
   .get('/forgot-password', [AuthController, 'showForgotPassword'])
   .as('auth.forgotPassword')
   .middleware(middleware.silentAuth())
-router.post('/forgot-password', [AuthController, 'forgotPassword']).middleware(middleware.silentAuth())
+router
+  .post('/forgot-password', [AuthController, 'forgotPassword'])
+  .middleware(middleware.silentAuth())
 router
   .get('/reset-password', [AuthController, 'showResetPassword'])
   .as('auth.resetPassword')
   .middleware(middleware.silentAuth())
-router.post('/reset-password', [AuthController, 'resetPassword']).middleware(middleware.silentAuth())
+router
+  .post('/reset-password', [AuthController, 'resetPassword'])
+  .middleware(middleware.silentAuth())
 
 // Authenticated routes
 router
@@ -81,8 +85,12 @@ router
   .as('dashboard')
   .middleware(middleware.auth())
 router.get('/account', [AccountController, 'show']).as('account').middleware(middleware.auth())
-router.get('/account/avatar/google', [AccountController, 'googleAvatar']).middleware(middleware.auth())
-router.post('/account/password', [AccountController, 'changePassword']).middleware(middleware.auth())
+router
+  .get('/account/avatar/google', [AccountController, 'googleAvatar'])
+  .middleware(middleware.auth())
+router
+  .post('/account/password', [AccountController, 'changePassword'])
+  .middleware(middleware.auth())
 router.post('/account/avatar', [AccountController, 'uploadAvatar']).middleware(middleware.auth())
 router.delete('/account/avatar', [AccountController, 'removeAvatar']).middleware(middleware.auth())
 router
@@ -167,11 +175,8 @@ router
 
 // API routes for inbox (authenticated)
 const InboxAPIController = () => import('#controllers/api/inbox_api_controller')
-const InternalController = () => import('#controllers/api/internal_controller')
-const ProjectOutreachApiController = () => import('#controllers/api/project_outreach_api_controller')
-
-// Internal API for email service (forgot-password: app creates token, email service sends)
-router.post('/api/internal/forgot-password-email', [InternalController, 'forgotPasswordEmail'])
+const ProjectOutreachApiController = () =>
+  import('#controllers/api/project_outreach_api_controller')
 
 router
   .group(() => {
@@ -185,9 +190,18 @@ router
     router.get('/:uuid/outreach', [ProjectOutreachApiController, 'getState'])
     router.post('/:uuid/outreach/drafts', [ProjectOutreachApiController, 'createDraft'])
     router.post('/:uuid/outreach/sync', [ProjectOutreachApiController, 'sync'])
-    router.delete('/:uuid/outreach/drafts/:draftUuid', [ProjectOutreachApiController, 'cancelDraft'])
-    router.post('/:uuid/outreach/drafts/:draftUuid/send', [ProjectOutreachApiController, 'sendDraft'])
-    router.post('/:uuid/outreach/drafts/:draftUuid/revise', [ProjectOutreachApiController, 'reviseDraft'])
+    router.delete('/:uuid/outreach/drafts/:draftUuid', [
+      ProjectOutreachApiController,
+      'cancelDraft',
+    ])
+    router.post('/:uuid/outreach/drafts/:draftUuid/send', [
+      ProjectOutreachApiController,
+      'sendDraft',
+    ])
+    router.post('/:uuid/outreach/drafts/:draftUuid/revise', [
+      ProjectOutreachApiController,
+      'reviseDraft',
+    ])
     router.post('/:uuid/outreach/threads/:threadUuid/replies', [
       ProjectOutreachApiController,
       'replyToThread',
