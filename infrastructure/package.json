@@ -1,0 +1,21 @@
+{
+  "name": "envoy-infrastructure",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "deploy": "cdk deploy --profile sideProject",
+    "diff": "cdk diff --profile sideProject",
+    "synth": "cdk synth",
+    "destroy": "cdk destroy --profile sideProject"
+  },
+  "devDependencies": {
+    "@types/node": "22",
+    "aws-cdk": "^2.248.0",
+    "typescript": "~5.8"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.248.0",
+    "constructs": "^10.0.0"
+  }
+}
