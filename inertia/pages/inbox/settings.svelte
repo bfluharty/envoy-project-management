@@ -13,20 +13,21 @@
   const { connections = [] } = $props()
   const flash = $derived($page.props.flash || {})
 
-  function connect(provider: 'gmail' | 'microsoft') {
-    router.visit(`/inbox/connect?provider=${provider}`)
-  }
-
   function disconnect(id: number) {
     if (!confirm('Disconnect this inbox? We will stop listening for vendor emails.')) return
     router.post('/inbox/disconnect', { id }, { preserveScroll: true })
   }
 
-  const providerLabel = (p: string) => (p === 'gmail' ? 'Gmail' : p === 'microsoft' ? 'Outlook' : p)
+  const providerLabel = (provider: string) =>
+    provider === 'gmail'
+      ? 'Gmail'
+      : provider === 'microsoft'
+        ? 'Microsoft (unsupported)'
+        : provider
 </script>
 
 <svelte:head>
-  <title>Inbox – Envoy</title>
+  <title>Inbox - Envoy</title>
 </svelte:head>
 
 <Sidebar>
@@ -49,8 +50,11 @@
         <span>{flash.error}</span>
       </div>
     {/if}
+
     {#if flash.success}
-      <div class="alert preset-tonal-success p-4 rounded-lg">
+      <div
+        class="alert rounded-lg border border-success-500/20 bg-success-500/10 p-4 text-surface-950 dark:border-surface-200-800 dark:bg-surface-100-900/40 dark:text-surface-50"
+      >
         <span>{flash.success}</span>
       </div>
     {/if}
@@ -58,7 +62,7 @@
     <section class="card preset-outlined-surface-200-800 p-6 space-y-4">
       <h2 class="h4">Connected inboxes</h2>
       {#if connections.length === 0}
-        <p class="text-surface-600-400">No inbox connected yet. Connect Gmail or Outlook below.</p>
+        <p class="text-surface-600-400">No inbox connected yet. Connect Gmail below.</p>
       {:else}
         <ul class="space-y-3">
           {#each connections as conn (conn.id)}
@@ -89,18 +93,12 @@
         We'll request permission to read and send email from this account. We use it only to listen
         for vendor emails and send replies on your behalf.
       </p>
+      <p class="text-surface-600-400 text-sm">
+        If you already signed in with Google, connecting Gmail here should reuse that same account.
+      </p>
       <div class="flex flex-wrap gap-3">
-        <a
-          href="/inbox/connect?provider=gmail"
-          class="btn preset-filled-primary-500"
-        >
+        <a href="/inbox/connect?provider=gmail" class="btn preset-filled-primary-500">
           Connect Gmail
-        </a>
-        <a
-          href="/inbox/connect?provider=microsoft"
-          class="btn preset-tonal"
-        >
-          Connect Outlook
         </a>
       </div>
     </section>

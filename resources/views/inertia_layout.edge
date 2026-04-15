@@ -25,7 +25,7 @@
       margin: 0;
       padding: 0;
       min-height: 100vh;
-      width: 100vw;
+      width: 100%;
     }
     
     /* Skeleton loader for initial page load */
@@ -51,12 +51,27 @@
     }
   </style>
 
+  <!-- Apply saved color-mode before paint to prevent FOUC -->
+  <script>
+    (function () {
+      var mode = localStorage.getItem('color-mode') || 'system';
+      var html = document.documentElement;
+      if (mode === 'dark') {
+        html.classList.add('dark');
+      } else if (mode === 'light') {
+        html.classList.add('light');
+      } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        html.classList.add('dark');
+      }
+    })();
+  </script>
+
   @vite(['inertia/app/app.ts', `inertia/pages/${page.component}.svelte`])
   @inertiaHead()
   @stack('dumper')
 </head>
 
-<body class="min-h-screen w-screen font-sans">
+<body class="min-h-screen w-full font-sans">
   @inertia()
 </body>
 

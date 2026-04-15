@@ -11,15 +11,16 @@
     "start": "node bin/server.js",
     "build": "node ace build",
     "dev": "node ace serve --hmr",
-    "test": "node ace test",
-    "test:snapshots": "playwright test",
-    "test:snapshots:update": "playwright test --update-snapshots",
+    "test": "npm run test:api && npm run test:ui",
+    "test:api": "node ace test",
+    "test:ui": "playwright test",
     "migrate": "node ace migration:run",
     "seed": "node ace db:seed",
     "lint": "eslint .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "prepare": "husky"
+    "prepare": "husky",
+    "dev:local": "sh run-docker.sh --local"
   },
   "lint-staged": {
     "*.ts": [
@@ -105,6 +106,9 @@
       "./app/controllers/**/*.ts",
       "./app/middleware/*.ts"
     ]
+  },
+  "optionalDependencies": {
+    "@swc/core-linux-x64-musl": "1.11.24"
   },
   "prettier": "@adonisjs/prettier-config"
 }

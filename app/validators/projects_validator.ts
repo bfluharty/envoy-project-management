@@ -44,12 +44,7 @@ export const createProjectValidator = vine.compile(
     budgetCurrency: vine.string().optional(),
     goals: vine.string().optional(),
     isActive: vine.boolean().optional(),
-    vendors: vine
-      .object({
-        toAddVendorIds: vine.array(vine.string().uuid()).optional(),
-        toRemoveVendorIds: vine.array(vine.string().uuid()).optional(),
-      })
-      .optional(),
+    vendors: vine.array(vine.string().uuid()).optional(),
   })
 )
 
@@ -60,35 +55,21 @@ export const updateProjectValidator = vine.compile(
     location: vine.object({}).allowUnknownProperties().optional(),
     startDate: vine
       .date()
-      .afterOrEqual('today')
-      .beforeOrSameAs('endDate')
-      .beforeOrSameAs('deadline')
       .transform((date) => DateTime.fromJSDate(date))
       .optional(),
     endDate: vine
       .date()
-      .afterOrEqual('today')
-      .afterOrSameAs('startDate')
-      .beforeOrSameAs('deadline')
       .transform((date) => DateTime.fromJSDate(date))
       .optional(),
     deadline: vine
       .date()
-      .afterOrEqual('today')
-      .afterOrSameAs('startDate')
-      .afterOrSameAs('endDate')
       .transform((date) => DateTime.fromJSDate(date))
       .optional(),
     budgetAmount: vine.number().min(0).optional(),
     budgetCurrency: vine.string().optional(),
     goals: vine.string().optional(),
     isActive: vine.boolean().optional(),
-    vendors: vine
-      .object({
-        toAddVendorIds: vine.array(vine.string().uuid()).optional(),
-        toRemoveVendorIds: vine.array(vine.string().uuid()).optional(),
-      })
-      .optional(),
+    vendors: vine.array(vine.string().uuid()).optional(),
   })
 )
 

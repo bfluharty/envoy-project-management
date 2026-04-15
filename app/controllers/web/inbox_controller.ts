@@ -2,14 +2,12 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { DateTime } from 'luxon'
 import User from '#models/user'
 import UserInboxConnection from '#models/user_inbox_connection'
-import VendorConversation from '#models/vendor_conversation'
 import {
   getAuthUrl,
   exchangeCode,
   decodeState,
   type InboxProvider,
 } from '#services/inbox_connection_service'
-import { syncConnection } from '#services/inbox_sync_service'
 import logger from '@adonisjs/core/services/logger'
 
 export default class InboxController {
@@ -19,8 +17,12 @@ export default class InboxController {
   async connect({ auth, request, response, session }: HttpContext) {
     const user = auth.getUserOrFail()
     const provider = request.input('provider') as string
-    if (provider !== 'gmail' && provider !== 'microsoft') {
-      return response.badRequest('Invalid provider. Use gmail or microsoft.')
+    if (provider === 'microsoft') {
+      session.flash('error', 'Outlook inbox connection is not available yet.')
+      return response.redirect().toPath('/account#email-accounts')
+    }
+    if (provider !== 'gmail') {
+      return response.badRequest('Invalid provider. Use gmail.')
     }
     try {
       const url = getAuthUrl(provider as InboxProvider, user.uuid)
@@ -45,18 +47,22 @@ export default class InboxController {
 
     if (error) {
       session.flash('error', `Inbox connection failed: ${error}`)
-      return response.redirect().toRoute('inbox.settings')
+      return response.redirect().toPath('/account#email-accounts')
     }
 
     if (!code || !state) {
       session.flash('error', 'Missing code or state.')
-      return response.redirect().toRoute('inbox.settings')
+      return response.redirect().toPath('/account#email-accounts')
     }
 
     const decoded = decodeState(state)
     if (!decoded || decoded.userUuid !== user.uuid) {
       session.flash('error', 'Invalid state. Please try connecting again.')
-      return response.redirect().toRoute('inbox.settings')
+      return response.redirect().toPath('/account#email-accounts')
+    }
+    if (decoded.provider !== 'gmail') {
+      session.flash('error', 'Outlook inbox connection is not available yet.')
+      return response.redirect().toPath('/account#email-accounts')
     }
 
     try {
@@ -80,15 +86,15 @@ export default class InboxController {
       )
       session.flash(
         'success',
-        `${decoded.provider === 'gmail' ? 'Gmail' : 'Outlook'} connected. We'll listen for vendor emails.`
+        'Gmail connected. Envoy will use it for outreach and replies when available.'
       )
-      return response.redirect().toRoute('inbox.settings')
+      return response.redirect().toPath('/account#email-accounts')
     } catch (err) {
       logger.error(err, 'Inbox callback: exchange failed')
       const message =
         err instanceof Error ? err.message : 'Could not connect inbox. Please try again.'
       session.flash('error', message)
-      return response.redirect().toRoute('inbox.settings')
+      return response.redirect().toPath('/account#email-accounts')
     }
   }
 
@@ -98,70 +104,17 @@ export default class InboxController {
    * Requires EMAIL_SERVICE_URL in .env and at least one connected inbox.
    */
   async emails({ auth, inertia, session }: HttpContext) {
-    const user = auth.getUserOrFail()
-    const connections = await UserInboxConnection.query().where('user_uuid', user.uuid)
-    let syncError: string | null = null
-    for (const conn of connections) {
-      try {
-        await syncConnection(conn) // calls email service /inbox/list then /inbox/message per connection
-      } catch (err) {
-        logger.error(err, `Inbox sync failed for ${conn.provider}/${conn.email}`)
-        syncError =
-          err instanceof Error ? err.message : 'Inbox sync failed. Is the email service running?'
-        session.flash('error', `Sync failed for ${conn.email}: ${syncError}`)
-      }
-    }
-    const conversations = await VendorConversation.query()
-      .where('user_id', user.id)
-      .preload('vendor')
-      .preload('messages', (q) => q.orderBy('sent_timestamp', 'asc'))
-      .orderBy('id', 'desc')
-
-    return inertia.render('inbox/emails', {
-      hasConnections: connections.length > 0,
-      syncError: syncError ?? undefined,
-      conversations: conversations.map((c) => ({
-        uuid: c.uuid,
-        vendorName: c.vendor.name,
-        vendorEmail: c.vendor.email,
-        messages: c.messages.map((m) => ({
-          uuid: m.uuid,
-          subject: m.subject,
-          from: m.from,
-          to: m.to,
-          body: m.body,
-          sentAt:
-            typeof m.sentTimestamp?.toISO === 'function'
-              ? m.sentTimestamp.toISO()
-              : m.sentTimestamp instanceof Date
-                ? m.sentTimestamp.toISOString()
-                : String(m.sentTimestamp ?? ''),
-          messageId: m.messageIdHeader ?? undefined,
-          references: m.referencesHeader ?? undefined,
-          threadId: m.providerThreadId ?? undefined,
-        })),
-      })),
-    })
+    auth.getUserOrFail()
+    session.flash('success', "Inbox now lives in each project's Outreach tab.")
+    return inertia.location('/dashboard')
   }
 
   /**
    * List connected inboxes for the current user.
    */
   async settings({ auth, inertia }: HttpContext) {
-    const user = auth.getUserOrFail()
-    const connections = await UserInboxConnection.query()
-      .where('user_uuid', user.uuid)
-      .orderBy('provider')
-      .orderBy('email')
-
-    return inertia.render('inbox/settings', {
-      connections: connections.map((c) => ({
-        id: c.id,
-        provider: c.provider,
-        email: c.email,
-        createdAt: c.createdTimestamp.toISO(),
-      })),
-    })
+    auth.getUserOrFail()
+    return inertia.location('/account#email-accounts')
   }
 
   /**

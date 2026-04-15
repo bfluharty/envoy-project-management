@@ -1,10 +1,8 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
-import mail from '@adonisjs/mail/services/main'
 import env from '#start/env'
 import User from '#models/user'
 import PasswordResetToken from '#models/password_reset_token'
-import ResetPasswordMail from '#mails/reset_password_mail'
 import {
   forgotPasswordValidator,
   loginValidator,
@@ -14,9 +12,30 @@ import {
 import { randomBytes } from 'node:crypto'
 import { DateTime } from 'luxon'
 import { getGoogleAuthUrl, getGoogleUser } from '#services/google_auth_service'
+import { sendPasswordResetLink } from '#services/password_reset_service'
 import UserInboxConnection from '#models/user_inbox_connection'
 
+export function resolvePostLoginRedirect(intendedUrl: unknown): string | null {
+  if (typeof intendedUrl !== 'string' || intendedUrl.length === 0) {
+    return null
+  }
+
+  const normalizedPath = intendedUrl.split(/[?#]/, 1)[0] ?? ''
+  if (normalizedPath === '/account/avatar/google') {
+    return null
+  }
+
+  return intendedUrl
+}
+
 export default class AuthController {
+  private consumePostLoginRedirect(session: HttpContext['session']) {
+    const intendedUrl = session.get('auth.intended_url')
+    session.forget('auth.intended_url')
+
+    return resolvePostLoginRedirect(intendedUrl)
+  }
+
   /**
    * Show the login form
    */
@@ -24,6 +43,7 @@ export default class AuthController {
     return inertia.render('auth/login', {
       flashMessage:
         session.flashMessages.get('success') ?? session.flashMessages.get('error') ?? null,
+      googleAuthAvailable: Boolean(env.get('GOOGLE_CLIENT_ID') && env.get('GOOGLE_CLIENT_SECRET')),
     })
   }
 
@@ -36,13 +56,12 @@ export default class AuthController {
     try {
       const user = await User.verifyCredentials(email, password)
       await auth.use('web').login(user)
+      session.put('auth.login_method', 'password')
 
       session.flash('success', 'Welcome back!')
 
-      // Get intended URL from session and redirect there, or default to dashboard
-      const intendedUrl = session.get('auth.intended_url')
+      const intendedUrl = this.consumePostLoginRedirect(session)
       if (intendedUrl) {
-        session.forget('auth.intended_url')
         return response.redirect(intendedUrl)
       }
 
@@ -63,6 +82,7 @@ export default class AuthController {
     return inertia.render('auth/register', {
       flashMessage:
         session.flashMessages.get('success') ?? session.flashMessages.get('error') ?? null,
+      googleAuthAvailable: Boolean(env.get('GOOGLE_CLIENT_ID') && env.get('GOOGLE_CLIENT_SECRET')),
     })
   }
 
@@ -99,6 +119,7 @@ export default class AuthController {
    */
   async logout({ auth, response, session }: HttpContext) {
     await auth.use('web').logout()
+    session.forget('auth.login_method')
     session.flash('success', 'You have been logged out')
     return response.redirect().toRoute('landing')
   }
@@ -106,9 +127,15 @@ export default class AuthController {
   /**
    * Redirect to Google OAuth consent screen
    */
-  async googleRedirect({ response }: HttpContext) {
-    const url = getGoogleAuthUrl()
-    return response.redirect(url)
+  async googleRedirect({ response, session }: HttpContext) {
+    try {
+      const url = getGoogleAuthUrl()
+      return response.redirect(url)
+    } catch (error) {
+      logger.error(error, 'Google OAuth redirect failed')
+      session.flash('error', 'Google sign-in is not configured right now. Please try email login.')
+      return response.redirect().toRoute('auth.login')
+    }
   }
 
   /**
@@ -134,15 +161,17 @@ export default class AuthController {
         // Link Google ID if not already set
         if (!user.googleId) {
           user.googleId = googleProfile.googleId
-          await user.save()
         }
+        user.googleAvatarUrl = googleProfile.picture
+        await user.save()
       } else {
         // Create new user
         user = await User.create({
           fullName: googleProfile.fullName,
           email: googleProfile.email,
           googleId: googleProfile.googleId,
-          password: null,
+          googleAvatarUrl: googleProfile.picture,
+          password: randomBytes(32).toString('hex'),
           entitlementId: 1,
           isActive: true,
         })
@@ -162,11 +191,11 @@ export default class AuthController {
       )
 
       await auth.use('web').login(user)
+      session.put('auth.login_method', 'google')
       session.flash('success', 'Welcome!')
 
-      const intendedUrl = session.get('auth.intended_url')
+      const intendedUrl = this.consumePostLoginRedirect(session)
       if (intendedUrl) {
-        session.forget('auth.intended_url')
         return response.redirect(intendedUrl)
       }
 
@@ -194,29 +223,11 @@ export default class AuthController {
       )
       return response.redirect().back()
     }
-    const token = randomBytes(32).toString('hex')
-    const expiresAt = DateTime.utc().plus({ hours: 1 })
-    await PasswordResetToken.create({
-      userUuid: user.uuid,
-      token,
-      expiresAt,
-      createdAt: DateTime.utc(),
-    })
-    const baseUrl = (env.get('APP_URL') ?? '').replace(/\/$/, '')
-    if (!baseUrl && env.get('NODE_ENV') === 'production') {
-      logger.error('APP_URL not set; cannot send password reset link')
-      session.flash('error', 'Email is not configured. Please contact support.')
-      return response.redirect().back()
-    }
-    const resetUrl = `${baseUrl}/reset-password?token=${token}`
+
     try {
-      await mail.send(new ResetPasswordMail(user, resetUrl))
+      await sendPasswordResetLink(user)
     } catch (err) {
-      logger.error(err, 'Failed to send password reset email')
-      if (env.get('NODE_ENV') === 'development') {
-        logger.info('Dev fallback: reset link (valid 1h): %s', resetUrl)
-      }
-      session.flash('error', 'Failed to send reset email. Please try again later.')
+      session.flash('error', err instanceof Error ? err.message : 'Failed to send reset email.')
       return response.redirect().back()
     }
     session.flash('success', 'If that email is registered, you will receive a reset link shortly.')

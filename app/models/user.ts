@@ -42,6 +42,12 @@ export default class User extends compose(BaseModel, AuthFinder) {
   @column({ columnName: 'google_id' })
   declare googleId: string | null
 
+  @column({ columnName: 'google_avatar_url' })
+  declare googleAvatarUrl: string | null
+
+  @column({ columnName: 'uploaded_avatar_path' })
+  declare uploadedAvatarPath: string | null
+
   @column.dateTime({ columnName: 'created_timestamp', autoCreate: true })
   declare createdTimestamp: DateTime
 
