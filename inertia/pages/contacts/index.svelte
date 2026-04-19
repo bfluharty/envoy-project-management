@@ -159,7 +159,7 @@ async function deactivate(uuid: string) {
 </svelte:head>
 
 <Sidebar>
-  <div class="w-full max-w-2xl px-6 py-10 space-y-6">
+  <div class="w-full max-w-2xl px-6 py-10 space-y-6 mx-auto">
 
     <!-- Header -->
     <div class="flex items-center justify-between">

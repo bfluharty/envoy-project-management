@@ -191,7 +191,7 @@
 <Sidebar>
 
   {#if showForm}
-    <div class="w-full max-w-2xl px-6 py-10 space-y-6">
+    <div class="w-full max-w-2xl px-6 py-10 space-y-6 mx-auto">
       <header>
         <h1 class="text-2xl font-semibold">Create New Project</h1>
         <p class="text-surface-600-400">Step through the details or skip ahead to get started.</p>
@@ -369,14 +369,14 @@
     </div>
   {:else}
     {#if flash.error}
-      <div class="w-full max-w-md px-6 sm:px-0 my-4">
+      <div class="w-full max-w-md px-6 sm:px-0 my-4 sm:mx-auto">
         <aside class="card preset-tonal-error p-4">
           <p>{flash.error}</p>
         </aside>
       </div>
     {/if}
     {#if flash.success}
-      <div class="w-full max-w-md px-6 sm:px-0 my-4">
+      <div class="w-full max-w-md px-6 sm:px-0 my-4 sm:mx-auto">
         <aside class="card preset-tonal p-4">
           <p>{flash.success}</p>
         </aside>

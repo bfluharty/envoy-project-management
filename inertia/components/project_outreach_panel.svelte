@@ -310,7 +310,7 @@ function getSelectedContact(contactUuid: string) {
             </button>
         </div>
 
-        <div class="max-h-[42rem] space-y-2 overflow-y-auto p-3">
+        <div class="space-y-2 overflow-y-auto p-3">
             {#if cards.length === 0}
                 <p class="rounded-xl border border-dashed border-surface-200-800 bg-surface-100-900/25 px-4 py-5 text-sm text-surface-600-400">
                     No threads yet. Create your first outreach message.

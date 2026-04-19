@@ -1,6 +1,5 @@
 <script lang="ts">
   import Logo from "#components/logo.svelte";
-  import Navbar from "#components/navbar.svelte";
   import PublicFooter from "#components/public_footer.svelte";
 
   import { page } from '@inertiajs/svelte';

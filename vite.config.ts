@@ -5,6 +5,10 @@ import { svelte } from '@sveltejs/vite-plugin-svelte'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
+  server: {
+    host: '0.0.0.0',
+    allowedHosts: true,
+  },
   plugins: [
     tailwindcss(),
     inertia({ ssr: { enabled: true, entrypoint: 'inertia/app/ssr.ts' } }),
