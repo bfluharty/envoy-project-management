@@ -92,7 +92,7 @@ function handleLogout() {
 
 {#snippet navContent()}
 	<Navigation.Header>
-		<a href="/" class="btn-icon btn-icon-lg preset-filled-primary-500" onclick={closeDrawer}>
+		<a href="/" class="btn-icon btn-icon-lg hidden md:inline-block" onclick={closeDrawer}>
 			<Logo class="size-6" />
 		</a>
 	</Navigation.Header>
@@ -159,7 +159,7 @@ function handleLogout() {
 
 <!-- Mobile Header -->
 <header class="lg:hidden fixed top-0 left-0 right-0 z-50 navbar bg-surface-50-950/85 backdrop-blur-md border-b border-surface-200-800 px-6 py-3 flex items-center justify-between">
-	<a href="/" class="btn-icon btn-icon-lg preset-filled-primary-500">
+	<a href="/" class="btn-icon btn-icon-lg">
 		<Logo class="size-6" />
 	</a>
 	<button
@@ -198,7 +198,7 @@ function handleLogout() {
 	<!-- Desktop Sidebar -->
 	<Navigation
 		layout="sidebar"
-		class="hidden lg:grid sticky top-0 h-dvh grid-rows-[auto_1fr_auto] gap-4 bg-surface-50-950 border-r border-surface-200-800 overflow-y-auto px-4"
+		class="hidden lg:grid sticky top-0 h-dvh! grid-rows-[auto_1fr_auto] gap-4 bg-surface-50-950 border-r border-surface-200-800 overflow-y-auto px-4"
 	>
 		{@render navContent()}
 	</Navigation>

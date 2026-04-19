@@ -144,7 +144,7 @@
 </svelte:head>
 
 <Sidebar>
-  <div class="w-full max-w-4xl p-6 space-y-6">
+  <div class="w-full p-6 space-y-6">
     <header class="space-y-2">
       <h1 class="text-3xl font-bold">Account</h1>
       <p class="text-surface-600-400">
