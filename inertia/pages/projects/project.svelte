@@ -8,7 +8,7 @@ import LocationSearch from '#components/location_search.svelte';
 import type { LocationData } from '#components/location_search.svelte';
 import { page } from '@inertiajs/svelte';
 import { RefreshCwIcon } from '@lucide/svelte';
-import { onDestroy, onMount, untrack } from 'svelte';
+import { onDestroy, untrack } from 'svelte';
 import { formatDate, formatCurrency } from '../../utils/format';
 
 interface ChatMessage {
@@ -130,9 +130,6 @@ let messages = $state<ChatMessage[]>(
 let input = $state('');
 let isLoading = $state(false);
 
-const OPENING_PROMPT =
-    'A new project has been created. Ask the user for any missing information before starting to plan, one question at a time.';
-const OPENING_VARIABLES = { context: 'PROJECT_SETUP' };
 
 async function sendChat(prompt: string, variables: Record<string, any> = {}) {
     isLoading = true;
@@ -778,11 +775,6 @@ async function createAndAttachContact(e: Event) {
     }
 }
 
-onMount(() => {
-    if (!hasPriorConversation) {
-        sendChat(OPENING_PROMPT, OPENING_VARIABLES);
-    }
-});
 
 onDestroy(() => {
     if (opSuccessTimer) {
