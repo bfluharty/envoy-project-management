@@ -138,6 +138,7 @@ onMount(async () => {
         const cached = sessionStorage.getItem(cacheKey);
         if (cached) {
             initialGreeting = cached;
+            messages = [{ id: idCounter++, role: 'assistant', content: cached }, ...messages];
             return;
         }
         greetingLoading = true;
@@ -146,6 +147,7 @@ onMount(async () => {
             if (res.ok) {
                 initialGreeting = await res.text();
                 sessionStorage.setItem(cacheKey, initialGreeting);
+                messages = [{ id: idCounter++, role: 'assistant', content: initialGreeting }, ...messages];
             }
         } finally {
             greetingLoading = false;
@@ -884,16 +886,6 @@ onDestroy(() => {
                             <span class="w-1.5 h-1.5 rounded-full bg-current motion-safe:animate-bounce [animation-delay:150ms]" aria-hidden="true"></span>
                             <span class="w-1.5 h-1.5 rounded-full bg-current motion-safe:animate-bounce [animation-delay:300ms]" aria-hidden="true"></span>
                         </span>
-                    </div>
-                </div>
-            {/if}
-            {#if initialGreeting && messages.length === 0 && !hasPriorConversation}
-                <div class="flex items-start gap-2">
-                    <div class="avatar size-8 mt-1.5" aria-hidden="true">
-                        <Logo class="size-8" />
-                    </div>
-                    <div class="card max-w-lg p-3 text-sm preset-filled-surface-100-900">
-                        {initialGreeting}
                     </div>
                 </div>
             {/if}
