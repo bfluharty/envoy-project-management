@@ -196,7 +196,7 @@ function sendMessage(event: Event) {
     event.preventDefault();
     if (!input.trim() || isLoading) return;
     const prompt = input.trim();
-    const isFirstMessage = messages.length === 0 && !hasPriorConversation;
+    const isFirstMessage = !hasPriorConversation && !messages.some((m) => m.role === 'user');
     input = '';
     messages = [...messages, { id: idCounter++, role: 'user', content: prompt }];
     const vars = (isFirstMessage && initialGreeting) ? { assistantGreeting: initialGreeting } : {};
