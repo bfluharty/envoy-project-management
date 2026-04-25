@@ -134,10 +134,19 @@ let greetingLoading = $state(false);
 
 onMount(async () => {
     if (!hasPriorConversation) {
+        const cacheKey = `greeting-${project.uuid}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+            initialGreeting = cached;
+            return;
+        }
         greetingLoading = true;
         try {
             const res = await fetch(`/projects/${project.uuid}/greeting`);
-            if (res.ok) initialGreeting = await res.text();
+            if (res.ok) {
+                initialGreeting = await res.text();
+                sessionStorage.setItem(cacheKey, initialGreeting);
+            }
         } finally {
             greetingLoading = false;
         }

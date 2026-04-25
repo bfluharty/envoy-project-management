@@ -80,7 +80,7 @@ export default class ConvoController {
       const reasoningRequest: ReasoningRequest = {
         agentId: 'envoy-reasoning-agent-001',
         prompt:
-          'Generate a single opening question to start planning this project. Focus on the most important missing information or the most valuable next step.',
+          'Ask a single concise opening question to help plan this project. Focus on the most important missing detail or most valuable next step. Do not summarize the project, do not describe what you retrieved, and do not explain what you are doing — just ask the question.',
         variables: { context: 'PROJECT_SETUP' },
         projectUuid,
         pastConversationTurns: [],
