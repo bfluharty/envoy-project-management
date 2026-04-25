@@ -15,15 +15,32 @@ export interface ProjectRequest {
   vendors?: string[]
 }
 
+export interface ProjectContext {
+  uuid: string
+  name: string
+  description?: string | null
+  location?: any
+  startDate?: string | null
+  endDate?: string | null
+  deadline?: string | null
+  budgetAmount?: number | null
+  budgetCurrency?: string | null
+  goals?: string | null
+  vendors?: { name: string; email?: string | null }[]
+}
+
 export interface ReasoningRequest {
   agentId: string
   prompt: string
   variables: Variables
   pastConversationTurns: Turn[]
+  projectUuid: string
+  projectContext: ProjectContext
 }
 
 export interface Variables {
   context?: string
+  assistantGreeting?: string
 }
 
 export interface VendorRequest {
