@@ -8,7 +8,7 @@ import LocationSearch from '#components/location_search.svelte';
 import type { LocationData } from '#components/location_search.svelte';
 import { page } from '@inertiajs/svelte';
 import { RefreshCwIcon } from '@lucide/svelte';
-import { onDestroy, untrack } from 'svelte';
+import { onDestroy, onMount, untrack } from 'svelte';
 import { formatDate, formatCurrency } from '../../utils/format';
 
 interface ChatMessage {
@@ -129,6 +129,20 @@ let messages = $state<ChatMessage[]>(
 );
 let input = $state('');
 let isLoading = $state(false);
+let initialGreeting = $state<string | null>(null);
+let greetingLoading = $state(false);
+
+onMount(async () => {
+    if (!hasPriorConversation) {
+        greetingLoading = true;
+        try {
+            const res = await fetch(`/projects/${project.uuid}/greeting`);
+            if (res.ok) initialGreeting = await res.text();
+        } finally {
+            greetingLoading = false;
+        }
+    }
+});
 
 
 async function sendChat(prompt: string, variables: Record<string, any> = {}) {
@@ -171,9 +185,11 @@ function sendMessage(event: Event) {
     event.preventDefault();
     if (!input.trim() || isLoading) return;
     const prompt = input.trim();
+    const isFirstMessage = messages.length === 0 && !hasPriorConversation;
     input = '';
     messages = [...messages, { id: idCounter++, role: 'user', content: prompt }];
-    sendChat(prompt);
+    const vars = (isFirstMessage && initialGreeting) ? { assistantGreeting: initialGreeting } : {};
+    sendChat(prompt, vars);
 }
 
 function retryMessage(retryPrompt: string, retryVariables: Record<string, any> = {}) {
@@ -848,6 +864,30 @@ onDestroy(() => {
                     {/if}
                 </div>
             {/each}
+            {#if greetingLoading}
+                <div class="flex items-start gap-2">
+                    <div class="avatar size-8 mt-1.5" aria-hidden="true">
+                        <Logo class="size-8" />
+                    </div>
+                    <div class="card max-w-lg p-3 text-sm preset-filled-surface-100-900">
+                        <span class="inline-flex gap-1 items-center h-4" role="status" aria-label="Assistant is typing">
+                            <span class="w-1.5 h-1.5 rounded-full bg-current motion-safe:animate-bounce [animation-delay:0ms]" aria-hidden="true"></span>
+                            <span class="w-1.5 h-1.5 rounded-full bg-current motion-safe:animate-bounce [animation-delay:150ms]" aria-hidden="true"></span>
+                            <span class="w-1.5 h-1.5 rounded-full bg-current motion-safe:animate-bounce [animation-delay:300ms]" aria-hidden="true"></span>
+                        </span>
+                    </div>
+                </div>
+            {/if}
+            {#if initialGreeting && messages.length === 0 && !hasPriorConversation}
+                <div class="flex items-start gap-2">
+                    <div class="avatar size-8 mt-1.5" aria-hidden="true">
+                        <Logo class="size-8" />
+                    </div>
+                    <div class="card max-w-lg p-3 text-sm preset-filled-surface-100-900">
+                        {initialGreeting}
+                    </div>
+                </div>
+            {/if}
         </div>
     </div>
     <form class="p-4 flex gap-2 bg-surface-50-950/50 backdrop-blur-md border-t border-surface-200-800" onsubmit={sendMessage}>

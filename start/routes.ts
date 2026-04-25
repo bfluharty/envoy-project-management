@@ -132,6 +132,7 @@ router
 
     router.patch('/:uuid', [OverviewController, 'update'])
 
+    router.get('/:uuid/greeting', [ConvoController, 'greeting'])
     router.post('/:uuid/chat', [ConvoController, 'chat'])
   })
   .prefix('/projects')
