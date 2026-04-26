@@ -128,7 +128,23 @@ let messages = $state<ChatMessage[]>(
     untrack(() => conversationHistory.map((m, i) => ({ id: i, role: m.role, content: m.content })))
 );
 let input = $state('');
+let inputEl = $state<HTMLTextAreaElement | null>(null);
+const MAX_INPUT_HEIGHT = 200;
 let isLoading = $state(false);
+
+$effect(() => {
+    input;
+    if (!inputEl) return;
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, MAX_INPUT_HEIGHT) + 'px';
+});
+
+function handleInputKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        (e.currentTarget as HTMLTextAreaElement).form?.requestSubmit();
+    }
+}
 let initialGreeting = $state<string | null>(null);
 let greetingLoading = $state(false);
 
@@ -891,16 +907,18 @@ onDestroy(() => {
             {/if}
         </div>
     </div>
-    <form class="p-4 flex gap-2 bg-surface-50-950/50 backdrop-blur-md border-t border-surface-200-800" onsubmit={sendMessage}>
+    <form class="p-4 flex gap-2 items-end bg-surface-50-950/50 backdrop-blur-md border-t border-surface-200-800" onsubmit={sendMessage}>
         <label for="project-message" class="sr-only">Message</label>
-        <input
+        <textarea
             id="project-message"
-            class="input flex-1"
-            type="text"
+            class="textarea flex-1 resize-none overflow-y-auto leading-6"
+            rows="1"
             bind:value={input}
+            bind:this={inputEl}
+            onkeydown={handleInputKeydown}
             placeholder="Type your message..."
             autocomplete="off"
-            disabled={isLoading} />
+            disabled={isLoading}></textarea>
         <button class="btn btn-sm preset-filled-primary-500" type="submit" disabled={isLoading}>
             {isLoading ? 'Sending…' : 'Send'}
         </button>
