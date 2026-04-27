@@ -76,3 +76,41 @@ Copy `.env.example` to `.env` and fill in:
 - `RESEND_API_KEY` — for transactional email (password reset)
 
 For Docker-based local development, run `./run-docker.sh` which starts both this service and the reasoning engine together.
+
+## Evaluating outreach drafting (reasoning-engine)
+
+There are two flavors of this eval:
+
+1. **Jest integration spec** (deterministic, gates regressions) — `reasoning-engine/test/services/draft-eval.test.ts`. Runs as part of `npm test`. Asserts the LLM's deterministic output AND simulates the envoy-side upsert against a temp JSON file so it verifies create-vs-revise behavior without touching the DB. Uses `jest.retryTimes(2)` to absorb LLM non-determinism. Requires the reasoning-engine server at `http://localhost:8081`.
+
+2. **Qualitative log harness** (for Claude-as-judge iteration) — `reasoning-engine/test/draft-eval.ts`. Same scenarios, but writes a markdown log with rubrics so a human/Claude can score the chat reply and draft text qualitatively. Use this when iterating on prompt quality, not for CI gating.
+
+**Run the spec** (reasoning-engine server must be up):
+```
+cd /Users/rmenner/Code/reasoning-engine
+npm test                                     # full suite
+npm test -- --testPathPatterns=draft-eval    # just this file
+```
+
+**Run the qualitative harness:**
+```
+cd /Users/rmenner/Code/reasoning-engine
+node --loader ts-node/esm test/draft-eval.ts
+```
+This writes:
+- `test/draft-eval-results.json` (machine-readable)
+- `test/draft-eval-results.md` (human/Claude-readable — read this to judge)
+
+**Judging process** (Claude does this — do NOT use an LLM-as-judge call):
+1. Run the harness.
+2. Read `test/draft-eval-results.md`. For each scenario, score 0-10 against BOTH rubrics (`Rubric — chat reply` and `Rubric — draft`); take the lower of the two as the scenario score.
+3. Hard-fail any scenario with a failing deterministic check (cap that scenario at 6).
+4. If average < 8.5, edit the relevant prompt(s) in `reasoning-engine/src/services/reasoning-service.ts` (action-selection footer, `buildDraftResponsePrompt`, or `generateOutreachDrafts` system/user prompt) or the action description migration, then rerun. Repeat until ≥ 8.5.
+5. When iterating autonomously: actually re-judge the new log each iteration — do not assume a fix worked.
+
+**Common failure modes seen so far:**
+- LLM pads draft body with 100+ blank lines after sign-off → fix in the post-LLM cleanup in `generateOutreachDrafts` (trim, collapse `\n{3,}` → `\n\n`).
+- Action selector picks `DRAFT_RESPONSE` for revision phrases ("don't include X", "rewrite it") instead of `DRAFT_OUTREACH_EMAILS` → strengthen the IMPORTANT footer in `buildActionSelectionPayload`.
+- Chat reply leaks `draftUuid=…` strings from the project context → tighten the style rules in `buildDraftResponsePrompt`.
+
+**Adding scenarios:** append to the `scenarios` array in `draft-eval.ts`. Each scenario needs a `prompt`, `projectContext` (with optional `existingDrafts` for revision tests), `pastConversationTurns`, deterministic `expect` assertions, and a two-part `rubric { chatReply, draft }`.
