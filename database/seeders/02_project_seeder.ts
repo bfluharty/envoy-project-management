@@ -148,6 +148,54 @@ export default class extends BaseSeeder {
         userUuid: 'c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b41',
         isActive: true,
       },
+      {
+        uuid: 'b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e',
+        title: 'Custom Home Construction',
+        description:
+          '4-bedroom modern farmhouse on 1.2 acres in Hill Country — full build from foundation to finish-out',
+        location: { city: 'Austin', state: 'TX' },
+        startDate: DateTime.fromISO('2026-03-01'),
+        endDate: DateTime.fromISO('2027-03-01'),
+        deadline: DateTime.fromISO('2027-02-01'),
+        budgetAmount: 875000.0,
+        budgetCurrencyId: 1,
+        goals:
+          'Deliver a turnkey custom home on time and under budget with high-end finishes and energy-efficient systems',
+        userUuid: 'c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b41',
+        isActive: true,
+      },
+      {
+        uuid: 'c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f',
+        title: 'Restaurant Brand Launch',
+        description:
+          'Brand identity, interior design, and marketing launch for new farm-to-table concept in East Austin',
+        location: { city: 'Austin', state: 'TX' },
+        startDate: DateTime.fromISO('2026-02-15'),
+        endDate: DateTime.fromISO('2026-09-01'),
+        deadline: DateTime.fromISO('2026-08-15'),
+        budgetAmount: 120000.0,
+        budgetCurrencyId: 1,
+        goals:
+          'Open with strong brand recognition, full reservation book, and press coverage on day one',
+        userUuid: 'c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b41',
+        isActive: true,
+      },
+      {
+        uuid: 'd3e4f5a6-b7c8-4d9e-0f1a-2b3c4d5e6f7a',
+        title: 'Office Headquarters Fit-Out',
+        description:
+          'Design and build-out of 8,000 sq ft HQ space including open workspace, private offices, and client lounge',
+        location: { city: 'Denver', state: 'CO' },
+        startDate: DateTime.fromISO('2026-04-01'),
+        endDate: DateTime.fromISO('2026-10-31'),
+        deadline: DateTime.fromISO('2026-10-15'),
+        budgetAmount: 340000.0,
+        budgetCurrencyId: 1,
+        goals:
+          'Create a flagship office that reflects company culture and supports hybrid work for 60 employees',
+        userUuid: 'c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b41',
+        isActive: true,
+      },
     ])
   }
 }
