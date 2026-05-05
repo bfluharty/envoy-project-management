@@ -5,6 +5,7 @@ import { ReasoningRequest } from '../../../../types/request.js'
 import { chatProjectValidator, requestParamsValidator } from '#validators/projects_validator'
 import ReasoningEngineService from '#services/reasoning_engine_service'
 import ProjectVendor from '#models/project_vendor'
+import OutreachDraft from '#models/outreach_draft'
 import Project from '#models/project'
 
 export default class ConvoController {
@@ -13,6 +14,17 @@ export default class ConvoController {
       .where('project_uuid', projectUuid)
       .where('is_active', true)
       .preload('vendor')
+
+    const projectVendorUuids = projectVendors.map((pv) => pv.uuid)
+    const existingDrafts = projectVendorUuids.length
+      ? await OutreachDraft.query()
+          .whereIn('project_vendor_uuid', projectVendorUuids)
+          .where('status', 'draft')
+      : []
+
+    const vendorEmailByPvUuid = new Map(
+      projectVendors.map((pv) => [pv.uuid, pv.vendor.email ?? null])
+    )
 
     return {
       uuid: project.uuid,
@@ -28,6 +40,11 @@ export default class ConvoController {
       vendors: projectVendors.map((pv) => ({
         name: pv.vendor.name,
         email: pv.vendor.email ?? null,
+      })),
+      existingDrafts: existingDrafts.map((d) => ({
+        draftUuid: d.uuid,
+        vendorEmail: vendorEmailByPvUuid.get(d.projectVendorUuid) ?? null,
+        subject: d.subject,
       })),
     }
   }

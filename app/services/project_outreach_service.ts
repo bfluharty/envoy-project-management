@@ -94,7 +94,9 @@ function parseEmailList(header?: string | null): string[] {
     .filter(Boolean)
 }
 
-function parseStructuredModelResponse<T extends object>(modelResponse: string | null | undefined): T | null {
+function parseStructuredModelResponse<T extends object>(
+  modelResponse: string | null | undefined
+): T | null {
   const trimmed = modelResponse?.trim()
   if (!trimmed) {
     return null
@@ -178,7 +180,10 @@ function normalizeEmailForMatching(email: string): string {
   return `${local}@${domain}`
 }
 
-function getMessageDirectionForConnection(from: string, connectionEmail: string): 'inbound' | 'outbound' {
+function getMessageDirectionForConnection(
+  from: string,
+  connectionEmail: string
+): 'inbound' | 'outbound' {
   const sender = parseEmailFromHeader(from)
   const normalizedConnectionEmail = connectionEmail.trim().toLowerCase()
   return sender === normalizedConnectionEmail ? 'outbound' : 'inbound'
@@ -223,7 +228,11 @@ async function getProjectOrFail(userUuid: string, projectUuid: string) {
   return project
 }
 
-async function getProjectVendorOrFail(userUuid: string, projectUuid: string, projectVendorUuid: string) {
+async function getProjectVendorOrFail(
+  userUuid: string,
+  projectUuid: string,
+  projectVendorUuid: string
+) {
   const projectVendor = await ProjectVendor.query()
     .where('uuid', projectVendorUuid)
     .where('project_uuid', projectUuid)
@@ -241,7 +250,11 @@ async function getProjectVendorOrFail(userUuid: string, projectUuid: string, pro
   return projectVendor
 }
 
-async function getProjectVendorByVendorUuidOrFail(userUuid: string, projectUuid: string, vendorUuid: string) {
+async function getProjectVendorByVendorUuidOrFail(
+  userUuid: string,
+  projectUuid: string,
+  vendorUuid: string
+) {
   const projectVendor = await ProjectVendor.query()
     .where('vendor_uuid', vendorUuid)
     .where('project_uuid', projectUuid)
@@ -259,8 +272,15 @@ async function getProjectVendorByVendorUuidOrFail(userUuid: string, projectUuid:
   return projectVendor
 }
 
-async function getDraftWithProjectVendorOrFail(userUuid: string, projectUuid: string, draftUuid: string) {
-  const draft = await OutreachDraft.query().where('uuid', draftUuid).preload('vendorConversation').first()
+async function getDraftWithProjectVendorOrFail(
+  userUuid: string,
+  projectUuid: string,
+  draftUuid: string
+) {
+  const draft = await OutreachDraft.query()
+    .where('uuid', draftUuid)
+    .preload('vendorConversation')
+    .first()
   if (!draft) {
     throw new Error('Draft not found')
   }
@@ -278,13 +298,20 @@ async function createProjectConversation(user: User, projectVendor: ProjectVendo
   })
 }
 
-async function getConversationForProjectOrFail(userUuid: string, projectUuid: string, threadUuid: string) {
+async function getConversationForProjectOrFail(
+  userUuid: string,
+  projectUuid: string,
+  threadUuid: string
+) {
   const conversation = await VendorConversation.query()
     .where('uuid', threadUuid)
     .whereHas('projectVendor', (query) => {
-      query.where('project_uuid', projectUuid).where('is_active', true).whereHas('project', (projectQuery) => {
-        projectQuery.where('user_uuid', userUuid).where('is_active', true)
-      })
+      query
+        .where('project_uuid', projectUuid)
+        .where('is_active', true)
+        .whereHas('project', (projectQuery) => {
+          projectQuery.where('user_uuid', userUuid).where('is_active', true)
+        })
     })
     .preload('projectVendor', (query) => query.preload('vendor'))
     .first()
@@ -340,7 +367,11 @@ async function recordOutboundMessage(
   })
 }
 
-async function sendViaEnvoySystemMailbox(projectVendor: ProjectVendor, subject: string, body: string) {
+async function sendViaEnvoySystemMailbox(
+  projectVendor: ProjectVendor,
+  subject: string,
+  body: string
+) {
   await mail.send(new OutreachMail(projectVendor.vendor.email, subject, body))
 
   return {
@@ -365,8 +396,12 @@ function toMillis(value: Date | DateTime | string | null | undefined): number | 
   return value.isValid ? value.toMillis() : null
 }
 
-function orderConversationsByRecency<T extends ConversationSelectionCandidate>(candidates: T[]): T[] {
-  return [...candidates].sort((left, right) => right.timestamp.toMillis() - left.timestamp.toMillis())
+function orderConversationsByRecency<T extends ConversationSelectionCandidate>(
+  candidates: T[]
+): T[] {
+  return [...candidates].sort(
+    (left, right) => right.timestamp.toMillis() - left.timestamp.toMillis()
+  )
 }
 
 export function selectConversationForInboundEmail<T extends ConversationSelectionCandidate>(
@@ -415,7 +450,10 @@ export function selectConversationForInboundEmail<T extends ConversationSelectio
       const latestQualifiedOutbound = (candidate.messages ?? [])
         .filter((message) => message.direction === 'outbound')
         .map((message) => toMillis(message.sentTimestamp))
-        .filter((sentAtMillis): sentAtMillis is number => sentAtMillis !== null && sentAtMillis <= receivedAtMillis)
+        .filter(
+          (sentAtMillis): sentAtMillis is number =>
+            sentAtMillis !== null && sentAtMillis <= receivedAtMillis
+        )
         .sort((left, right) => right - left)[0]
 
       if (latestQualifiedOutbound === undefined) {
@@ -512,16 +550,17 @@ async function resolveConversationForEmail(
     .preload('vendor')
 
   const exactMatches = candidateProjectVendors.filter(
-    (projectVendor) => projectVendor.vendor.email.toLowerCase() === params.counterpartyEmail.toLowerCase()
+    (projectVendor) =>
+      projectVendor.vendor.email.toLowerCase() === params.counterpartyEmail.toLowerCase()
   )
 
   const normalizedCounterparty = normalizeEmailForMatching(params.counterpartyEmail)
   const normalizedMatches = candidateProjectVendors.filter(
-    (projectVendor) => normalizeEmailForMatching(projectVendor.vendor.email) === normalizedCounterparty
+    (projectVendor) =>
+      normalizeEmailForMatching(projectVendor.vendor.email) === normalizedCounterparty
   )
 
-  const selectedCandidates =
-    exactMatches.length > 0 ? exactMatches : normalizedMatches
+  const selectedCandidates = exactMatches.length > 0 ? exactMatches : normalizedMatches
 
   if (selectedCandidates.length === 0) {
     return null
@@ -576,7 +615,9 @@ function getLatestOutbound(messages: Message[]) {
 }
 
 function getLatestMessage(messages: Message[]) {
-  return [...messages].sort((left, right) => right.sentTimestamp.toMillis() - left.sentTimestamp.toMillis())[0]
+  return [...messages].sort(
+    (left, right) => right.sentTimestamp.toMillis() - left.sentTimestamp.toMillis()
+  )[0]
 }
 
 function computeReplyReceived(messages: Message[], draft: OutreachDraft | null) {
@@ -588,7 +629,8 @@ function computeReplyReceived(messages: Message[], draft: OutreachDraft | null) 
   }
 
   return messages.some(
-    (message) => message.direction === 'inbound' && message.sentTimestamp.toMillis() > baseline.toMillis()
+    (message) =>
+      message.direction === 'inbound' && message.sentTimestamp.toMillis() > baseline.toMillis()
   )
 }
 
@@ -602,7 +644,9 @@ export async function getProjectOutreach(userUuid: string, projectUuid: string) 
     .orderBy('id')
 
   const projectVendorUuids = projectVendors.map((projectVendor) => projectVendor.uuid)
-  const projectVendorByUuid = new Map(projectVendors.map((projectVendor) => [projectVendor.uuid, projectVendor]))
+  const projectVendorByUuid = new Map(
+    projectVendors.map((projectVendor) => [projectVendor.uuid, projectVendor])
+  )
 
   const [drafts, conversations] = await Promise.all([
     projectVendorUuids.length
@@ -630,7 +674,9 @@ export async function getProjectOutreach(userUuid: string, projectUuid: string) 
       const messages = conversation.messages ?? []
       const latestMessage = getLatestMessage(messages)
       const latestOutbound = getLatestOutbound(messages)
-      const status = draft?.status ?? (latestMessage ? (latestMessage.direction === 'inbound' ? 'received' : 'sent') : 'empty')
+      const status =
+        draft?.status ??
+        (latestMessage ? (latestMessage.direction === 'inbound' ? 'received' : 'sent') : 'empty')
       const isEditableDraft = status === 'draft' || status === 'error'
       const lastActivity =
         latestMessage?.sentTimestamp ??
@@ -640,9 +686,9 @@ export async function getProjectOutreach(userUuid: string, projectUuid: string) 
         null
       const needsAttention = Boolean(
         latestMessage &&
-          latestMessage.direction === 'inbound' &&
-          (!latestOutbound ||
-            latestMessage.sentTimestamp.toMillis() > latestOutbound.sentTimestamp.toMillis())
+        latestMessage.direction === 'inbound' &&
+        (!latestOutbound ||
+          latestMessage.sentTimestamp.toMillis() > latestOutbound.sentTimestamp.toMillis())
       )
 
       return {
@@ -740,10 +786,18 @@ export async function createOutreachDraft(
   }
 }
 
-export async function cancelOutreachDraft(userUuid: string, projectUuid: string, draftUuid: string) {
+export async function cancelOutreachDraft(
+  userUuid: string,
+  projectUuid: string,
+  draftUuid: string
+) {
   await getProjectOrFail(userUuid, projectUuid)
 
-  const { draft, conversation } = await getDraftWithProjectVendorOrFail(userUuid, projectUuid, draftUuid)
+  const { draft, conversation } = await getDraftWithProjectVendorOrFail(
+    userUuid,
+    projectUuid,
+    draftUuid
+  )
   const messageCount = conversation
     ? await Message.query().where('vendor_conversation_uuid', conversation.uuid).count('* as total')
     : []
@@ -776,9 +830,11 @@ export async function syncProjectOutreach(user: User, projectUuid: string) {
     }
 
     const validConnection = await ensureValidToken(connection)
-    const inboxSummaries = (await listInboxMessages(validConnection, { maxResults: 200 })).map(
-      (summary) => ({ ...summary, source: 'email_service' as const })
-    )
+    const inboxList = await listInboxMessages(validConnection, { maxResults: 200 })
+    const inboxSummaries = inboxList.map((summary) => ({
+      ...summary,
+      source: 'email_service' as const,
+    }))
     let sentSummaries: SyncSummary[] = []
     const sentMailboxCandidates =
       validConnection.provider === 'microsoft'
@@ -788,9 +844,11 @@ export async function syncProjectOutreach(user: User, projectUuid: string) {
 
     for (const mailbox of sentMailboxCandidates) {
       try {
-        sentSummaries = (await listInboxMessages(validConnection, { maxResults: 200, mailbox })).map(
-          (summary) => ({ ...summary, source: 'email_service' as const })
-        )
+        const sentList = await listInboxMessages(validConnection, { maxResults: 200, mailbox })
+        sentSummaries = sentList.map((summary) => ({
+          ...summary,
+          source: 'email_service' as const,
+        }))
         sentMailboxFetched = true
         break
       } catch {
@@ -810,9 +868,14 @@ export async function syncProjectOutreach(user: User, projectUuid: string) {
     let gmailDirectSummaries: SyncSummary[] = []
     if (validConnection.provider === 'gmail') {
       try {
-        gmailDirectSummaries = (
-          await listGmailMessagesDirect(validConnection, { maxResults: 200, query: 'in:anywhere' })
-        ).map((summary) => ({ ...summary, source: 'gmail_direct' as const }))
+        const gmailDirectList = await listGmailMessagesDirect(validConnection, {
+          maxResults: 200,
+          query: 'in:anywhere',
+        })
+        gmailDirectSummaries = gmailDirectList.map((summary) => ({
+          ...summary,
+          source: 'gmail_direct' as const,
+        }))
       } catch (error) {
         logger.debug(
           { provider: validConnection.provider, email: validConnection.email, error },
@@ -991,9 +1054,16 @@ export async function reviseOutreachDraft(
   instructions: string,
   overrides?: { subject?: string; body?: string }
 ) {
-  const { draft, projectVendor } = await getDraftWithProjectVendorOrFail(user.uuid, projectUuid, draftUuid)
+  const { draft, projectVendor } = await getDraftWithProjectVendorOrFail(
+    user.uuid,
+    projectUuid,
+    draftUuid
+  )
   const project = await getProjectOrFail(user.uuid, projectUuid)
-  const projectWithConversations = await ProjectService.getProjectWithConversations(user.uuid, projectUuid)
+  const projectWithConversations = await ProjectService.getProjectWithConversations(
+    user.uuid,
+    projectUuid
+  )
   const pastConversationTurns =
     projectWithConversations.conversations
       .flatMap((conv) => conv.conversationTurns)
@@ -1027,7 +1097,9 @@ export async function reviseOutreachDraft(
   let subject = currentSubject
   let body = currentBody
 
-  const parsed = parseStructuredModelResponse<{ subject?: string; body?: string }>(turn.modelResponse)
+  const parsed = parseStructuredModelResponse<{ subject?: string; body?: string }>(
+    turn.modelResponse
+  )
   if (!parsed) {
     throw new Error('AI revision did not return a valid draft payload')
   }
@@ -1059,7 +1131,11 @@ export async function sendThreadReply(
   await getProjectOrFail(user.uuid, projectUuid)
 
   const conversation = await getConversationForProjectOrFail(user.uuid, projectUuid, threadUuid)
-  const projectVendor = await getProjectVendorOrFail(user.uuid, projectUuid, conversation.projectVendorUuid!)
+  const projectVendor = await getProjectVendorOrFail(
+    user.uuid,
+    projectUuid,
+    conversation.projectVendorUuid!
+  )
   const connection = await getPreferredConnection(user.uuid)
 
   if (connection) {
@@ -1101,13 +1177,20 @@ export async function reviseThreadReply(
   currentBody: string
 ) {
   const project = await getProjectOrFail(user.uuid, projectUuid)
-  const projectWithConversations = await ProjectService.getProjectWithConversations(user.uuid, projectUuid)
+  const projectWithConversations = await ProjectService.getProjectWithConversations(
+    user.uuid,
+    projectUuid
+  )
   const pastConversationTurns =
     projectWithConversations.conversations
       .flatMap((conv) => conv.conversationTurns)
       ?.map((turn) => turn?.contents) || []
   const conversation = await getConversationForProjectOrFail(user.uuid, projectUuid, threadUuid)
-  const projectVendor = await getProjectVendorOrFail(user.uuid, projectUuid, conversation.projectVendorUuid!)
+  const projectVendor = await getProjectVendorOrFail(
+    user.uuid,
+    projectUuid,
+    conversation.projectVendorUuid!
+  )
   const trimmedCurrentBody = currentBody.trim()
   const recentMessages = await Message.query()
     .where('vendor_conversation_uuid', conversation.uuid)
@@ -1139,7 +1222,9 @@ export async function reviseThreadReply(
           : 'Produce only the reply body, not an explanation of changes.',
         `Project title: ${project.title}`,
         `Vendor: ${projectVendor.vendor.name} <${projectVendor.vendor.email}>`,
-        threadContext ? `Recent thread messages:\n${threadContext}` : 'Recent thread messages:\n[none available]',
+        threadContext
+          ? `Recent thread messages:\n${threadContext}`
+          : 'Recent thread messages:\n[none available]',
         trimmedCurrentBody
           ? `Current reply body:\n${trimmedCurrentBody}`
           : 'Current reply body:\n[none provided]',
@@ -1187,7 +1272,10 @@ export async function reviseThreadReply(
   }
 }
 
-export async function applyOutreachActions(projectUuid: string, actions: ActionExecution[] | undefined) {
+export async function applyOutreachActions(
+  projectUuid: string,
+  actions: ActionExecution[] | undefined
+) {
   if (!actions?.length) {
     return
   }
@@ -1207,8 +1295,12 @@ export async function applyOutreachActions(projectUuid: string, actions: ActionE
     .where('is_active', true)
     .preload('vendor')
 
-  const byProjectVendorUuid = new Map(projectVendors.map((projectVendor) => [projectVendor.uuid, projectVendor]))
-  const byVendorUuid = new Map(projectVendors.map((projectVendor) => [projectVendor.vendorUuid, projectVendor]))
+  const byProjectVendorUuid = new Map(
+    projectVendors.map((projectVendor) => [projectVendor.uuid, projectVendor])
+  )
+  const byVendorUuid = new Map(
+    projectVendors.map((projectVendor) => [projectVendor.vendorUuid, projectVendor])
+  )
   const byVendorEmail = new Map(
     projectVendors.map((projectVendor) => [projectVendor.vendor.email.toLowerCase(), projectVendor])
   )
@@ -1218,7 +1310,11 @@ export async function applyOutreachActions(projectUuid: string, actions: ActionE
       continue
     }
 
-    if (action.action !== 'draft_outreach_emails' && action.action !== 'revise_outreach_draft') {
+    const normalizedAction = action.action?.toLowerCase()
+    if (
+      normalizedAction !== 'draft_outreach_emails' &&
+      normalizedAction !== 'revise_outreach_draft'
+    ) {
       continue
     }
 
@@ -1229,25 +1325,48 @@ export async function applyOutreachActions(projectUuid: string, actions: ActionE
           vendorEmail?: string
           subject?: string
           body?: string
+          draftUuid?: string
           drafts?: Array<{
             projectVendorUuid?: string
             vendorUuid?: string
             vendorEmail?: string
             subject?: string
             body?: string
+            draftUuid?: string
           }>
         }
       | undefined
 
-    const candidates = actionData?.drafts?.length ? actionData.drafts : actionData ? [actionData] : []
+    const candidates = actionData?.drafts?.length
+      ? actionData.drafts
+      : actionData
+        ? [actionData]
+        : []
 
     for (const candidate of candidates) {
       const projectVendor =
-        (candidate.projectVendorUuid ? byProjectVendorUuid.get(candidate.projectVendorUuid) : null) ??
+        (candidate.projectVendorUuid
+          ? byProjectVendorUuid.get(candidate.projectVendorUuid)
+          : null) ??
         (candidate.vendorUuid ? byVendorUuid.get(candidate.vendorUuid) : null) ??
         (candidate.vendorEmail ? byVendorEmail.get(candidate.vendorEmail.toLowerCase()) : null)
 
       if (!projectVendor || !candidate.subject?.trim() || !candidate.body?.trim()) {
+        continue
+      }
+
+      const existing = candidate.draftUuid
+        ? await OutreachDraft.query()
+            .where('uuid', candidate.draftUuid)
+            .where('project_vendor_uuid', projectVendor.uuid)
+            .where('status', 'draft')
+            .first()
+        : null
+
+      if (existing) {
+        existing.subject = candidate.subject.trim()
+        existing.body = candidate.body.trim()
+        await existing.save()
         continue
       }
 
