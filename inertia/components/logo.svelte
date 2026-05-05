@@ -6,6 +6,8 @@
 	xmlns="http://www.w3.org/2000/svg"
 	viewBox="0 0 700 700"
 	fill="currentColor"
+	focusable="false"
+	aria-hidden="true"
 	class="outline-none {className}"
 	{...props}
 >
