@@ -32,11 +32,11 @@ export default class OverviewController {
       const projectVendors = await ProjectVendor.query()
         .where('project_uuid', projectUuid)
         .where('is_active', true)
-        .preload('vendor')
+        .preload('vendor', (q) => q.preload('vendorListing'))
       const linkedVendors = projectVendors.map((pv) => ({
         uuid: pv.vendor.uuid,
-        name: pv.vendor.name,
-        email: pv.vendor.email,
+        name: pv.vendor.vendorListing.name,
+        email: pv.vendor.vendorListing.email,
       }))
 
       const project = {

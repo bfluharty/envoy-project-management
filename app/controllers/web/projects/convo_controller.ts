@@ -13,7 +13,7 @@ export default class ConvoController {
     const projectVendors = await ProjectVendor.query()
       .where('project_uuid', projectUuid)
       .where('is_active', true)
-      .preload('vendor')
+      .preload('vendor', (q) => q.preload('vendorListing'))
 
     const projectVendorUuids = projectVendors.map((pv) => pv.uuid)
     const existingDrafts = projectVendorUuids.length
@@ -23,7 +23,7 @@ export default class ConvoController {
       : []
 
     const vendorEmailByPvUuid = new Map(
-      projectVendors.map((pv) => [pv.uuid, pv.vendor.email ?? null])
+      projectVendors.map((pv) => [pv.uuid, pv.vendor.vendorListing.email ?? null])
     )
 
     return {
@@ -38,8 +38,8 @@ export default class ConvoController {
       budgetCurrency: null,
       goals: project.goals ?? null,
       vendors: projectVendors.map((pv) => ({
-        name: pv.vendor.name,
-        email: pv.vendor.email ?? null,
+        name: pv.vendor.vendorListing.name,
+        email: pv.vendor.vendorListing.email ?? null,
       })),
       existingDrafts: existingDrafts.map((d) => ({
         draftUuid: d.uuid,

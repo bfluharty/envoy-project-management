@@ -54,18 +54,18 @@ export default class ProjectsController {
     const projectVendors = await ProjectVendor.query()
       .where('project_uuid', projectUuid)
       .where('is_active', true)
-      .preload('vendor')
+      .preload('vendor', (q) => q.preload('vendorListing'))
     const linkedVendors = projectVendors.map((pv) => ({
       uuid: pv.vendor.uuid,
-      name: pv.vendor.name,
-      email: pv.vendor.email,
+      name: pv.vendor.vendorListing.name,
+      email: pv.vendor.vendorListing.email,
     }))
 
     const allVendors = await Vendor.query()
       .where('user_uuid', user.uuid)
       .where('is_active', true)
-      .orderBy('name', 'asc')
-      .select(['uuid', 'name', 'email'])
+      .preload('vendorListing')
+      .orderBy('id', 'asc')
 
     return inertia.render('projects/project', {
       project: {
@@ -81,7 +81,11 @@ export default class ProjectsController {
         goals: project.goals ?? null,
       },
       linkedVendors,
-      allVendors: allVendors.map((v) => ({ uuid: v.uuid, name: v.name, email: v.email })),
+      allVendors: allVendors.map((v) => ({
+        uuid: v.uuid,
+        name: v.vendorListing.name,
+        email: v.vendorListing.email,
+      })),
       hasPriorConversation,
       conversationHistory,
     })

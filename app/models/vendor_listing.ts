@@ -1,9 +1,14 @@
 import { DateTime } from 'luxon'
-import { BaseModel, column, beforeCreate } from '@adonisjs/lucid/orm'
+import { BaseModel, column, beforeCreate, hasMany } from '@adonisjs/lucid/orm'
 import { v4 as uuidv4 } from 'uuid'
+import type { HasMany } from '@adonisjs/lucid/types/relations'
+import Vendor from './vendor.js'
 
 export default class VendorListing extends BaseModel {
   static table = 'envoy_schema.vendor_listings'
+
+  @hasMany(() => Vendor, { foreignKey: 'vendorListingUuid', localKey: 'uuid' })
+  declare vendors: HasMany<typeof Vendor>
 
   @column({ isPrimary: true })
   declare id: number

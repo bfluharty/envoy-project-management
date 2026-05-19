@@ -35,7 +35,7 @@ export default class ProjectService {
     const projectVendors = await ProjectVendor.query()
       .where('project_uuid', projectUuid)
       .andWhere('is_active', true)
-      .preload('vendor')
+      .preload('vendor', (q) => q.preload('vendorListing'))
 
     const combinedProject = project.toJSON()
     combinedProject.vendors = projectVendors.map((pv) => pv.vendor.toJSON())
@@ -51,7 +51,7 @@ export default class ProjectService {
     const projectVendors = await ProjectVendor.query()
       .where('project_uuid', project.uuid)
       .andWhere('is_active', true)
-      .preload('vendor')
+      .preload('vendor', (q) => q.preload('vendorListing'))
 
     const combinedProject = project.toJSON()
     combinedProject.vendors = projectVendors.map((pv) => pv.vendor.toJSON())
@@ -93,7 +93,7 @@ export default class ProjectService {
     const projectVendors = await ProjectVendor.query()
       .where('project_uuid', projectUuid)
       .andWhere('is_active', true)
-      .preload('vendor')
+      .preload('vendor', (q) => q.preload('vendorListing'))
 
     combinedProject.vendors = projectVendors.map((pv) => pv.vendor.toJSON())
 
