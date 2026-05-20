@@ -10,11 +10,42 @@ import * as ssm from 'aws-cdk-lib/aws-ssm'
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins'
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2'
+import * as iam from 'aws-cdk-lib/aws-iam'
 import { Construct } from 'constructs'
 
 export class EnvoyStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props)
+
+    // ---------------------------------------------------------------
+    // GitHub Actions OIDC Provider & Deploy Role
+    // ---------------------------------------------------------------
+    const githubDomain = 'token.actions.githubusercontent.com'
+    const githubProvider = new iam.OpenIdConnectProvider(this, 'GithubOidcProvider', {
+      url: `https://${githubDomain}`,
+      clientIds: ['sts.amazonaws.com'],
+    })
+
+    const deployRole = new iam.Role(this, 'GitHubDeployRole', {
+      roleName: 'envoy-github-actions-deploy',
+      assumedBy: new iam.WebIdentityPrincipal(githubProvider.openIdConnectProviderArn, {
+        StringLike: {
+          [`${githubDomain}:sub`]: 'repo:bfluharty/envoy-project-api:*',
+        },
+      }),
+    })
+
+    // Add necessary permissions for deployment
+    deployRole.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2ContainerRegistryPowerUser')
+    )
+    deployRole.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonECS_FullAccess'))
+    deployRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['iam:PassRole'],
+        resources: ['*'], // Broad PassRole for ECS task roles
+      })
+    )
 
     // ---------------------------------------------------------------
     // VPC — import existing shared VPC (also used by Reasoning Engine)
@@ -294,7 +325,91 @@ export class EnvoyStack extends cdk.Stack {
       protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [service],
       healthCheck: {
-        path: '/',
+        path: '/health',
+        healthyHttpCodes: '200-399',
+        interval: cdk.Duration.seconds(30),
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 3,
+      },
+    })
+
+    // ---------------------------------------------------------------
+    // Dev Environment Resources
+    // ---------------------------------------------------------------
+    const devAlbSg = new ec2.SecurityGroup(this, 'DevALBSecurityGroup', {
+      vpc,
+      securityGroupName: 'envoy-pm-dev-alb-sg',
+      description: 'Envoy PM Dev ALB',
+    })
+    devAlbSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80))
+
+    ecsSg.addIngressRule(devAlbSg, ec2.Port.tcp(8080)) // Allow Dev ALB to hit ECS
+
+    const devAlb = new elbv2.ApplicationLoadBalancer(this, 'DevALB', {
+      vpc,
+      internetFacing: true,
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      securityGroup: devAlbSg,
+    })
+
+    const devHttpListener = devAlb.addListener('HTTP', { port: 80 })
+
+    const devTaskDef = new ecs.FargateTaskDefinition(this, 'DevTaskDef', {
+      family: 'envoy-project-management-dev',
+      cpu: 1024,
+      memoryLimitMiB: 2048,
+    })
+
+    devTaskDef.addContainer('app', {
+      containerName: 'envoy-project-management',
+      image: ecs.ContainerImage.fromEcrRepository(repository, 'dev-latest'),
+      portMappings: [{ containerPort: 8080 }],
+      environment: {
+        NODE_ENV: 'development',
+        HOST: '0.0.0.0',
+        PORT: '8080',
+        LOG_LEVEL: 'debug',
+        SESSION_DRIVER: 'cookie',
+        APP_URL: `http://${devAlb.loadBalancerDnsName}`,
+        MAIL_FROM_ADDRESS: 'notifications@hello-envoy.com',
+        MAIL_FROM_NAME: 'Envoy',
+        DB_PORT: '5432',
+        DB_DATABASE: 'envoy_db_dev',
+      },
+      secrets: {
+        DB_HOST: ecs.Secret.fromSecretsManager(db.secret!, 'host'),
+        DB_USER: ecs.Secret.fromSecretsManager(db.secret!, 'username'),
+        DB_PASSWORD: ecs.Secret.fromSecretsManager(db.secret!, 'password'),
+        APP_KEY: ecs.Secret.fromSsmParameter(appKeyParam),
+        RESEND_API_KEY: ecs.Secret.fromSsmParameter(resendKeyParam),
+        GOOGLE_CLIENT_ID: ecs.Secret.fromSsmParameter(googleClientIdParam),
+        GOOGLE_CLIENT_SECRET: ecs.Secret.fromSsmParameter(googleClientSecretParam),
+        MICROSOFT_CLIENT_ID: ecs.Secret.fromSsmParameter(msClientIdParam),
+        MICROSOFT_CLIENT_SECRET: ecs.Secret.fromSsmParameter(msClientSecretParam),
+        EMAIL_SERVICE_API_KEY: ecs.Secret.fromSsmParameter(emailServiceApiKeyParam),
+        REASONING_ENGINE_URL_PROD: ecs.Secret.fromSsmParameter(reasoningEngineUrlParam),
+        REASONING_ENGINE_URL_DEV: ecs.Secret.fromSsmParameter(reasoningEngineUrlDevParam),
+        EMAIL_SERVICE_URL: ecs.Secret.fromSsmParameter(emailServiceUrlParam),
+      },
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'ecs-dev', logGroup }),
+    })
+
+    const devService = new ecs.FargateService(this, 'DevService', {
+      serviceName: 'envoy-pm-dev',
+      cluster,
+      taskDefinition: devTaskDef,
+      desiredCount: 0, // Set to 0 initially to avoid CannotPullContainerError (no image yet)
+      securityGroups: [ecsSg],
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      assignPublicIp: false,
+    })
+
+    devHttpListener.addTargets('ECS', {
+      port: 8080,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      targets: [devService],
+      healthCheck: {
+        path: '/health',
         healthyHttpCodes: '200-399',
         interval: cdk.Duration.seconds(30),
         healthyThresholdCount: 2,
@@ -382,6 +497,11 @@ export class EnvoyStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ALBDnsName', {
       value: alb.loadBalancerDnsName,
       description: 'ALB DNS (internal - CloudFront origin)',
+    })
+
+    new cdk.CfnOutput(this, 'DevALBDnsName', {
+      value: devAlb.loadBalancerDnsName,
+      description: 'Dev ALB DNS (access directly for dev testing)',
     })
 
     new cdk.CfnOutput(this, 'DBSecretName', {

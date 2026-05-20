@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "build": "tsc",
-    "deploy": "cdk deploy --profile sideProject",
-    "diff": "cdk diff --profile sideProject",
+    "deploy": "cdk deploy",
+    "diff": "cdk diff",
     "synth": "cdk synth",
-    "destroy": "cdk destroy --profile sideProject"
+    "destroy": "cdk destroy"
   },
   "devDependencies": {
     "@types/node": "22",

@@ -9,6 +9,7 @@
 
 import router from '@adonisjs/core/services/router'
 import { middleware } from './kernel.js'
+const HealthController = () => import('#controllers/api/health_controller')
 const ContactsController = () => import('#controllers/web/contacts_controller')
 const ProjectsController = () => import('#controllers/web/projects/projects_controller')
 const ConvoController = () => import('#controllers/web/projects/convo_controller')
@@ -214,6 +215,10 @@ router
   })
   .prefix('/api/projects')
   .middleware(middleware.auth())
+
+// Infrastructure routes — no auth, no middleware (ALB health checks + build traceability)
+router.get('/health', [HealthController, 'handle'])
+router.get('/version', [HealthController, 'version'])
 
 // Fallback route for unknown GET pages (must stay last)
 router
