@@ -2,14 +2,14 @@ name: CI
 
 on:
   pull_request:
-    branches: [ '**' ]
+    branches: ['**']
   push:
-    branches: [ '**' ]
+    branches: ['**']
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     # We need a postgres service to run the japa tests
     services:
       postgres:

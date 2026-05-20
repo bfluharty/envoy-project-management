@@ -125,7 +125,10 @@ test('account avatar upload and removal update the stored file', async ({ client
   } finally {
     const freshUser = await User.findByOrFail('email', 'alice@example.com')
 
-    if (freshUser.uploadedAvatarPath && freshUser.uploadedAvatarPath !== originalUploadedAvatarPath) {
+    if (
+      freshUser.uploadedAvatarPath &&
+      freshUser.uploadedAvatarPath !== originalUploadedAvatarPath
+    ) {
       await deleteUploadedAvatar(freshUser.uploadedAvatarPath)
     }
 
