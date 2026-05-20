@@ -6,8 +6,9 @@ WORKDIR /usr/src/app
 ARG GIT_SHA=unknown
 ARG BUILD_TIMESTAMP=unknown
 
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json ./
+RUN npm install
+
 COPY . .
 RUN npm run build -- --ignore-ts-errors
 
@@ -15,13 +16,10 @@ RUN npm run build -- --ignore-ts-errors
 FROM node:22-alpine AS production
 WORKDIR /usr/src/app
 
-# Copy built output from builder
+# Copy pruned node_modules and built output from builder
+COPY --from=builder /usr/src/app/node_modules ./node_modules
 COPY --from=builder /usr/src/app/build ./build
 COPY --from=builder /usr/src/app/bin ./bin
-COPY package.json package-lock.json ./
-
-# Install only production dependencies
-RUN npm ci --omit=dev
 
 # Use a non-root user for security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
