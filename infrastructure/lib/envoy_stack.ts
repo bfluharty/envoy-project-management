@@ -30,7 +30,7 @@ export class EnvoyStack extends cdk.Stack {
       roleName: 'envoy-github-actions-deploy',
       assumedBy: new iam.WebIdentityPrincipal(githubProvider.openIdConnectProviderArn, {
         StringLike: {
-          [`${githubDomain}:sub`]: 'repo:bfluharty/envoy-project-api:*',
+          [`${githubDomain}:sub`]: 'repo:bfluharty/envoy-project-management:*',
         },
       }),
     })
