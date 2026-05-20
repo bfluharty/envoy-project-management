@@ -56,6 +56,10 @@ jobs:
           APP_KEY: dummy_key_for_testing
           HOST: localhost
           PORT: 3333
+          LOG_LEVEL: info
+          SESSION_DRIVER: cookie
+          REASONING_ENGINE_URL_DEV: http://localhost:8000
+          REASONING_ENGINE_URL_PROD: http://localhost:8000
         run: |
           node ace migration:run
           npm run test:api
