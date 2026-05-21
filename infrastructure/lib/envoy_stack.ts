@@ -210,7 +210,7 @@ export class EnvoyStack extends cdk.Stack {
     // ECS Cluster
     // ---------------------------------------------------------------
     const cluster = new ecs.Cluster(this, 'Cluster', {
-      clusterName: 'envoy-pm',
+      clusterName: 'envoy-project-management',
       vpc,
       containerInsightsV2: ecs.ContainerInsights.ENABLED,
     })
@@ -404,7 +404,7 @@ export class EnvoyStack extends cdk.Stack {
     })
 
     const devService = new ecs.FargateService(this, 'DevService', {
-      serviceName: 'envoy-pm-dev',
+      serviceName: 'envoy-project-management-dev',
       cluster,
       taskDefinition: devTaskDef,
       desiredCount: 1, // Set to 0 initially to avoid CannotPullContainerError (no image yet)

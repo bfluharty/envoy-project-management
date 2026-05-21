@@ -8,7 +8,7 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: envoy-project-management
-  ECS_CLUSTER: envoy-pm
+  ECS_CLUSTER: envoy-project-management
   ECS_SERVICE: envoy-project-management
   TASK_DEFINITION_FAMILY: envoy-project-management
   CONTAINER_NAME: envoy-project-management
