@@ -7,6 +7,7 @@ services:
     environment:
       - DB_HOST=postgres
       - HOST=0.0.0.0
+      - REASONING_ENGINE_URL_LOCAL=http://reasoning-engine:8081/reasoning/chat
       - REASONING_ENGINE_URL_DEV=http://reasoning-engine:8081/reasoning/chat
       - EMAIL_SERVICE_URL=http://email-service:3000
       - CHOKIDAR_USEPOLLING=true

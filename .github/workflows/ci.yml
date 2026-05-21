@@ -56,6 +56,7 @@ jobs:
           APP_KEY: dummy_key_for_testing
           HOST: localhost
           PORT: 3333
+          APP_ENV: test
           LOG_LEVEL: info
           SESSION_DRIVER: cookie
           REASONING_ENGINE_URL_LOCAL: http://localhost:8000
