@@ -50,6 +50,28 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:dev-latest
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
+      - name: Register new task definition
+        id: register-td
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          TASK_FAMILY: ${{ env.TASK_DEFINITION_FAMILY }}
+          CONTAINER_NAME: ${{ env.CONTAINER_NAME }}
+          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+          aws ecs describe-task-definition --task-definition "$TASK_FAMILY" > td.json
+          jq --arg IMG "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" --arg NAME "$CONTAINER_NAME" \
+            '.taskDefinition | {family:.family, taskRoleArn:.taskRoleArn, executionRoleArn:.executionRoleArn, networkMode:.networkMode, containerDefinitions:(.containerDefinitions | map(if .name==$NAME then .image=$IMG else . end)), requiresCompatibilities:.requiresCompatibilities, cpu:.cpu, memory:.memory, volumes:.volumes}' td.json > register.json
+          aws ecs register-task-definition --cli-input-json file://register.json > registered.json
+          NEW_TD=$(jq -r .taskDefinition.taskDefinitionArn registered.json)
+          echo "taskDefinition=$NEW_TD" >> $GITHUB_OUTPUT
+
+      - name: Update ECS service to new task definition
+        run: |
+          aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE }} --task-definition ${{ steps.register-td.outputs.taskDefinition }} --force-new-deployment
+
       - name: Run Database Migrations (Dev DB)
         run: |
           aws ecs run-task \
