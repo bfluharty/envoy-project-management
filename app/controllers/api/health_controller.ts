@@ -30,7 +30,7 @@ export default class HealthController {
     return response.ok({
       sha: process.env.GIT_SHA || 'unknown',
       builtAt: process.env.BUILD_TIMESTAMP || 'unknown',
-      environment: process.env.NODE_ENV || 'unknown',
+      environment: process.env.APP_ENV || 'unknown',
     })
   }
 }

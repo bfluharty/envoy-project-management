@@ -195,6 +195,11 @@ export class EnvoyStack extends cdk.Stack {
       'ReasoningEngineUrlDev',
       { parameterName: '/envoy/REASONING_ENGINE_URL_DEV', version: 1 }
     )
+    const reasoningEngineUrlLocalParam = ssm.StringParameter.fromSecureStringParameterAttributes(
+      this,
+      'ReasoningEngineUrlLocal',
+      { parameterName: '/envoy/REASONING_ENGINE_URL_LOCAL', version: 1 }
+    )
     const emailServiceUrlParam = ssm.StringParameter.fromSecureStringParameterAttributes(
       this,
       'EmailServiceUrl',
@@ -243,6 +248,7 @@ export class EnvoyStack extends cdk.Stack {
       portMappings: [{ containerPort: 8080 }],
       environment: {
         NODE_ENV: 'production',
+        APP_ENV: 'prod',
         HOST: '0.0.0.0',
         PORT: '8080',
         LOG_LEVEL: 'info',
@@ -268,6 +274,7 @@ export class EnvoyStack extends cdk.Stack {
         EMAIL_SERVICE_API_KEY: ecs.Secret.fromSsmParameter(emailServiceApiKeyParam),
         REASONING_ENGINE_URL_PROD: ecs.Secret.fromSsmParameter(reasoningEngineUrlParam),
         REASONING_ENGINE_URL_DEV: ecs.Secret.fromSsmParameter(reasoningEngineUrlDevParam),
+        REASONING_ENGINE_URL_LOCAL: ecs.Secret.fromSsmParameter(reasoningEngineUrlLocalParam),
         EMAIL_SERVICE_URL: ecs.Secret.fromSsmParameter(emailServiceUrlParam),
       },
       logging: ecs.LogDrivers.awsLogs({
@@ -365,7 +372,8 @@ export class EnvoyStack extends cdk.Stack {
       image: ecs.ContainerImage.fromEcrRepository(repository, 'dev-latest'),
       portMappings: [{ containerPort: 8080 }],
       environment: {
-        NODE_ENV: 'development',
+        NODE_ENV: 'production',
+        APP_ENV: 'dev',
         HOST: '0.0.0.0',
         PORT: '8080',
         LOG_LEVEL: 'debug',
@@ -389,6 +397,7 @@ export class EnvoyStack extends cdk.Stack {
         EMAIL_SERVICE_API_KEY: ecs.Secret.fromSsmParameter(emailServiceApiKeyParam),
         REASONING_ENGINE_URL_PROD: ecs.Secret.fromSsmParameter(reasoningEngineUrlParam),
         REASONING_ENGINE_URL_DEV: ecs.Secret.fromSsmParameter(reasoningEngineUrlDevParam),
+        REASONING_ENGINE_URL_LOCAL: ecs.Secret.fromSsmParameter(reasoningEngineUrlLocalParam),
         EMAIL_SERVICE_URL: ecs.Secret.fromSsmParameter(emailServiceUrlParam),
       },
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'ecs-dev', logGroup }),

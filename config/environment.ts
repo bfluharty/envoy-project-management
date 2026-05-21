@@ -1,11 +1,13 @@
 import env from '#start/env'
 
 function getReasoningEngineUrl() {
-  switch (env.get('NODE_ENV')) {
-    case 'production':
+  switch (env.get('APP_ENV')) {
+    case 'prod':
       return env.get('REASONING_ENGINE_URL_PROD')
-    default:
+    case 'dev':
       return env.get('REASONING_ENGINE_URL_DEV')
+    default:
+      return env.get('REASONING_ENGINE_URL_LOCAL')
   }
 }
 
