@@ -13,7 +13,7 @@ COPY . .
 RUN npm run build -- --ignore-ts-errors
 
 # ----------- Production Stage -----------
-FROM node:22-alpine AS production
+FROM node:22-bookworm-slim AS production
 WORKDIR /usr/src/app
 
 # Copy pruned node_modules and built output from builder
@@ -23,7 +23,7 @@ COPY --from=builder /usr/src/app/bin ./bin
 COPY package*.json ./
 
 # Use a non-root user for security
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 USER appuser
 
 EXPOSE 8080

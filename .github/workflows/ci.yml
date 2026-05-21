@@ -13,7 +13,7 @@ jobs:
     # We need a postgres service to run the japa tests
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
