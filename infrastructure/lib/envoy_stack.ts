@@ -407,7 +407,7 @@ export class EnvoyStack extends cdk.Stack {
       serviceName: 'envoy-project-management-dev',
       cluster,
       taskDefinition: devTaskDef,
-      desiredCount: 1, // Set to 0 initially to avoid CannotPullContainerError (no image yet)
+      desiredCount: 1,
       securityGroups: [ecsSg],
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       assignPublicIp: false,
