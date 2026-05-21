@@ -13,7 +13,7 @@ FROM node:22 AS prod-deps
 WORKDIR /usr/src/app
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --ignore-scripts
 
 # ----------- Production Stage -----------
 FROM node:22-bookworm-slim AS production
