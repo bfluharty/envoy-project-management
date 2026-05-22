@@ -3,7 +3,6 @@ import { DateTime } from 'luxon'
 import mail from '@adonisjs/mail/services/main'
 import logger from '@adonisjs/core/services/logger'
 import env from '#start/env'
-import getReasoningEngineUrl from '#config/environment'
 import OutreachMail from '#mails/outreach_mail'
 import OutreachDraft from '#models/outreach_draft'
 import Message from '#models/message'
@@ -1078,7 +1077,7 @@ export async function reviseOutreachDraft(
 
   let response: AxiosResponse
   try {
-    response = await axios.post(getReasoningEngineUrl(), {
+    response = await axios.post(env.get('REASONING_ENGINE_URL', ''), {
       agentId: 'envoy-reasoning-agent-001',
       prompt: [
         'Return only valid JSON with keys "subject" and "body".',
@@ -1215,7 +1214,7 @@ export async function reviseThreadReply(
 
   let response: AxiosResponse
   try {
-    response = await axios.post(getReasoningEngineUrl(), {
+    response = await axios.post(env.get('REASONING_ENGINE_URL', ''), {
       agentId: 'envoy-reasoning-agent-001',
       prompt: [
         'Return only valid JSON with key "body".',
