@@ -23,7 +23,7 @@
     "dev:local": "sh run-docker.sh --local"
   },
   "lint-staged": {
-    "*.ts": [
+    "*.{js,ts}": [
       "eslint --fix",
       "prettier --write"
     ]

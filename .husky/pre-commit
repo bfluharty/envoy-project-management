@@ -17,8 +17,5 @@ else
   exit 1
 fi
 
-echo "Running lint check..."
-npm run lint
-
 echo "Running type check..."
 npm run typecheck
