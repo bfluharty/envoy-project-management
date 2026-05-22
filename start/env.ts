@@ -39,12 +39,10 @@ export default await Env.create(new URL('../', import.meta.url), {
 
   /*
   |----------------------------------------------------------
-  | Variables for reasoning engine paths
+  | Variable for reasoning engine paths
   |----------------------------------------------------------
   */
-  REASONING_ENGINE_URL_LOCAL: Env.schema.string(),
-  REASONING_ENGINE_URL_DEV: Env.schema.string(),
-  REASONING_ENGINE_URL_PROD: Env.schema.string(),
+  REASONING_ENGINE_URL: Env.schema.string(),
 
   /* Mail (transactional via Resend — https://resend.com) */
   APP_URL: Env.schema.string.optional(),
