@@ -1,28 +1,26 @@
 name: Deploy Dev
 
 on:
-  push:
-    branches-ignore:
-      - master
+  workflow_call:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: envoy-project-management
+  ECR_REPOSITORY: envoy-project-management-dev
   ECS_CLUSTER: envoy-dev
   ECS_SERVICE: envoy-project-management-dev
   TASK_DEFINITION_FAMILY: envoy-project-management-dev
   CONTAINER_NAME: envoy-project-management-dev
+  PRIVATE_SUBNETS: subnet-0db70c6bb64e54616,subnet-0ca7744767a351c8e
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -35,10 +33,9 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build, tag, and push image to Amazon ECR
-        id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_TAG: ${{ github.event.pull_request.head.sha }}
         run: |
           docker build \
             --build-arg GIT_SHA=$IMAGE_TAG \
@@ -48,44 +45,62 @@ jobs:
             .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:dev-latest
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Register new task definition
         id: register-td
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-          TASK_FAMILY: ${{ env.TASK_DEFINITION_FAMILY }}
-          CONTAINER_NAME: ${{ env.CONTAINER_NAME }}
-          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.event.pull_request.head.sha }}
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y jq
-          aws ecs describe-task-definition --task-definition "$TASK_FAMILY" > td.json
+          aws ecs describe-task-definition --task-definition "$TASK_DEFINITION_FAMILY" > td.json
           jq --arg IMG "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" --arg NAME "$CONTAINER_NAME" \
             '.taskDefinition | {family:.family, taskRoleArn:.taskRoleArn, executionRoleArn:.executionRoleArn, networkMode:.networkMode, containerDefinitions:(.containerDefinitions | map(if .name==$NAME then .image=$IMG else . end)), requiresCompatibilities:.requiresCompatibilities, cpu:.cpu, memory:.memory, volumes:.volumes}' td.json > register.json
           aws ecs register-task-definition --cli-input-json file://register.json > registered.json
-          NEW_TD=$(jq -r .taskDefinition.taskDefinitionArn registered.json)
-          echo "taskDefinition=$NEW_TD" >> $GITHUB_OUTPUT
+          echo "task_definition=$(jq -r .taskDefinition.taskDefinitionArn registered.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Update ECS service to new task definition
+      - name: Get ECS service security group
+        id: service-network
         run: |
-          aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE }} --task-definition ${{ steps.register-td.outputs.taskDefinition }} --force-new-deployment
+          SECURITY_GROUP=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].networkConfiguration.awsvpcConfiguration.securityGroups[0]' \
+            --output text)
+          echo "security_group=$SECURITY_GROUP" >> "$GITHUB_OUTPUT"
 
-      - name: Run Database Migrations (Dev DB)
+      - name: Run database migrations
+        env:
+          TASK_DEFINITION: ${{ steps.register-td.outputs.task_definition }}
+          SECURITY_GROUP: ${{ steps.service-network.outputs.security_group }}
         run: |
-          aws ecs run-task \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --task-definition ${{ env.TASK_DEFINITION_FAMILY }} \
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "$TASK_DEFINITION" \
             --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[subnet-0db70c6bb64e54616,subnet-0ca7744767a351c8e],securityGroups=[$(aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE }} --query 'services[0].networkConfiguration.awsvpcConfiguration.securityGroups[0]' --output text)],assignPublicIp=DISABLED}" \
-            --overrides "{\"containerOverrides\": [{\"name\": \"${{ env.CONTAINER_NAME }}\", \"command\": [\"node\", \"ace\", \"migration:run\", \"--force\"]}]}" \
-            --started-by "github-actions-dev-migrate"
+            --network-configuration "awsvpcConfiguration={subnets=[$PRIVATE_SUBNETS],securityGroups=[$SECURITY_GROUP],assignPublicIp=DISABLED}" \
+            --overrides "{\"containerOverrides\": [{\"name\": \"$CONTAINER_NAME\", \"command\": [\"node\", \"ace\", \"migration:run\", \"--force\"]}]}" \
+            --started-by "github-actions-dev-migrate" \
+            --query 'tasks[0].taskArn' \
+            --output text)
 
-      - name: Force new deployment of ECS service
+          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' \
+            --output text)
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "Migration task failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+
+      - name: Update ECS service
         run: |
           aws ecs update-service \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service ${{ env.ECS_SERVICE }} \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --task-definition "${{ steps.register-td.outputs.task_definition }}" \
             --desired-count 1 \
             --force-new-deployment
