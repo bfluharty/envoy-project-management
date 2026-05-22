@@ -2,22 +2,22 @@ import { test } from '@japa/runner'
 import { strict as assert } from 'node:assert'
 import { resolvePostLoginRedirect } from '#controllers/web/auth_controller'
 
-function toCookieHeader(response: any) {
-  return Object.values(response.cookies())
-    .map((cookie: any) => `${cookie.name}=${cookie.value}`)
-    .join('; ')
-}
+// function toCookieHeader(response: any) {
+//   return Object.values(response.cookies())
+//     .map((cookie: any) => `${cookie.name}=${cookie.value}`)
+//     .join('; ')
+// }
 
-async function loginWithCookie(client: any, cookieHeader: string) {
-  return client
-    .post('/login')
-    .header('Cookie', cookieHeader)
-    .form({
-      email: 'alice@example.com',
-      password: 'hashedpassword1',
-    })
-    .redirects(0)
-}
+// async function loginWithCookie(client: any, cookieHeader: string) {
+//   return client
+//     .post('/login')
+//     .header('Cookie', cookieHeader)
+//     .form({
+//       email: 'alice@example.com',
+//       password: 'hashedpassword1',
+//     })
+//     .redirects(0)
+// }
 
 test('resolvePostLoginRedirect keeps real pages and blocks avatar proxy targets', () => {
   assert.equal(resolvePostLoginRedirect('/account'), '/account')
