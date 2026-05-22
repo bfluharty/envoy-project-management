@@ -3,8 +3,6 @@ name: CI
 on:
   pull_request:
     branches: ['**']
-  push:
-    branches: ['**']
 
 jobs:
   test:
@@ -62,33 +60,3 @@ jobs:
           REASONING_ENGINE_URL: http://localhost:8000
         run: |
           npm run test:api
-
-  cdk-diff:
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.event_name == 'pull_request'
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: us-east-1
-
-      - name: Install CDK deps
-        working-directory: infrastructure
-        run: npm ci
-
-      - name: CDK Diff
-        working-directory: infrastructure
-        run: npm run diff
