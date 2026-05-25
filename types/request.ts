@@ -50,3 +50,12 @@ export interface VendorRequest {
   modifiedBy?: string
   isActive?: boolean
 }
+
+export type CreateProjectInsightInput = {
+  insightType: string
+  insightStatus: string
+  insightText: string
+  importance?: number
+  confidence?: number | null
+  supersedesInsightUuid?: string | null
+}

@@ -1,15 +1,7 @@
 import ProjectInsight from '#models/project_insight'
 import ProjectInsightStatus from '#models/project_insight_status'
 import ProjectInsightType from '#models/project_insight_type'
-
-export type CreateProjectInsightInput = {
-  insightType: string
-  insightStatus: string
-  insightText: string
-  importance?: number
-  confidence?: number | null
-  supersedesInsightUuid?: string | null
-}
+import { CreateProjectInsightInput } from '../../types/request.js'
 
 export default class ProjectInsightService {
   private static readonly DEFAULT_ACTIVE_INSIGHT_LIMIT = 30
