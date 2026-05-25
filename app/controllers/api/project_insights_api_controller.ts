@@ -9,6 +9,7 @@ import {
   applyProjectInsightsValidator,
 } from '#validators/project_insights_validator'
 import { ProjectInsightStatusCode } from '../../../types/project_insight.js'
+import { errors } from '@vinejs/vine'
 
 export default class ProjectInsightsApiController {
   async apply({ request, response }: HttpContext) {
@@ -47,6 +48,10 @@ export default class ProjectInsightsApiController {
 
       if (error instanceof ProjectInsightValidationError) {
         return response.status(400).json({ error: error.message })
+      }
+
+      if (error instanceof errors.E_VALIDATION_ERROR) {
+        return response.status(400).json({ error: error.messages })
       }
 
       logger.error('Error applying project insight changes:')
