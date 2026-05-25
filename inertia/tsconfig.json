@@ -5,7 +5,7 @@
     "module": "ESNext",
     "paths": {
       "~/*": ["./*"]
-    },
+    }
   },
-  "include": ["./**/*.ts", "./**/*.svelte"],
+  "include": ["./**/*.ts", "./**/*.svelte"]
 }

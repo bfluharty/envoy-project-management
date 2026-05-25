@@ -23,7 +23,7 @@
     "dev:local": "sh run-docker.sh --local"
   },
   "lint-staged": {
-    "*.ts": [
+    "*.{js,ts}": [
       "eslint --fix",
       "prettier --write"
     ]
@@ -85,14 +85,15 @@
     "@adonisjs/static": "^1.1.1",
     "@adonisjs/vite": "^4.0.0",
     "@inertiajs/svelte": "^2.3.4",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
     "@skeletonlabs/skeleton-svelte": "^4.8.0",
     "@tailwindcss/vite": "^4.1.18",
     "@vinejs/vine": "^3.0.1",
     "axios": "^1.13.4",
-    "googleapis": "^144.0.0",
-    "@microsoft/microsoft-graph-client": "^3.0.7",
-    "isomorphic-fetch": "^3.0.0",
     "edge.js": "^6.4.0",
+    "googleapis": "^144.0.0",
+    "isomorphic-fetch": "^3.0.0",
+    "knex": "^2.5.1",
     "luxon": "^3.7.2",
     "normalize-url": "^8.0.1",
     "pg": "^8.16.3",
@@ -106,9 +107,6 @@
       "./app/controllers/**/*.ts",
       "./app/middleware/*.ts"
     ]
-  },
-  "optionalDependencies": {
-    "@swc/core-linux-x64-musl": "1.11.24"
   },
   "prettier": "@adonisjs/prettier-config"
 }

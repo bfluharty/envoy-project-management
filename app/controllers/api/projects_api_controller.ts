@@ -223,7 +223,7 @@ export default class ProjectsAPIController {
       const projectVendors = await ProjectVendor.query()
         .where('project_uuid', projectUuid)
         .where('is_active', true)
-        .preload('vendor')
+        .preload('vendor', (q) => q.preload('vendorListing'))
 
       const reasoningRequest: ReasoningRequest = {
         agentId,
@@ -243,8 +243,8 @@ export default class ProjectsAPIController {
           budgetCurrency: null,
           goals: project.goals ?? null,
           vendors: projectVendors.map((pv) => ({
-            name: pv.vendor.name,
-            email: pv.vendor.email ?? null,
+            name: pv.vendor.vendorListing.name,
+            email: pv.vendor.vendorListing.email ?? null,
           })),
         },
       }

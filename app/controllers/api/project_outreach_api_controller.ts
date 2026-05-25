@@ -158,7 +158,13 @@ export default class ProjectOutreachApiController {
 
     try {
       return response.ok(
-        await reviseThreadReply(user, projectUuid, threadUuid, payload.instructions, payload.body ?? '')
+        await reviseThreadReply(
+          user,
+          projectUuid,
+          threadUuid,
+          payload.instructions,
+          payload.body ?? ''
+        )
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to revise reply'

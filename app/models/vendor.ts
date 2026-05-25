@@ -2,6 +2,7 @@ import { DateTime } from 'luxon'
 import { BaseModel, column, beforeCreate, belongsTo } from '@adonisjs/lucid/orm'
 import { v4 as uuidv4 } from 'uuid'
 import User from './user.js'
+import VendorListing from './vendor_listing.js'
 import type { BelongsTo } from '@adonisjs/lucid/types/relations'
 
 export default class Vendor extends BaseModel {
@@ -20,20 +21,17 @@ export default class Vendor extends BaseModel {
     }
   }
 
-  @column()
-  declare name: string
-
-  @column()
-  declare email: string
-
   @column({ columnName: 'user_uuid' })
   declare userUuid: string
 
   @belongsTo(() => User, { foreignKey: 'userUuid', localKey: 'uuid' })
   declare user: BelongsTo<typeof User>
 
-  @column({ columnName: 'created_by' })
-  declare createdBy: string
+  @column({ columnName: 'vendor_listing_uuid' })
+  declare vendorListingUuid: string
+
+  @belongsTo(() => VendorListing, { foreignKey: 'vendorListingUuid', localKey: 'uuid' })
+  declare vendorListing: BelongsTo<typeof VendorListing>
 
   @column.dateTime({ columnName: 'created_timestamp', autoCreate: true })
   declare createdTimestamp: DateTime

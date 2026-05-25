@@ -1,12 +1,12 @@
 import axios from 'axios'
 import logger from '@adonisjs/core/services/logger'
-import getReasoningEngineUrl from '#config/environment'
 import ProjectService from '#services/project_service'
 import { applyOutreachActions } from '#services/project_outreach_service'
 import { Turn } from '../../types/turn.js'
 import { ReasoningRequest } from '../../types/request.js'
 import Project from '#models/project'
 import { HttpContext } from '@adonisjs/core/http'
+import env from '#start/env'
 
 export default class ReasoningEngineService {
   public static async handleReasoningChat(
@@ -17,7 +17,10 @@ export default class ReasoningEngineService {
   ) {
     const { saveToHistory = true } = options
     try {
-      const reasoningResponse = await axios.post(getReasoningEngineUrl(), reasoningRequest)
+      const reasoningResponse = await axios.post(
+        env.get('REASONING_ENGINE_URL', ''),
+        reasoningRequest
+      )
       if (reasoningResponse.status !== 200) {
         logger.error('Reasoning engine returned error:')
         logger.error(reasoningResponse.data)

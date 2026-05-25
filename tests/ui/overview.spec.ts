@@ -135,41 +135,44 @@ test.describe('outreach interactions', () => {
     })
 
     let sentPayload: any = null
-    await page.route(`/api/projects/${PROJECT_ALPHA_UUID}/outreach/drafts/draft-send/send`, async (route) => {
-      sentPayload = route.request().postDataJSON()
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          senderMode: 'connected_inbox',
-          cards: [
-            buildThreadCard({
-              threadUuid: 'thread-send',
-              draftUuid: 'draft-send',
-              status: 'sent',
-              subject: sentPayload.subject,
-              body: sentPayload.body,
-              sentAt: '2026-04-01T12:00:00.000Z',
-              lastActivityAt: '2026-04-01T12:00:00.000Z',
-              thread: {
-                uuid: 'thread-send',
-                messages: [
-                  {
-                    uuid: 'message-send',
-                    direction: 'outbound',
-                    subject: sentPayload.subject,
-                    from: 'alice@example.com',
-                    to: 'contact@acme.com',
-                    body: sentPayload.body,
-                    sentAt: '2026-04-01T12:00:00.000Z',
-                  },
-                ],
-              },
-            }),
-          ],
-        }),
-      })
-    })
+    await page.route(
+      `/api/projects/${PROJECT_ALPHA_UUID}/outreach/drafts/draft-send/send`,
+      async (route) => {
+        sentPayload = route.request().postDataJSON()
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            senderMode: 'connected_inbox',
+            cards: [
+              buildThreadCard({
+                threadUuid: 'thread-send',
+                draftUuid: 'draft-send',
+                status: 'sent',
+                subject: sentPayload.subject,
+                body: sentPayload.body,
+                sentAt: '2026-04-01T12:00:00.000Z',
+                lastActivityAt: '2026-04-01T12:00:00.000Z',
+                thread: {
+                  uuid: 'thread-send',
+                  messages: [
+                    {
+                      uuid: 'message-send',
+                      direction: 'outbound',
+                      subject: sentPayload.subject,
+                      from: 'alice@example.com',
+                      to: 'contact@acme.com',
+                      body: sentPayload.body,
+                      sentAt: '2026-04-01T12:00:00.000Z',
+                    },
+                  ],
+                },
+              }),
+            ],
+          }),
+        })
+      }
+    )
 
     await page.getByRole('radio', { name: 'outreach' }).click({ force: true })
     await page.locator('input').nth(0).fill('Edited subject')
@@ -347,29 +350,35 @@ test.describe('outreach interactions', () => {
     })
 
     let revisePayload: any = null
-    await page.route(`/api/projects/${PROJECT_ALPHA_UUID}/outreach/threads/thread-reply/replies/revise`, async (route) => {
-      revisePayload = route.request().postDataJSON()
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          senderMode: 'connected_inbox',
-          revisedThreadUuid: 'thread-reply',
-          revisedReplyBody: 'Great, thank you! Confirming next steps.',
-          cards: [threadCard],
-        }),
-      })
-    })
+    await page.route(
+      `/api/projects/${PROJECT_ALPHA_UUID}/outreach/threads/thread-reply/replies/revise`,
+      async (route) => {
+        revisePayload = route.request().postDataJSON()
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            senderMode: 'connected_inbox',
+            revisedThreadUuid: 'thread-reply',
+            revisedReplyBody: 'Great, thank you! Confirming next steps.',
+            cards: [threadCard],
+          }),
+        })
+      }
+    )
 
     let sendPayload: any = null
-    await page.route(`/api/projects/${PROJECT_ALPHA_UUID}/outreach/threads/thread-reply/replies`, async (route) => {
-      sendPayload = route.request().postDataJSON()
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ senderMode: 'connected_inbox', cards: [threadCard] }),
-      })
-    })
+    await page.route(
+      `/api/projects/${PROJECT_ALPHA_UUID}/outreach/threads/thread-reply/replies`,
+      async (route) => {
+        sendPayload = route.request().postDataJSON()
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ senderMode: 'connected_inbox', cards: [threadCard] }),
+        })
+      }
+    )
 
     await page.getByRole('radio', { name: 'outreach' }).click({ force: true })
     await page.getByRole('button', { name: 'Reply', exact: true }).click()
@@ -379,9 +388,13 @@ test.describe('outreach interactions', () => {
     await page.getByRole('button', { name: 'Generate draft' }).click()
     await expect(page.locator('textarea').first()).toHaveValue('')
     await expect(page.getByRole('heading', { name: 'Revision preview' })).toBeVisible()
-    await expect(page.getByLabel('Suggested revision')).toHaveValue('Great, thank you! Confirming next steps.')
+    await expect(page.getByLabel('Suggested revision')).toHaveValue(
+      'Great, thank you! Confirming next steps.'
+    )
     await page.getByRole('button', { name: 'Apply revision' }).click()
-    await expect(page.locator('textarea').first()).toHaveValue('Great, thank you! Confirming next steps.')
+    await expect(page.locator('textarea').first()).toHaveValue(
+      'Great, thank you! Confirming next steps.'
+    )
     await page.getByRole('button', { name: 'Send reply' }).click()
 
     expect(revisePayload).toEqual({
@@ -394,7 +407,9 @@ test.describe('outreach interactions', () => {
     })
   })
 
-  test('mobile outreach uses master-detail with back navigation and no overflow', async ({ page }) => {
+  test('mobile outreach uses master-detail with back navigation and no overflow', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await login(page)
     await goToProject(page)
@@ -420,7 +435,10 @@ test.describe('outreach interactions', () => {
 
     await page.getByRole('radio', { name: 'outreach' }).click({ force: true })
     await expect(page.getByRole('heading', { name: 'Inbox' })).toBeVisible()
-    await page.getByRole('button', { name: /Acme Corp/ }).first().click()
+    await page
+      .getByRole('button', { name: /Acme Corp/ })
+      .first()
+      .click()
     await expect(page.getByRole('button', { name: 'Back' })).toBeVisible()
     await page.getByRole('button', { name: 'Back' }).click()
     await expect(page.getByRole('heading', { name: 'Inbox' })).toBeVisible()
@@ -743,5 +761,3 @@ test.describe('contacts section', () => {
     await expect(page.getByText('Acme Corp')).toBeVisible()
   })
 })
-
-

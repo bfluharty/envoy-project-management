@@ -6,7 +6,8 @@ if command -v fnm > /dev/null 2>&1; then
   fnm use default 2>/dev/null || true
 fi
 
-# Try npx from multiple possible locations
+echo "Running lint-staged auto-fixes..."
+
 if command -v npx > /dev/null 2>&1; then
   npx lint-staged
 elif [ -f "./node_modules/.bin/lint-staged" ]; then
@@ -15,3 +16,6 @@ else
   echo "Error: Could not run lint-staged. Install fast node manager (fnm) or ensure npx is available." >&2
   exit 1
 fi
+
+echo "Running type check..."
+npm run typecheck

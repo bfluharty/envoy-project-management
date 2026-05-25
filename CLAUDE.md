@@ -70,6 +70,7 @@ Svelte pages live in `inertia/pages/`. Shared components are in `inertia/compone
 ### Environment Setup
 
 Copy `.env.example` to `.env` and fill in:
+
 - `APP_KEY` — generate with `node ace generate:key`
 - Database credentials (`DB_*`)
 - `REASONING_ENGINE_URL_DEV` — defaults to `http://localhost:8081/reasoning/chat`
@@ -86,6 +87,7 @@ There are two flavors of this eval:
 2. **Qualitative log harness** (for Claude-as-judge iteration) — `reasoning-engine/test/draft-eval.ts`. Same scenarios, but writes a markdown log with rubrics so a human/Claude can score the chat reply and draft text qualitatively. Use this when iterating on prompt quality, not for CI gating.
 
 **Run the spec** (reasoning-engine server must be up):
+
 ```
 cd /Users/rmenner/Code/reasoning-engine
 npm test                                     # full suite
@@ -93,15 +95,19 @@ npm test -- --testPathPatterns=draft-eval    # just this file
 ```
 
 **Run the qualitative harness:**
+
 ```
 cd /Users/rmenner/Code/reasoning-engine
 node --loader ts-node/esm test/draft-eval.ts
 ```
+
 This writes:
+
 - `test/draft-eval-results.json` (machine-readable)
 - `test/draft-eval-results.md` (human/Claude-readable — read this to judge)
 
 **Judging process** (Claude does this — do NOT use an LLM-as-judge call):
+
 1. Run the harness.
 2. Read `test/draft-eval-results.md`. For each scenario, score 0-10 against BOTH rubrics (`Rubric — chat reply` and `Rubric — draft`); take the lower of the two as the scenario score.
 3. Hard-fail any scenario with a failing deterministic check (cap that scenario at 6).
@@ -109,6 +115,7 @@ This writes:
 5. When iterating autonomously: actually re-judge the new log each iteration — do not assume a fix worked.
 
 **Common failure modes seen so far:**
+
 - LLM pads draft body with 100+ blank lines after sign-off → fix in the post-LLM cleanup in `generateOutreachDrafts` (trim, collapse `\n{3,}` → `\n\n`).
 - Action selector picks `DRAFT_RESPONSE` for revision phrases ("don't include X", "rewrite it") instead of `DRAFT_OUTREACH_EMAILS` → strengthen the IMPORTANT footer in `buildActionSelectionPayload`.
 - Chat reply leaks `draftUuid=…` strings from the project context → tighten the style rules in `buildDraftResponsePrompt`.

@@ -124,7 +124,9 @@ export function toUploadedAvatarPath(userUuid: string, fileName: string): string
   return `${AVATAR_UPLOADS_PREFIX}${userUuid}/${fileName}`
 }
 
-export function getUploadedAvatarDiskPath(uploadedAvatarPath: string | null | undefined): string | null {
+export function getUploadedAvatarDiskPath(
+  uploadedAvatarPath: string | null | undefined
+): string | null {
   const normalizedPath = getUploadUrl(uploadedAvatarPath)
   if (!normalizedPath || !normalizedPath.startsWith(AVATAR_UPLOADS_PREFIX)) {
     return null

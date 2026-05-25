@@ -3,7 +3,6 @@ import { DateTime } from 'luxon'
 import mail from '@adonisjs/mail/services/main'
 import logger from '@adonisjs/core/services/logger'
 import env from '#start/env'
-import getReasoningEngineUrl from '#config/environment'
 import OutreachMail from '#mails/outreach_mail'
 import OutreachDraft from '#models/outreach_draft'
 import Message from '#models/message'
@@ -240,7 +239,7 @@ async function getProjectVendorOrFail(
     .whereHas('project', (query) => {
       query.where('user_uuid', userUuid).where('is_active', true)
     })
-    .preload('vendor')
+    .preload('vendor', (q) => q.preload('vendorListing'))
     .first()
 
   if (!projectVendor) {
@@ -262,7 +261,7 @@ async function getProjectVendorByVendorUuidOrFail(
     .whereHas('project', (query) => {
       query.where('user_uuid', userUuid).where('is_active', true)
     })
-    .preload('vendor')
+    .preload('vendor', (q) => q.preload('vendorListing'))
     .first()
 
   if (!projectVendor) {
@@ -313,7 +312,7 @@ async function getConversationForProjectOrFail(
           projectQuery.where('user_uuid', userUuid).where('is_active', true)
         })
     })
-    .preload('projectVendor', (query) => query.preload('vendor'))
+    .preload('projectVendor', (query) => query.preload('vendor', (q) => q.preload('vendorListing')))
     .first()
 
   if (!conversation?.projectVendorUuid) {
@@ -372,7 +371,7 @@ async function sendViaEnvoySystemMailbox(
   subject: string,
   body: string
 ) {
-  await mail.send(new OutreachMail(projectVendor.vendor.email, subject, body))
+  await mail.send(new OutreachMail(projectVendor.vendor.vendorListing.email, subject, body))
 
   return {
     from: env.get('MAIL_FROM_ADDRESS') ?? 'onboarding@resend.dev',
@@ -505,7 +504,9 @@ async function resolveConversationForEmail(
       .whereHas('messages', (query) => {
         query.where('provider_thread_id', providerThreadId)
       })
-      .preload('projectVendor', (query) => query.preload('vendor'))
+      .preload('projectVendor', (query) =>
+        query.preload('vendor', (q) => q.preload('vendorListing'))
+      )
       .first()
 
     if (byThreadId) {
@@ -531,7 +532,9 @@ async function resolveConversationForEmail(
           }
         })
       })
-      .preload('projectVendor', (query) => query.preload('vendor'))
+      .preload('projectVendor', (query) =>
+        query.preload('vendor', (q) => q.preload('vendorListing'))
+      )
       .first()
 
     if (byReferences) {
@@ -547,17 +550,18 @@ async function resolveConversationForEmail(
     .whereHas('project', (query) => {
       query.where('user_uuid', user.uuid).where('is_active', true)
     })
-    .preload('vendor')
+    .preload('vendor', (q) => q.preload('vendorListing'))
 
   const exactMatches = candidateProjectVendors.filter(
     (projectVendor) =>
-      projectVendor.vendor.email.toLowerCase() === params.counterpartyEmail.toLowerCase()
+      projectVendor.vendor.vendorListing.email.toLowerCase() ===
+      params.counterpartyEmail.toLowerCase()
   )
 
   const normalizedCounterparty = normalizeEmailForMatching(params.counterpartyEmail)
   const normalizedMatches = candidateProjectVendors.filter(
     (projectVendor) =>
-      normalizeEmailForMatching(projectVendor.vendor.email) === normalizedCounterparty
+      normalizeEmailForMatching(projectVendor.vendor.vendorListing.email) === normalizedCounterparty
   )
 
   const selectedCandidates = exactMatches.length > 0 ? exactMatches : normalizedMatches
@@ -574,7 +578,7 @@ async function resolveConversationForEmail(
     )
     .where('channel', 'email')
     .preload('messages')
-    .preload('projectVendor', (query) => query.preload('vendor'))
+    .preload('projectVendor', (query) => query.preload('vendor', (q) => q.preload('vendorListing')))
     .orderBy('created_timestamp', 'desc')
     .orderBy('id', 'desc')
 
@@ -640,7 +644,7 @@ export async function getProjectOutreach(userUuid: string, projectUuid: string) 
   const projectVendors = await ProjectVendor.query()
     .where('project_uuid', projectUuid)
     .where('is_active', true)
-    .preload('vendor')
+    .preload('vendor', (q) => q.preload('vendorListing'))
     .orderBy('id')
 
   const projectVendorUuids = projectVendors.map((projectVendor) => projectVendor.uuid)
@@ -697,8 +701,8 @@ export async function getProjectOutreach(userUuid: string, projectUuid: string) 
         draftUuid: draft?.uuid ?? null,
         vendor: {
           uuid: projectVendor.vendor.uuid,
-          name: projectVendor.vendor.name,
-          email: projectVendor.vendor.email,
+          name: projectVendor.vendor.vendorListing.name,
+          email: projectVendor.vendor.vendorListing.email,
         },
         status,
         subject: isEditableDraft
@@ -1008,14 +1012,14 @@ export async function sendOutreachDraft(
     let message: Message
     if (connection) {
       const providerMessageId = await sendOnBehalf(connection, {
-        to: projectVendor.vendor.email,
+        to: projectVendor.vendor.vendorListing.email,
         subject,
         body,
       })
 
       message = await recordOutboundMessage(user, projectVendor, threadConversation, {
         from: connection.email,
-        to: projectVendor.vendor.email,
+        to: projectVendor.vendor.vendorListing.email,
         subject,
         body,
         providerMessageId: providerMessageId ? `${connection.provider}:${providerMessageId}` : null,
@@ -1024,7 +1028,7 @@ export async function sendOutreachDraft(
       const fallback = await sendViaEnvoySystemMailbox(projectVendor, subject, body)
       message = await recordOutboundMessage(user, projectVendor, threadConversation, {
         from: fallback.from,
-        to: projectVendor.vendor.email,
+        to: projectVendor.vendor.vendorListing.email,
         subject,
         body,
       })
@@ -1073,13 +1077,13 @@ export async function reviseOutreachDraft(
 
   let response: AxiosResponse
   try {
-    response = await axios.post(getReasoningEngineUrl(), {
+    response = await axios.post(env.get('REASONING_ENGINE_URL', ''), {
       agentId: 'envoy-reasoning-agent-001',
       prompt: [
         'Return only valid JSON with keys "subject" and "body".',
         'Revise the outreach email draft using the user instructions.',
         `Project title: ${project.title}`,
-        `Vendor: ${projectVendor.vendor.name} <${projectVendor.vendor.email}>`,
+        `Vendor: ${projectVendor.vendor.vendorListing.name} <${projectVendor.vendor.vendorListing.email}>`,
         `Current subject: ${currentSubject}`,
         `Current body:\n${currentBody}`,
         `Revision instructions:\n${instructions}`,
@@ -1140,7 +1144,7 @@ export async function sendThreadReply(
 
   if (connection) {
     const providerMessageId = await sendOnBehalf(connection, {
-      to: projectVendor.vendor.email,
+      to: projectVendor.vendor.vendorListing.email,
       subject: payload.subject,
       body: payload.body,
       inReplyTo: payload.inReplyTo,
@@ -1150,7 +1154,7 @@ export async function sendThreadReply(
 
     await recordOutboundMessage(user, projectVendor, conversation, {
       from: connection.email,
-      to: projectVendor.vendor.email,
+      to: projectVendor.vendor.vendorListing.email,
       subject: payload.subject,
       body: payload.body,
       providerMessageId: providerMessageId ? `${connection.provider}:${providerMessageId}` : null,
@@ -1160,7 +1164,7 @@ export async function sendThreadReply(
     const fallback = await sendViaEnvoySystemMailbox(projectVendor, payload.subject, payload.body)
     await recordOutboundMessage(user, projectVendor, conversation, {
       from: fallback.from,
-      to: projectVendor.vendor.email,
+      to: projectVendor.vendor.vendorListing.email,
       subject: payload.subject,
       body: payload.body,
     })
@@ -1210,7 +1214,7 @@ export async function reviseThreadReply(
 
   let response: AxiosResponse
   try {
-    response = await axios.post(getReasoningEngineUrl(), {
+    response = await axios.post(env.get('REASONING_ENGINE_URL', ''), {
       agentId: 'envoy-reasoning-agent-001',
       prompt: [
         'Return only valid JSON with key "body".',
@@ -1221,7 +1225,7 @@ export async function reviseThreadReply(
           ? 'Treat the revision instructions as natural-language feedback and produce only the revised reply body, not an explanation of changes.'
           : 'Produce only the reply body, not an explanation of changes.',
         `Project title: ${project.title}`,
-        `Vendor: ${projectVendor.vendor.name} <${projectVendor.vendor.email}>`,
+        `Vendor: ${projectVendor.vendor.vendorListing.name} <${projectVendor.vendor.vendorListing.email}>`,
         threadContext
           ? `Recent thread messages:\n${threadContext}`
           : 'Recent thread messages:\n[none available]',
@@ -1293,7 +1297,7 @@ export async function applyOutreachActions(
   const projectVendors = await ProjectVendor.query()
     .where('project_uuid', projectUuid)
     .where('is_active', true)
-    .preload('vendor')
+    .preload('vendor', (q) => q.preload('vendorListing'))
 
   const byProjectVendorUuid = new Map(
     projectVendors.map((projectVendor) => [projectVendor.uuid, projectVendor])
@@ -1302,7 +1306,10 @@ export async function applyOutreachActions(
     projectVendors.map((projectVendor) => [projectVendor.vendorUuid, projectVendor])
   )
   const byVendorEmail = new Map(
-    projectVendors.map((projectVendor) => [projectVendor.vendor.email.toLowerCase(), projectVendor])
+    projectVendors.map((projectVendor) => [
+      projectVendor.vendor.vendorListing.email.toLowerCase(),
+      projectVendor,
+    ])
   )
 
   for (const action of actions) {
