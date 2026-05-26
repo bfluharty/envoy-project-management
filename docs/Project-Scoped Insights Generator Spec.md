@@ -511,7 +511,7 @@ The application should send turns to reasoning-engine in chronological order.
     "name": "Office Renovation",
     "details": {}
   },
-  "project_insights": [
+  "projectInsights": [
     {
       "uuid": "uuid",
       "type": "project_constraint",
@@ -520,7 +520,7 @@ The application should send turns to reasoning-engine in chronological order.
       "confidence": 0.94
     }
   ],
-  "recent_turns": [
+  "recentTurns": [
     {
       "user_message": "...",
       "assistant_response": "...",
@@ -592,7 +592,7 @@ Example:
       "confidence": 0.95
     }
   ],
-  "recent_turns": [
+  "recentTurns": [
     {
       "user_message": "...",
       "assistant_response": "...",

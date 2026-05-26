@@ -187,8 +187,8 @@ test.group('ReasoningRequestContextService', (group) => {
     const context = await ReasoningRequestContextService.buildContext('project-1', 'conversation-1')
 
     assert.deepEqual(context, {
-      project_insights: [],
-      recent_turns: [],
+      projectInsights: [],
+      recentTurns: [],
     })
   })
 })

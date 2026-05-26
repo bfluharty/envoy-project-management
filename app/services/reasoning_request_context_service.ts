@@ -19,8 +19,8 @@ export default class ReasoningRequestContextService {
     ])
 
     return {
-      project_insights: projectInsights,
-      recent_turns: recentTurns,
+      projectInsights,
+      recentTurns,
     }
   }
 

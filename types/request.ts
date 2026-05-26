@@ -54,8 +54,8 @@ export interface ReasoningRequest {
   variables: Variables
   projectUuid: string
   projectContext: ProjectContext
-  project_insights: ReasoningProjectInsight[]
-  recent_turns: ReasoningRecentTurn[]
+  projectInsights: ReasoningProjectInsight[]
+  recentTurns: ReasoningRecentTurn[]
 }
 
 export interface Variables {

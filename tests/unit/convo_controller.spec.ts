@@ -45,7 +45,7 @@ test.group('ConvoController reasoning request assembly', (group) => {
     ) => {
       calls.push({ projectUuid, conversationUuid })
       return {
-        project_insights: [
+        projectInsights: [
           {
             uuid: 'insight-1',
             type: 'project_fact',
@@ -54,7 +54,7 @@ test.group('ConvoController reasoning request assembly', (group) => {
             confidence: 0.9,
           },
         ],
-        recent_turns: [
+        recentTurns: [
           {
             user_message: 'Earlier question',
             assistant_response: 'Earlier answer',
@@ -129,7 +129,7 @@ test.group('ConvoController reasoning request assembly', (group) => {
 
     assert.deepEqual(contextCalls, [{ projectUuid, conversationUuid: 'conversation-1' }])
     assert.equal(reasoningCalls.length, 1)
-    assert.deepEqual(reasoningCalls[0].reasoningRequest.project_insights, [
+    assert.deepEqual(reasoningCalls[0].reasoningRequest.projectInsights, [
       {
         uuid: 'insight-1',
         type: 'project_fact',
@@ -138,7 +138,7 @@ test.group('ConvoController reasoning request assembly', (group) => {
         confidence: 0.9,
       },
     ])
-    assert.deepEqual(reasoningCalls[0].reasoningRequest.recent_turns, [
+    assert.deepEqual(reasoningCalls[0].reasoningRequest.recentTurns, [
       {
         user_message: 'Earlier question',
         assistant_response: 'Earlier answer',
@@ -177,7 +177,7 @@ test.group('ConvoController reasoning request assembly', (group) => {
     } as any)
 
     assert.deepEqual(contextCalls, [{ projectUuid, conversationUuid: 'conversation-1' }])
-    assert.deepEqual(reasoningCalls[0].reasoningRequest.recent_turns, [
+    assert.deepEqual(reasoningCalls[0].reasoningRequest.recentTurns, [
       {
         user_message: 'Earlier question',
         assistant_response: 'Earlier answer',
