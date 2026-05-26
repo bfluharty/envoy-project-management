@@ -527,7 +527,7 @@ The application should send turns to reasoning-engine in chronological order.
       "action_metadata": {}
     }
   ],
-  "current_prompt": "..."
+  "prompt": "..."
 }
 ```
 

@@ -10,6 +10,7 @@ import {
   updateProjectValidator,
 } from '#validators/projects_validator'
 import ReasoningEngineService from '#services/reasoning_engine_service'
+import ReasoningRequestContextService from '#services/reasoning_request_context_service'
 import { isOnlyActivatingRecord, validateUser } from '../../utils/controller_utils.js'
 import ProjectVendor from '#models/project_vendor'
 
@@ -215,10 +216,10 @@ export default class ProjectsAPIController {
     const agentId = 'envoy-reasoning-agent-001' // Placeholder agent ID
     try {
       const project = await ProjectService.getProjectWithConversations(userId, projectUuid)
-      const pastConversationTurns =
-        project.conversations
-          .flatMap((conv) => conv.conversationTurns)
-          ?.map((turn) => turn?.contents) || []
+      const reasoningContext = await ReasoningRequestContextService.buildContext(
+        projectUuid,
+        project.conversations[0].uuid
+      )
 
       const projectVendors = await ProjectVendor.query()
         .where('project_uuid', projectUuid)
@@ -230,7 +231,7 @@ export default class ProjectsAPIController {
         prompt,
         variables: variables ?? {},
         projectUuid,
-        pastConversationTurns,
+        ...reasoningContext,
         projectContext: {
           uuid: project.uuid,
           name: project.title,
