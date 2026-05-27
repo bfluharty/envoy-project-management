@@ -16,8 +16,8 @@ export default class ContactsController {
     const user = auth.getUserOrFail()
 
     // No pagination for the contacts library — load all active contacts
-    const vendors = await VendorService.getUserVendors(user.uuid, 10_000)
-    const contacts = vendors.map((v) => ({ uuid: v.uuid, name: v.name, email: v.email }))
+    const vendorListings = await VendorService.getUserVendors(user.uuid, 10_000)
+    const contacts = vendorListings.map((vl) => ({ uuid: vl.uuid, name: vl.name, email: vl.email }))
 
     return inertia.render('contacts/index', { contacts })
   }
@@ -31,9 +31,9 @@ export default class ContactsController {
     const validatedRequest = await request.validateUsing(createVendorValidator)
 
     try {
-      const vendor = await VendorService.createVendor(user.uuid, validatedRequest as VendorRequest)
+      const listing = await VendorService.createVendor(user.uuid, validatedRequest as VendorRequest)
       return response.status(201).json({
-        contact: { uuid: vendor.uuid, name: vendor.name, email: vendor.email },
+        contact: { uuid: listing.uuid, name: listing.name, email: listing.email },
       })
     } catch (error) {
       logger.error('Error creating contact:')
@@ -52,21 +52,19 @@ export default class ContactsController {
     const validatedRequest = await request.validateUsing(updateVendorValidator)
 
     try {
-      const vendor = await VendorService.updateVendor(
+      const listing = await VendorService.updateVendor(
         user.uuid,
         vendorUuid,
         validatedRequest as VendorRequest,
         false
       )
 
-      // updateVendor returns { vendor: null, errors: [] } (truthy) when not found
-      const vendorRecord = vendor as any
-      if (!vendorRecord || !vendorRecord.uuid) {
+      if (!listing) {
         return response.status(404).json({ error: 'Contact not found' })
       }
 
       return response.status(200).json({
-        contact: { uuid: vendorRecord.uuid, name: vendorRecord.name, email: vendorRecord.email },
+        contact: { uuid: listing.uuid, name: listing.name, email: listing.email },
       })
     } catch (error) {
       logger.error('Error updating contact:')
@@ -84,16 +82,14 @@ export default class ContactsController {
     const { uuid: vendorUuid } = await requestParamsValidator.validate(request.params())
 
     try {
-      const vendor = await VendorService.updateVendor(
+      const listing = await VendorService.updateVendor(
         user.uuid,
         vendorUuid,
         { isActive: false } as VendorRequest,
         false
       )
 
-      // updateVendor returns { vendor: null, errors: [] } (truthy) when not found
-      const vendorRecord = vendor as any
-      if (!vendorRecord || !vendorRecord.uuid) {
+      if (!listing) {
         return response.status(404).json({ error: 'Contact not found' })
       }
 

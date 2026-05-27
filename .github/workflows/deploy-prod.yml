@@ -1,0 +1,90 @@
+name: Deploy Prod
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: envoy-project-management
+  ECS_CLUSTER: envoy-project-management
+  ECS_SERVICE: envoy-project-management
+  TASK_DEFINITION_FAMILY: envoy-project-management
+  CONTAINER_NAME: envoy-project-management
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            --build-arg GIT_SHA=$IMAGE_TAG \
+            --build-arg BUILD_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Register new task definition
+        id: register-td
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          TASK_FAMILY: ${{ env.TASK_DEFINITION_FAMILY }}
+          CONTAINER_NAME: ${{ env.CONTAINER_NAME }}
+          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+          aws ecs describe-task-definition --task-definition "$TASK_FAMILY" > td.json
+          jq --arg IMG "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" --arg NAME "$CONTAINER_NAME" \
+            '.taskDefinition | {family:.family, taskRoleArn:.taskRoleArn, executionRoleArn:.executionRoleArn, networkMode:.networkMode, containerDefinitions:(.containerDefinitions | map(if .name==$NAME then .image=$IMG else . end)), requiresCompatibilities:.requiresCompatibilities, cpu:.cpu, memory:.memory, volumes:.volumes}' td.json > register.json
+          aws ecs register-task-definition --cli-input-json file://register.json > registered.json
+          NEW_TD=$(jq -r .taskDefinition.taskDefinitionArn registered.json)
+          echo "taskDefinition=$NEW_TD" >> $GITHUB_OUTPUT
+
+      - name: Update ECS service to new task definition
+        run: |
+          aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE }} --task-definition ${{ steps.register-td.outputs.taskDefinition }} --force-new-deployment
+
+      - name: Run Database Migrations (Prod DB)
+        run: |
+          aws ecs run-task \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --task-definition ${{ env.TASK_DEFINITION_FAMILY }} \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[subnet-0db70c6bb64e54616,subnet-0ca7744767a351c8e],securityGroups=[$(aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE }} --query 'services[0].networkConfiguration.awsvpcConfiguration.securityGroups[0]' --output text)],assignPublicIp=DISABLED}" \
+            --overrides "{\"containerOverrides\": [{\"name\": \"${{ env.CONTAINER_NAME }}\", \"command\": [\"node\", \"ace\", \"migration:run\", \"--force\"]}]}" \
+            --started-by "github-actions-prod-migrate"
+
+      - name: Force new deployment of ECS service
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment

@@ -1,78 +1,92 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="cerberus" class="bg-surface-50-950">
 
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
-  <title inertia>Envoy Project Management</title>
+    <title inertia>
+      Envoy Project Management
+    </title>
 
-  <link rel="preconnect" href="https://fonts.bunny.net">
-  <link rel="preconnect" href="https://fonts.bunny.net" crossorigin>
-  <link href="https://fonts.bunny.net/css?family=instrument-sans:400,400i,500,500i,600,600i,700,700i&display=swap" rel="stylesheet" />
+    <link rel="preconnect" href="https://fonts.bunny.net" />
+    <link rel="preconnect" href="https://fonts.bunny.net" crossorigin />
+    <link
+      href="https://fonts.bunny.net/css?family=instrument-sans:400,400i,500,500i,600,600i,700,700i&display=swap"
+      rel="stylesheet"
+    />
 
-  <!-- Favicons -->
-  <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg">
-  <link rel="icon" type="image/png" sizes="96x96" href="/favicon/favicon-96x96.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png">
-  <link rel="manifest" href="/favicon/site.webmanifest">
+    <!-- Favicons -->
+    <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon/favicon-96x96.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
 
-  <!-- Critical CSS to prevent FOUC -->
-  <style>
-    /* Base styles to prevent flash of unstyled content */
-    body {
-      font-family: 'Instrument Sans', system-ui, sans-serif;
-      margin: 0;
-      padding: 0;
-      min-height: 100vh;
-      width: 100%;
-    }
-    
-    /* Skeleton loader for initial page load */
-    .loading-skeleton {
-      background: linear-gradient(90deg, #f0f0f0 25%, transparent 37%, #f0f0f0 63%);
-      background-size: 400% 100%;
-      animation: skeleton-loading 1.4s ease infinite;
-    }
-    
-    @keyframes skeleton-loading {
-      0% { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
-    }
-    
-    /* Hide content initially until hydration */
-    #app {
-      visibility: hidden;
-    }
-    
-    /* Show content after hydration */
-    #app.hydrated {
-      visibility: visible;
-    }
-  </style>
-
-  <!-- Apply saved color-mode before paint to prevent FOUC -->
-  <script>
-    (function () {
-      var mode = localStorage.getItem('color-mode') || 'system';
-      var html = document.documentElement;
-      if (mode === 'dark') {
-        html.classList.add('dark');
-      } else if (mode === 'light') {
-        html.classList.add('light');
-      } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        html.classList.add('dark');
+    <!-- Critical CSS to prevent FOUC -->
+    <style>
+      /* Base styles to prevent flash of unstyled content */
+      
+      body {
+        font-family: 'Instrument Sans', system-ui, sans-serif;
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+        width: 100%;
       }
-    })();
-  </script>
+      
+      /* Skeleton loader for initial page load */
+      
+      .loading-skeleton {
+        background: linear-gradient(90deg, #f0f0f0 25%, transparent 37%, #f0f0f0 63%);
+        background-size: 400% 100%;
+        animation: skeleton-loading 1.4s ease infinite;
+      }
+      
+      @keyframes skeleton-loading {
+        0% {
+          background-position: 100% 50%;
+        }
+      
+        100% {
+          background-position: 0% 50%;
+        }
+      }
+      
+      /* Hide content initially until hydration */
+      
+      #app {
+        visibility: hidden;
+      }
+      
+      /* Show content after hydration */
+      
+      #app.hydrated {
+        visibility: visible;
+      }
+    </style>
 
-  @vite(['inertia/app/app.ts', `inertia/pages/${page.component}.svelte`])
-  @inertiaHead()
-  @stack('dumper')
-</head>
+    <!-- Apply saved color-mode before paint to prevent FOUC -->
+    <script>
+      (function() {
+        var mode = localStorage.getItem("color-mode") || "system";
+        var html = document.documentElement;
+        if (mode === "dark") {
+          html.classList.add("dark");
+        } else if (mode === "light") {
+          html.classList.add("light");
+        } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+          html.classList.add("dark");
+        }
+      })();
+    </script>
 
-<body class="w-full font-sans">
-  @inertia()
-</body>
+    @vite(['inertia/app/app.ts', `inertia/pages/${page.component}.svelte`])
+    @inertiaHead()
+    @stack('dumper')
+  </head>
+
+  <body class="w-full font-sans">
+    @inertia()
+  </body>
 
 </html>

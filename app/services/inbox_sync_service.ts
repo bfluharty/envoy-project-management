@@ -1,5 +1,6 @@
 import User from '#models/user'
 import UserInboxConnection from '#models/user_inbox_connection'
+import VendorListing from '#models/vendor_listing'
 import Vendor from '#models/vendor'
 import { DateTime } from 'luxon'
 import VendorConversation from '#models/vendor_conversation'
@@ -59,7 +60,15 @@ export async function syncConnection(
     if (existing) continue
 
     const senderEmail = parseEmailFromHeader(summary.from)
-    const vendor = await Vendor.query().where('email', senderEmail).first()
+    const vendorListing = await VendorListing.query().where('email', senderEmail).first()
+    if (!vendorListing) continue
+
+    // Find the user's vendor mapping for this listing
+    const vendor = await Vendor.query()
+      .where('vendor_listing_uuid', vendorListing.uuid)
+      .where('user_uuid', user.uuid)
+      .where('is_active', true)
+      .first()
     if (!vendor) continue
 
     let conversation = await VendorConversation.query()

@@ -62,7 +62,9 @@ test('account page', async ({ page }) => {
   await expect(page.getByLabel('Current password')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Update Password' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Email me a password setup link' })).toHaveCount(0)
-  await expect(page.getByRole('heading', { name: 'Connected Email Accounts', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'Connected Email Accounts', exact: true })
+  ).toBeVisible()
   await expect(page.getByRole('link', { name: 'Connect Gmail' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible()
 })

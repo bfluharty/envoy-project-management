@@ -7,11 +7,12 @@ services:
     environment:
       - DB_HOST=postgres
       - HOST=0.0.0.0
+      - REASONING_ENGINE_URL_LOCAL=http://reasoning-engine:8081/reasoning/chat
       - REASONING_ENGINE_URL_DEV=http://reasoning-engine:8081/reasoning/chat
       - EMAIL_SERVICE_URL=http://email-service:3000
       - CHOKIDAR_USEPOLLING=true
     ports:
-      - "8080:8080"
+      - '8080:8080'
     env_file:
       - .env
     volumes:
@@ -27,7 +28,7 @@ services:
       dockerfile: Dockerfile.dev
     image: envoy-email-service:latest
     ports:
-      - "3000:3000"
+      - '3000:3000'
     environment:
       - EMAIL_SERVICE_API_KEY=${EMAIL_SERVICE_API_KEY}
 
@@ -40,7 +41,7 @@ services:
       - DB_HOST=postgres
       - CHOKIDAR_USEPOLLING=true
     ports:
-      - "8081:8081"
+      - '8081:8081'
     env_file:
       - ../reasoning-engine/.env
     volumes:
@@ -51,19 +52,19 @@ services:
         condition: service_healthy
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16
     environment:
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=${DB_DATABASE}
     ports:
-      - "5432:5432"
+      - '5432:5432'
     env_file:
       - .env
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER}']
       interval: 2s
       timeout: 3s
       retries: 30
