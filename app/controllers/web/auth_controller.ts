@@ -79,9 +79,15 @@ export default class AuthController {
    * Show the registration form
    */
   async showRegister({ inertia, session }: HttpContext) {
+    const successMsg = session.flashMessages.get('success')
+    const errorMsg = session.flashMessages.get('error')
+    const flashMessage = successMsg
+      ? { type: 'success' as const, message: successMsg }
+      : errorMsg
+        ? { type: 'error' as const, message: errorMsg }
+        : null
     return inertia.render('auth/register', {
-      flashMessage:
-        session.flashMessages.get('success') ?? session.flashMessages.get('error') ?? null,
+      flashMessage,
       googleAuthAvailable: Boolean(env.get('GOOGLE_CLIENT_ID') && env.get('GOOGLE_CLIENT_SECRET')),
     })
   }
@@ -89,8 +95,12 @@ export default class AuthController {
   /**
    * Handle registration request
    */
-  async register({ request, response, session }: HttpContext) {
+  async register({ request, response, session, inertia }: HttpContext) {
     const data = await request.validateUsing(registerValidator)
+
+    const googleAuthAvailable = Boolean(
+      env.get('GOOGLE_CLIENT_ID') && env.get('GOOGLE_CLIENT_SECRET')
+    )
 
     try {
       await User.create({
@@ -106,11 +116,19 @@ export default class AuthController {
     } catch (error: unknown) {
       logger.error(error, 'Registration failed')
       if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
-        session.flash('error', 'Registration failed. Please check your details and try again.')
-      } else {
-        session.flash('error', 'Something went wrong. Please try again.')
+        return inertia.render('auth/register', {
+          flashMessage: {
+            type: 'error',
+            message: 'An account with that email already exists. Try signing in instead.',
+          },
+          errors: { email: 'An account with this email already exists.' },
+          googleAuthAvailable,
+        })
       }
-      return response.redirect().back()
+      return inertia.render('auth/register', {
+        flashMessage: { type: 'error', message: 'Something went wrong. Please try again.' },
+        googleAuthAvailable,
+      })
     }
   }
 
