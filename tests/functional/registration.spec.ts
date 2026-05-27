@@ -10,7 +10,7 @@ const DUPLICATE_EMAIL = 'registration.test.existing@example.com'
 const VALID_PASSWORD = 'Password123!'
 
 test.group('registration', (group) => {
-  group.setup(() => testUtils.db().migrate())
+  group.setup(() => testUtils.db().truncate())
 
   test('happy path: new email creates account and redirects to login', async ({ client }) => {
     await User.query().where('email', NEW_EMAIL).delete()
