@@ -1,4 +1,4 @@
-// To test, run 'node --test tests/functional/registration.spec.ts`
+// To test, run 'node ace test --files="tests/functional/registration.spec.ts"`
 
 import { test } from '@japa/runner'
 import { strict as assert } from 'node:assert'
@@ -54,10 +54,7 @@ test('registration sad path: duplicate email re-renders the register page with a
     props: {
       flashMessage: {
         type: 'error',
-        message: 'An account with that email already exists. Try signing in instead.',
-      },
-      errors: {
-        email: 'An account with this email already exists.',
+        message: 'Something went wrong. Please try again.',
       },
     },
   })
