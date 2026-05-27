@@ -65,7 +65,10 @@ test.group('registration', (group) => {
         props: {
           flashMessage: {
             type: 'error',
-            message: 'Something went wrong. Please try again.',
+            message: 'An account with that email already exists. Try signing in instead.',
+          },
+          errors: {
+            email: 'An account with this email already exists.',
           },
         },
       })
