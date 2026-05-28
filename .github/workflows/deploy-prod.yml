@@ -17,18 +17,17 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_PROD_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_PROD_DEPLOY_ROLE_ARN  }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -36,56 +35,82 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build, tag, and push image to Amazon ECR
-        id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_TAG: ${{ github.event.pull_request.head.sha }}
         run: |
           docker build \
             --build-arg GIT_SHA=$IMAGE_TAG \
             --build-arg BUILD_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
             -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:dev-latest \
             .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:dev-latest
 
       - name: Register new task definition
         id: register-td
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-          TASK_FAMILY: ${{ env.TASK_DEFINITION_FAMILY }}
-          CONTAINER_NAME: ${{ env.CONTAINER_NAME }}
-          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.event.pull_request.head.sha }}
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y jq
-          aws ecs describe-task-definition --task-definition "$TASK_FAMILY" > td.json
+          aws ecs describe-task-definition --task-definition "$TASK_DEFINITION_FAMILY" > td.json
           jq --arg IMG "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" --arg NAME "$CONTAINER_NAME" \
             '.taskDefinition | {family:.family, taskRoleArn:.taskRoleArn, executionRoleArn:.executionRoleArn, networkMode:.networkMode, containerDefinitions:(.containerDefinitions | map(if .name==$NAME then .image=$IMG else . end)), requiresCompatibilities:.requiresCompatibilities, cpu:.cpu, memory:.memory, volumes:.volumes}' td.json > register.json
           aws ecs register-task-definition --cli-input-json file://register.json > registered.json
-          NEW_TD=$(jq -r .taskDefinition.taskDefinitionArn registered.json)
-          echo "taskDefinition=$NEW_TD" >> $GITHUB_OUTPUT
+          echo "task_definition=$(jq -r .taskDefinition.taskDefinitionArn registered.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Update ECS service to new task definition
+      - name: Get ECS service network configuration
+        id: service-network
         run: |
-          aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE }} --task-definition ${{ steps.register-td.outputs.taskDefinition }} --force-new-deployment
+          SECURITY_GROUP=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].networkConfiguration.awsvpcConfiguration.securityGroups[0]' \
+            --output text)
+          SUBNETS=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'join(`,`, services[0].networkConfiguration.awsvpcConfiguration.subnets)' \
+            --output text)
 
-      - name: Run Database Migrations (Prod DB)
+          echo "security_group=$SECURITY_GROUP" >> "$GITHUB_OUTPUT"
+          echo "subnets=$SUBNETS" >> "$GITHUB_OUTPUT"
+
+      - name: Run database migrations
+        env:
+          TASK_DEFINITION: ${{ steps.register-td.outputs.task_definition }}
+          SECURITY_GROUP: ${{ steps.service-network.outputs.security_group }}
+          SUBNETS: ${{ steps.service-network.outputs.subnets }}
         run: |
-          aws ecs run-task \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --task-definition ${{ env.TASK_DEFINITION_FAMILY }} \
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "$TASK_DEFINITION" \
             --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[subnet-0db70c6bb64e54616,subnet-0ca7744767a351c8e],securityGroups=[$(aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE }} --query 'services[0].networkConfiguration.awsvpcConfiguration.securityGroups[0]' --output text)],assignPublicIp=DISABLED}" \
-            --overrides "{\"containerOverrides\": [{\"name\": \"${{ env.CONTAINER_NAME }}\", \"command\": [\"node\", \"ace\", \"migration:run\", \"--force\"]}]}" \
-            --started-by "github-actions-prod-migrate"
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUP],assignPublicIp=DISABLED}" \
+            --overrides "{\"containerOverrides\": [{\"name\": \"$CONTAINER_NAME\", \"command\": [\"node\", \"ace\", \"migration:run\", \"--force\"]}]}" \
+            --started-by "github-actions-dev-migrate" \
+            --query 'tasks[0].taskArn' \
+            --output text)
 
-      - name: Force new deployment of ECS service
+          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' \
+            --output text)
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "Migration task failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+
+      - name: Update ECS service
         run: |
           aws ecs update-service \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service ${{ env.ECS_SERVICE }} \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --task-definition "${{ steps.register-td.outputs.task_definition }}" \
+            --desired-count 1 \
             --force-new-deployment
