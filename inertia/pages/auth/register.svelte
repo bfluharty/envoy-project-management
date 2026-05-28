@@ -5,9 +5,11 @@
   const {
     flashMessage = null,
     googleAuthAvailable = false,
+    errors: propErrors = {},
   }: {
     flashMessage: { type?: string; message?: string } | null
     googleAuthAvailable?: boolean
+    errors?: Record<string, string>
   } = $props()
 
   let fullName = $state('')
@@ -52,6 +54,9 @@
     flashType =
       flashMessage?.type === 'error' || flashMessage?.type === 'success' ? flashMessage.type : null
     flashText = flashMessage?.message ?? ''
+    if (propErrors && Object.keys(propErrors).length > 0) {
+      errors = propErrors
+    }
   })
 </script>
 
