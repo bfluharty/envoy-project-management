@@ -43,10 +43,10 @@ jobs:
             --build-arg GIT_SHA=$IMAGE_TAG \
             --build-arg BUILD_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
             -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:dev-latest \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:prod-latest \
             .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:dev-latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:prod-latest
 
       - name: Register new task definition
         id: register-td
@@ -89,7 +89,7 @@ jobs:
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUP],assignPublicIp=DISABLED}" \
             --overrides "{\"containerOverrides\": [{\"name\": \"$CONTAINER_NAME\", \"command\": [\"node\", \"ace\", \"migration:run\", \"--force\"]}]}" \
-            --started-by "github-actions-dev-migrate" \
+            --started-by "github-actions-prod-migrate" \
             --query 'tasks[0].taskArn' \
             --output text)
 
