@@ -7,11 +7,12 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: envoy-project-management
-  ECS_CLUSTER: envoy-project-management
-  ECS_SERVICE: envoy-project-management
-  TASK_DEFINITION_FAMILY: envoy-project-management
-  CONTAINER_NAME: envoy-project-management
+  ECR_REPOSITORY: envoy-project-management-prod
+  ECS_CLUSTER: envoy-prod-east
+  ECS_SERVICE: envoy-project-management-prod-east
+  TASK_DEFINITION_FAMILY: envoy-project-management-prod-east
+  CONTAINER_NAME: envoy-project-management-prod
+  IMAGE_ALIAS: latest
 
 jobs:
   deploy:
