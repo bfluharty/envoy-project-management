@@ -52,7 +52,7 @@ jobs:
         id: register-td
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.event.pull_request.head.sha }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
           aws ecs describe-task-definition --task-definition "$TASK_DEFINITION_FAMILY" > td.json
           jq --arg IMG "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" --arg NAME "$CONTAINER_NAME" \
@@ -73,7 +73,6 @@ jobs:
             --services "$ECS_SERVICE" \
             --query 'join(`,`, services[0].networkConfiguration.awsvpcConfiguration.subnets)' \
             --output text)
-
           echo "security_group=$SECURITY_GROUP" >> "$GITHUB_OUTPUT"
           echo "subnets=$SUBNETS" >> "$GITHUB_OUTPUT"
 
