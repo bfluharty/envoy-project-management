@@ -17,12 +17,13 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -37,7 +38,7 @@ jobs:
       - name: Build, tag, and push image to Amazon ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.event.pull_request.head.sha }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build \
             --build-arg GIT_SHA=$IMAGE_TAG \
@@ -73,6 +74,7 @@ jobs:
             --services "$ECS_SERVICE" \
             --query 'join(`,`, services[0].networkConfiguration.awsvpcConfiguration.subnets)' \
             --output text)
+
           echo "security_group=$SECURITY_GROUP" >> "$GITHUB_OUTPUT"
           echo "subnets=$SUBNETS" >> "$GITHUB_OUTPUT"
 
@@ -112,3 +114,4 @@ jobs:
             --service "$ECS_SERVICE" \
             --task-definition "${{ steps.register-td.outputs.task_definition }}" \
             --force-new-deployment
+            
