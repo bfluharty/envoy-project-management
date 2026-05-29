@@ -241,7 +241,7 @@ let reviseInstructions = $state('');
 let selectedOutreachThreadUuid = $state<string | null>(null);
 let composeThreadUuid = $state<string | null>(null);
 let outreachPane = $state<'read' | 'create'>('read');
-let newThreadVendorUuid = $state(untrack(() => linkedVendors[0]?.uuid ?? ''));
+let newThreadVendorUuid = $state('');
 let replyThreadUuid = $state<string | null>(null);
 let replySubject = $state('');
 let replyBody = $state('');
@@ -302,9 +302,6 @@ function applyOutreachState(data: OutreachStateResponse) {
     outreachSenderMode = data.senderMode ?? 'envoy_system';
     outreachLoaded = true;
 
-    if (!newThreadVendorUuid && linkedVendors.length > 0) {
-        newThreadVendorUuid = linkedVendors[0].uuid;
-    }
 
     const selectedCardStillExists = selectedOutreachThreadUuid
         ? outreachCards.some((card) => card.threadUuid === selectedOutreachThreadUuid)
@@ -376,8 +373,8 @@ function startNewThread() {
     replyReviseInstructions = '';
     closeReplyComposer();
 
-    if (!newThreadVendorUuid && linkedVendors.length > 0) {
-        newThreadVendorUuid = linkedVendors[0].uuid;
+    if (!newThreadVendorUuid && localLinked.length > 0) {
+        newThreadVendorUuid = localLinked[0].uuid;
     }
 }
 
@@ -961,14 +958,14 @@ onDestroy(() => {
                 Loading outreach…
             </div>
         {:else}
-            {#if linkedVendors.length === 0}
+            {#if localLinked.length === 0}
                 <div class="rounded-xl border border-dashed border-surface-200-800 bg-surface-50-950/30 p-4 text-sm text-surface-600-400">
                     No contacts are linked to this project yet. Add one in the Overview tab, then create your first outreach message.
                 </div>
             {/if}
             <ProjectOutreachPanel
                 cards={outreachCards}
-                contacts={linkedVendors}
+                contacts={localLinked}
                 currentUserName={currentUserName}
                 selectedCard={selectedOutreachCard}
                 composeCard={composeOutreachCard}
