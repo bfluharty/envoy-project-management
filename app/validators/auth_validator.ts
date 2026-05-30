@@ -1,4 +1,4 @@
-import vine from '@vinejs/vine'
+import vine, { SimpleMessagesProvider } from '@vinejs/vine'
 
 export const loginValidator = vine.compile(
   vine.object({
@@ -15,6 +15,10 @@ export const registerValidator = vine.compile(
     passwordConfirmation: vine.string().confirmed({ confirmationField: 'password' }),
   })
 )
+registerValidator.messagesProvider = new SimpleMessagesProvider({
+  'passwordConfirmation.confirmed':
+    'The password confirmation field and password field must match eachother.',
+})
 
 export const forgotPasswordValidator = vine.compile(vine.object({ email: vine.string().email() }))
 
@@ -25,6 +29,10 @@ export const resetPasswordValidator = vine.compile(
     passwordConfirmation: vine.string().confirmed({ confirmationField: 'password' }),
   })
 )
+resetPasswordValidator.messagesProvider = new SimpleMessagesProvider({
+  'passwordConfirmation.confirmed':
+    'The password confirmation field and password field must match eachother.',
+})
 
 export const changePasswordValidator = vine.compile(
   vine.object({
@@ -33,3 +41,7 @@ export const changePasswordValidator = vine.compile(
     passwordConfirmation: vine.string().confirmed({ confirmationField: 'password' }),
   })
 )
+changePasswordValidator.messagesProvider = new SimpleMessagesProvider({
+  'passwordConfirmation.confirmed':
+    'The password confirmation field and password field must match eachother.',
+})
