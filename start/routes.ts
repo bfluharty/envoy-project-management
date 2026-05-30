@@ -15,6 +15,8 @@ const ProjectsController = () => import('#controllers/web/projects/projects_cont
 const ConvoController = () => import('#controllers/web/projects/convo_controller')
 const OverviewController = () => import('#controllers/web/projects/overview_controller')
 const ProjectsAPIController = () => import('#controllers/api/projects_api_controller')
+const ProjectInsightsApiController = () =>
+  import('#controllers/api/project_insights_api_controller')
 const VendorsAPIController = () => import('#controllers/api/vendors_api_controller')
 const AuthController = () => import('#controllers/web/auth_controller')
 const DashboardController = () => import('#controllers/web/dashboard_controller')
@@ -216,7 +218,14 @@ router
   .prefix('/api/projects')
   .middleware(middleware.auth())
 
-// Infrastructure routes — no auth, no middleware (ALB health checks + build traceability)
+// Internal API routes for reasoning-engine callbacks
+router
+  .group(() => {
+    router.post('/projects/:projectUuid/insights', [ProjectInsightsApiController, 'apply'])
+  })
+  .prefix('/internal')
+
+// Infrastructure routes - no auth, no middleware (ALB health checks + build traceability)
 router.get('/health', [HealthController, 'handle'])
 router.get('/version', [HealthController, 'version'])
 

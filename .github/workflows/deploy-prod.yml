@@ -114,3 +114,4 @@ jobs:
             --service "$ECS_SERVICE" \
             --task-definition "${{ steps.register-td.outputs.task_definition }}" \
             --force-new-deployment
+            

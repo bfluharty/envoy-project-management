@@ -12,6 +12,7 @@ import User from '#models/user'
 import UserInboxConnection from '#models/user_inbox_connection'
 import VendorConversation from '#models/vendor_conversation'
 import ProjectService from '#services/project_service'
+import ReasoningRequestContextService from '#services/reasoning_request_context_service'
 import type { ActionExecution, Turn } from '../../types/turn.js'
 import { getOrCreateEmailCommunicationForProjectVendor } from './email_communication_context.js'
 import {
@@ -1068,29 +1069,30 @@ export async function reviseOutreachDraft(
     user.uuid,
     projectUuid
   )
-  const pastConversationTurns =
-    projectWithConversations.conversations
-      .flatMap((conv) => conv.conversationTurns)
-      ?.map((turn) => turn?.contents) || []
+  const reasoningContext = await ReasoningRequestContextService.buildContext(
+    projectUuid,
+    projectWithConversations.conversations[0].uuid
+  )
   const currentSubject = overrides?.subject?.trim() || draft.subject
   const currentBody = overrides?.body?.trim() || draft.body
+  const prompt = [
+    'Return only valid JSON with keys "subject" and "body".',
+    'Revise the outreach email draft using the user instructions.',
+    `Project title: ${project.title}`,
+    `Vendor: ${projectVendor.vendor.vendorListing.name} <${projectVendor.vendor.vendorListing.email}>`,
+    `Current subject: ${currentSubject}`,
+    `Current body:\n${currentBody}`,
+    `Revision instructions:\n${instructions}`,
+  ].join('\n\n')
 
   let response: AxiosResponse
   try {
     response = await axios.post(env.get('REASONING_ENGINE_URL', ''), {
       agentId: 'envoy-reasoning-agent-001',
-      prompt: [
-        'Return only valid JSON with keys "subject" and "body".',
-        'Revise the outreach email draft using the user instructions.',
-        `Project title: ${project.title}`,
-        `Vendor: ${projectVendor.vendor.vendorListing.name} <${projectVendor.vendor.vendorListing.email}>`,
-        `Current subject: ${currentSubject}`,
-        `Current body:\n${currentBody}`,
-        `Revision instructions:\n${instructions}`,
-      ].join('\n\n'),
+      prompt,
       variables: { context: 'INITIAL_OUTREACH' },
       projectUuid,
-      pastConversationTurns,
+      ...reasoningContext,
     })
   } catch (error) {
     logger.error({ err: error, projectUuid, draftUuid }, 'Failed to revise outreach draft')
@@ -1185,10 +1187,10 @@ export async function reviseThreadReply(
     user.uuid,
     projectUuid
   )
-  const pastConversationTurns =
-    projectWithConversations.conversations
-      .flatMap((conv) => conv.conversationTurns)
-      ?.map((turn) => turn?.contents) || []
+  const reasoningContext = await ReasoningRequestContextService.buildContext(
+    projectUuid,
+    projectWithConversations.conversations[0].uuid
+  )
   const conversation = await getConversationForProjectOrFail(user.uuid, projectUuid, threadUuid)
   const projectVendor = await getProjectVendorOrFail(
     user.uuid,
@@ -1211,32 +1213,33 @@ export async function reviseThreadReply(
       return `${direction} - Subject: ${subject}\n${body}`
     })
     .join('\n\n---\n\n')
+  const prompt = [
+    'Return only valid JSON with key "body".',
+    trimmedCurrentBody
+      ? 'Revise the email reply body using the user instructions.'
+      : 'Write a new email reply body using the user instructions and the thread context.',
+    trimmedCurrentBody
+      ? 'Treat the revision instructions as natural-language feedback and produce only the revised reply body, not an explanation of changes.'
+      : 'Produce only the reply body, not an explanation of changes.',
+    `Project title: ${project.title}`,
+    `Vendor: ${projectVendor.vendor.vendorListing.name} <${projectVendor.vendor.vendorListing.email}>`,
+    threadContext
+      ? `Recent thread messages:\n${threadContext}`
+      : 'Recent thread messages:\n[none available]',
+    trimmedCurrentBody
+      ? `Current reply body:\n${trimmedCurrentBody}`
+      : 'Current reply body:\n[none provided]',
+    `Revision instructions:\n${instructions}`,
+  ].join('\n\n')
 
   let response: AxiosResponse
   try {
     response = await axios.post(env.get('REASONING_ENGINE_URL', ''), {
       agentId: 'envoy-reasoning-agent-001',
-      prompt: [
-        'Return only valid JSON with key "body".',
-        trimmedCurrentBody
-          ? 'Revise the email reply body using the user instructions.'
-          : 'Write a new email reply body using the user instructions and the thread context.',
-        trimmedCurrentBody
-          ? 'Treat the revision instructions as natural-language feedback and produce only the revised reply body, not an explanation of changes.'
-          : 'Produce only the reply body, not an explanation of changes.',
-        `Project title: ${project.title}`,
-        `Vendor: ${projectVendor.vendor.vendorListing.name} <${projectVendor.vendor.vendorListing.email}>`,
-        threadContext
-          ? `Recent thread messages:\n${threadContext}`
-          : 'Recent thread messages:\n[none available]',
-        trimmedCurrentBody
-          ? `Current reply body:\n${trimmedCurrentBody}`
-          : 'Current reply body:\n[none provided]',
-        `Revision instructions:\n${instructions}`,
-      ].join('\n\n'),
+      prompt,
       variables: { context: 'HANDLE_VENDOR_RESPONSE' },
       projectUuid,
-      pastConversationTurns,
+      ...reasoningContext,
     })
   } catch (error) {
     logger.error({ err: error, projectUuid, threadUuid }, 'Failed to revise thread reply')
