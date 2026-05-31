@@ -50,18 +50,6 @@ if [ "$LOCAL" = true ]; then
   # -------------------------------------------------
 
   # -------------------------------------------------
-  # 0) Patch knex exports (required by @adonisjs/lucid)
-  # -------------------------------------------------
-  echo "Patching knex..."
-  node -e "
-    const fs = require('fs');
-    const p = './node_modules/knex/package.json';
-    const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
-    delete pkg.exports;
-    fs.writeFileSync(p, JSON.stringify(pkg, null, 2));
-  "
-
-  # -------------------------------------------------
   # 1) Start Postgres + reasoning-engine + email-service containers
   # -------------------------------------------------
   echo "Starting Postgres, reasoning engine, and email service..."

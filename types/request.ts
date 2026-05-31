@@ -1,5 +1,4 @@
 import { DateTime } from 'luxon'
-import { Turn } from './turn.js'
 
 export interface ProjectRequest {
   title?: string
@@ -29,13 +28,34 @@ export interface ProjectContext {
   vendors?: { name: string; email?: string | null }[]
 }
 
+export interface ReasoningProjectInsight {
+  uuid: string
+  type: string
+  text: string
+  importance: number
+  confidence: number | null
+}
+
+export interface ReasoningActionMetadata {
+  action: string
+  success: boolean
+  error?: string | null
+}
+
+export interface ReasoningRecentTurn {
+  user_message: string
+  assistant_response: string
+  action_metadata: ReasoningActionMetadata[]
+}
+
 export interface ReasoningRequest {
   agentId: string
   prompt: string
   variables: Variables
-  pastConversationTurns: Turn[]
   projectUuid: string
   projectContext: ProjectContext
+  projectInsights: ReasoningProjectInsight[]
+  recentTurns: ReasoningRecentTurn[]
 }
 
 export interface Variables {
