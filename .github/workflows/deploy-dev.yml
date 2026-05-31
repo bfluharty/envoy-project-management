@@ -10,6 +10,7 @@ env:
   ECS_SERVICE: envoy-project-management-dev
   TASK_DEFINITION_FAMILY: envoy-project-management-dev
   CONTAINER_NAME: envoy-project-management-dev
+  IMAGE_ALIAS: latest
 
 jobs:
   deploy:
@@ -40,10 +41,10 @@ jobs:
             --build-arg GIT_SHA=$IMAGE_TAG \
             --build-arg BUILD_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
             -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:dev-latest \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_ALIAS \
             .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:dev-latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_ALIAS
 
       - name: Register new task definition
         id: register-td
