@@ -26,16 +26,29 @@ export default class HttpExceptionHandler extends ExceptionHandler {
 
     if (acceptsHtml && !isApiRequest && isNotFound) {
       ctx.response.status(404)
-      return ctx.inertia.render('errors/not_found')
+      ctx.response.send(await ctx.inertia.render('errors/not_found'))
+      return
     }
 
-    if (acceptsHtml && !isApiRequest && typeof status === 'number' && status >= 500) {
-      ctx.response.status(status)
-      return ctx.inertia.render('errors/server_error', {
-        error: {
-          message: app.inProduction ? 'An unexpected error occurred.' : (error as Error)?.message,
-        },
-      })
+    // Treat any error without an explicit 4xx status code as a server error
+    const is5xx = typeof status !== 'number' || status >= 500
+    if (acceptsHtml && !isApiRequest && is5xx) {
+      ctx.response.status(typeof status === 'number' ? status : 500)
+      try {
+        ctx.response.send(
+          await ctx.inertia.render('errors/server_error', {
+            error: {
+              message: app.inProduction
+                ? 'An unexpected error occurred.'
+                : (error as Error)?.message,
+            },
+          })
+        )
+      } catch (renderError) {
+        console.error('[handler] failed to render server_error page:', renderError)
+        return super.handle(error, ctx)
+      }
+      return
     }
 
     return super.handle(error, ctx)
