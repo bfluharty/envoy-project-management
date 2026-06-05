@@ -4,6 +4,7 @@ import ProjectService from '#services/project_service'
 import { ReasoningRequest } from '../../../../types/request.js'
 import { chatProjectValidator, requestParamsValidator } from '#validators/projects_validator'
 import ReasoningEngineService from '#services/reasoning_engine_service'
+import ReasoningRequestContextService from '#services/reasoning_request_context_service'
 import ProjectVendor from '#models/project_vendor'
 import OutreachDraft from '#models/outreach_draft'
 import Project from '#models/project'
@@ -59,17 +60,17 @@ export default class ConvoController {
 
     try {
       const project = await ProjectService.getProjectWithConversations(user.uuid, projectUuid)
-      const pastConversationTurns =
-        project.conversations
-          .flatMap((conv) => conv.conversationTurns)
-          ?.map((turn) => turn?.contents) || []
+      const reasoningContext = await ReasoningRequestContextService.buildContext(
+        projectUuid,
+        project.conversations[0].uuid
+      )
 
       const reasoningRequest: ReasoningRequest = {
         agentId: 'envoy-reasoning-agent-001',
         prompt,
         variables: variables ?? {},
         projectUuid,
-        pastConversationTurns,
+        ...reasoningContext,
         projectContext: await this.buildProjectContext(project, projectUuid),
       }
 
@@ -93,14 +94,19 @@ export default class ConvoController {
 
     try {
       const project = await ProjectService.getProjectWithConversations(user.uuid, projectUuid)
+      const prompt =
+        'Ask a single concise opening question to help plan this project. Focus on the most important missing detail or most valuable next step. Do not summarize the project, do not describe what you retrieved, and do not explain what you are doing - just ask the question.'
+      const reasoningContext = await ReasoningRequestContextService.buildContext(
+        projectUuid,
+        project.conversations[0].uuid
+      )
 
       const reasoningRequest: ReasoningRequest = {
         agentId: 'envoy-reasoning-agent-001',
-        prompt:
-          'Ask a single concise opening question to help plan this project. Focus on the most important missing detail or most valuable next step. Do not summarize the project, do not describe what you retrieved, and do not explain what you are doing — just ask the question.',
+        prompt,
         variables: { context: 'PROJECT_SETUP' },
         projectUuid,
-        pastConversationTurns: [],
+        ...reasoningContext,
         projectContext: await this.buildProjectContext(project, projectUuid),
       }
 
