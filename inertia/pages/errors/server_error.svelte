@@ -26,9 +26,9 @@
       </div>
       <div class="space-y-2">
         <h1 class="text-2xl font-semibold">Something went wrong</h1>
-        <p class="text-surface-600-400">An unexpected error occurred. Please return to Home.</p>
+        <p class="text-surface-600-400">We could not load this page right now. Please try again in a moment, or return Home.</p>
       </div>
-      <a href="/" class="btn preset-filled-primary-500 w-full">Return to Home</a>
+      <a href="/" class="btn preset-filled-primary-500 w-full">Return Home</a>
     </div>
   </main>
   <PublicFooter />
