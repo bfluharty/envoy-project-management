@@ -13,7 +13,7 @@ export default defineConfig({
   },
   webServer: process.env.CI
     ? {
-        command: 'node ace serve --hmr',
+        command: 'node bin/server.js',
         url: baseURL,
         timeout: 120_000,
         reuseExistingServer: false,
