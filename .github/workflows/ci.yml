@@ -52,7 +52,9 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        env:
+          NODE_ENV: production
+        run: npm ci --ignore-scripts
 
       - name: Lint
         run: npm run lint
