@@ -8,7 +8,24 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    # We need a postgres service to run the japa tests
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: password
+      DB_DATABASE: envoy_test
+      NODE_ENV: production
+      APP_ENV: test
+      APP_KEY: dummy_key_for_testing
+      HOST: localhost
+      PORT: 3333
+      LOG_LEVEL: info
+      SESSION_DRIVER: cookie
+      REASONING_ENGINE_URL: http://localhost:8000
+
+      PLAYWRIGHT_BASE_URL: http://localhost:3333
+      CI: 'true'
+
     services:
       postgres:
         image: postgres:16
@@ -35,6 +52,8 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
+        env:
+          NODE_ENV: test
         run: npm ci
 
       - name: Lint
@@ -43,23 +62,23 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Run Migrations
+        run: node ace migration:run --force
+
       - name: Run Tests
-        env:
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_USER: postgres
-          DB_PASSWORD: password
-          DB_DATABASE: envoy_test
-          NODE_ENV: production
-          APP_KEY: dummy_key_for_testing
-          HOST: localhost
-          PORT: 3333
-          APP_ENV: test
-          LOG_LEVEL: info
-          SESSION_DRIVER: cookie
-          REASONING_ENGINE_URL: http://localhost:8000
-        run: |
-          npm run test:api
+        run: npm run test:api
+
+      - name: Seed database
+        run: node ace db:seed
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build App
+        run: npm run build
+
+      - name: Run E2E Tests
+        run: npm run test:ui
 
   deploy-dev:
     needs: test
