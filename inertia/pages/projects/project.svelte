@@ -10,6 +10,8 @@ import { page } from '@inertiajs/svelte';
 import { RefreshCwIcon } from '@lucide/svelte';
 import { onDestroy, onMount, untrack } from 'svelte';
 import { formatDate, formatCurrency } from '../../utils/format';
+import { router } from '@inertiajs/svelte'
+import { Trash2Icon } from '@lucide/svelte'
 
 interface ChatMessage {
     id: number;
@@ -641,6 +643,35 @@ let newContactErrors = $state<{ name?: string; email?: string }>({});
 let creatingContact = $state(false);
 let opSuccessMsg = $state('');
 let opSuccessTimer: ReturnType<typeof setTimeout> | null = null;
+let deleteDialogEl = $state<HTMLDialogElement | null>(null)
+let deleteProcessing = $state(false)
+let deleteError = $state<string | null>(null)
+let deleteButtonEl = $state<HTMLButtonElement | null>(null)
+
+function openDeleteDialog() {
+    deleteError = null
+    deleteDialogEl?.showModal()
+}
+
+async function deleteProject() {
+    if (deleteProcessing) return
+    deleteProcessing = true 
+    deleteError = null
+    try {
+        const res = await patchProject({ isActive: false })
+        if (!res.ok) {
+            deleteError = res.status === 404 
+            ? 'This project could not be deleted. It may have already been removed.'
+            : 'Failed to delete project. Please try again.'
+        return
+        }
+        window.location.replace('/dashboard', { replace: true })
+    } catch {
+        deleteError = 'Failed to delete project. Please try again.'
+    } finally {
+        deleteProcessing = false
+    }
+}
 
 function setOperationSuccess(message: string) {
     opSuccessMsg = message;
@@ -1044,7 +1075,24 @@ onDestroy(() => {
     sectionLabel="Overview"
     projectName={project.name}
     description="Keep the project brief, timeline, budget, and key contacts together in one place."
-/>
+>
+    {#snippet actions()}
+        <button
+            bind:this={deleteButtonEl}
+            type="button"
+            class="btn btn-sm preset-tonal-error"
+            aria-haspopup="dialog"
+            aria-controls="delete-project-dialog"
+            onclick={openDeleteDialog}
+    >
+            <Trash2Icon class="size-4" />
+            <span>Delete project</span>
+        </button>
+    {/snippet}
+</ProjectSectionChrome>
+
+
+
     <div class="p-4 sm:p-6 w-full max-w-6xl mx-auto">
 <div class="grid grid-cols-1 @4xl:grid-cols-2 gap-8 items-start">
 
@@ -1363,6 +1411,38 @@ onDestroy(() => {
 </div>
 </div>
 </div>
+<dialog 
+    bind:this={deleteDialogEl}
+    id="delete-project-dialog"
+    class="m-auto p-0 bg-transparent rounded-2x1 shadow-2x1 backdrop:bg-black/50 backdrop:backdrop-blur-sm"
+    onclose={() => deleteButtonEl?.focus()}
+    onclick={(e) => { if (e.target === deleteDialogEl) deleteDialogEl?.close() }}
+>
+    <div class="rounded-2x1 border border-surface-200-800 bg-surface-50-950 p-6 w-full max-w-sm">
+        <h3 class="text-lg font-semibold">Delete project?</h3>
+        <p class="mt-2 text-sm text-surface-600-400">
+            This removes "{project.name}" from your active projects.
+        </p>
+        {#if deleteError}
+            <p role="alert" class="mt-3 text-sm text-error-500">{deleteError}</p>
+        {/if}
+        <div class="mt-6 flex justify-end gap-3">
+            <button 
+                type="button"
+                class="btn btn-sm preset-tonal"
+                onclick={() => deleteDialogEl?.close()}
+            >Cancel</button>
+            <button
+                type="button"
+                class="btn btn-sm preset-filled-error-500"
+                disabled={deleteProcessing}
+                onclick={deleteProject}
+            >
+                {deleteProcessing ? 'Deleting...' : 'Delete project'}
+            </button>
+        </div>
+    </div>
+    </dialog>
 {/if}
 
 </div><!-- end outer flex column -->
