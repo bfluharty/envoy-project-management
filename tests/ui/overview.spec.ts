@@ -666,6 +666,142 @@ test.describe('contacts section', () => {
     ).toBeVisible()
   })
 
+  // ── Delete project ─────────────────────────────────────────────────────────────
+
+  // 1. Button is visible on the overview tab
+
+  test.describe('delete project', () => {
+    test('shows a Delete project button on the overview tab', async ({ page }) => {
+      await login(page)
+      await goToProject(page)
+      await page.getByRole('radio', { name: 'overview' }).click({ force: true })
+
+      await expect(page.getByRole('button', { name: 'Delete project' })).toBeVisible()
+    })
+
+    // 2. Button opens the modal
+    test('Clicking Delete project opens the confirmation modal', async ({ page }) => {
+      await login(page)
+      await goToProject(page)
+      await page.getByRole('radio', { name: 'overview' }).click({ force: true })
+
+      await page.getByRole('button', { name: 'Delete project' }).click()
+      await expect(page.getByRole('dialog')).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Delete project?' })).toBeVisible()
+    })
+
+    // 3. Cancel closes the modal without sending a request
+    test('Cancel closes the modal and does not send a patch request', async ({ page }) => {
+      await login(page)
+      await goToProject(page)
+      await page.getByRole('radio', { name: 'overview' }).click({ force: true })
+
+      let patchCalled = false
+      await page.route(`/projects/${PROJECT_ALPHA_UUID}`, async (route) => {
+        if (route.request().method() === 'PATCH') patchCalled = true
+        await route.continue()
+      })
+
+      await page.getByRole('button', { name: 'Delete project' }).click()
+      await page.getByRole('button', { name: 'Cancel' }).click()
+
+      await expect(page.getByRole('dialog')).not.toBeVisible()
+      expect(patchCalled).toBe(false)
+    })
+
+    // 4. Escape closes the modal without sending a request
+    test('Escape closes the modal and does not send a patch request', async ({ page }) => {
+      await login(page)
+      await goToProject(page)
+      await page.getByRole('radio', { name: 'overview' }).click({ force: true })
+
+      let patchCalled = false
+      await page.route(`/projects/${PROJECT_ALPHA_UUID}`, async (route) => {
+        if (route.request().method() === 'PATCH') patchCalled = true
+        await route.continue()
+      })
+
+      await page.getByRole('button', { name: 'Delete project' }).click()
+      await page.keyboard.press('Escape')
+
+      await expect(page.getByRole('dialog')).not.toBeVisible()
+      expect(patchCalled).toBe(false)
+    })
+
+    // 5. Confirm sends PATCH with { isActive: false }
+    test('confirming sends PATCH /projects/:uuid with { isActive: false }', async ({ page }) => {
+      await login(page)
+      await goToProject(page)
+      await page.getByRole('radio', { name: 'overview' }).click({ force: true })
+      let capturedPayload = null
+
+      await page.route(`/projects/${PROJECT_ALPHA_UUID}`, async (route) => {
+        if (route.request().method() === 'PATCH') {
+          capturedPayload = route.request().postDataJSON()
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ project: {}, linkedVendors: [] }),
+          })
+        } else {
+          await route.continue()
+        }
+      })
+
+      await page.getByRole('button', { name: 'Delete project' }).click()
+      await page.getByRole('button', { name: 'Delete project' }).last().click()
+
+      expect(capturedPayload).toEqual({ isActive: false })
+    })
+
+    // 6. Success redirects to /dashboard
+    test('successful deletion redirects to /dashboard', async ({ page }) => {
+      await login(page)
+      await goToProject(page)
+      await page.getByRole('radio', { name: 'overview' }).click({ force: true })
+
+      await page.route(`/projects/${PROJECT_ALPHA_UUID}`, async (route) => {
+        if (route.request().method() === 'PATCH') {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ project: {}, linkedVendors: [] }),
+          })
+        } else {
+          await route.continue()
+        }
+      })
+
+      await page.getByRole('button', { name: 'Delete project' }).click()
+      await page.getByRole('button', { name: 'Delete project' }).last().click()
+
+      await page.waitForURL('**/dashboard')
+    })
+
+    // 7. Failed request shows inline error and keeps the modal open
+    test('failed deletion shows error and keeps modal open', async ({ page }) => {
+      await login(page)
+      await goToProject(page)
+      await page.getByRole('radio', { name: 'overview' }).click({ force: true })
+
+      await page.route(`/projects/${PROJECT_ALPHA_UUID}`, async (route) => {
+        if (route.request().method() === 'PATCH') {
+          await route.fulfill({ status: 500 })
+        } else {
+          await route.continue()
+        }
+      })
+
+      await page.getByRole('button', { name: 'Delete project' }).click()
+      await page.getByRole('button', { name: 'Delete project' }).last().click()
+
+      await expect(page.getByRole('alert')).toHaveText(
+        'Failed to delete project. Please try again.'
+      )
+      await expect(page.getByRole('dialog')).toBeVisible()
+    })
+  })
+
   test('attach contact adds to list', async ({ page }) => {
     await login(page)
     await goToProject(page, NO_VENDOR_PROJECT_UUID)
