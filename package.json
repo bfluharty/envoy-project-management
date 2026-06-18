@@ -84,6 +84,7 @@
     "@adonisjs/session": "^7.7.1",
     "@adonisjs/static": "^1.1.1",
     "@adonisjs/vite": "^4.0.0",
+    "@api/fsq-developers-places": "file:.api/apis/fsq-developers-places",
     "@inertiajs/svelte": "^2.3.4",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@skeletonlabs/skeleton-svelte": "^4.8.0",

@@ -80,12 +80,23 @@ export default class ProjectInsightService {
           supersedesInsightUuid: existingInsight.uuid,
         })
 
+        if (replacement.insight.uuid === existingInsight.uuid) {
+          throw new ProjectInsightValidationError(
+            `Superseding replacement insight must differ from existing insight: ${existingInsight.uuid}`
+          )
+        }
+
         replacementInsightUuid = replacement.insight.uuid
 
         if (replacement.wasCreated) {
           result.created_count += 1
         } else {
           result.skipped_count += 1
+
+          if (!replacement.insight.supersedesInsightUuid) {
+            replacement.insight.supersedesInsightUuid = existingInsight.uuid
+            await replacement.insight.save()
+          }
         }
       }
 

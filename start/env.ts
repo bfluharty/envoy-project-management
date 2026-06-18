@@ -49,6 +49,7 @@ export default await Env.create(new URL('../', import.meta.url), {
   MAIL_FROM_ADDRESS: Env.schema.string.optional(),
   MAIL_FROM_NAME: Env.schema.string.optional(),
   RESEND_API_KEY: Env.schema.string.optional(),
+  FOURSQUARE_PLACES_API_KEY: Env.schema.string.optional(),
 
   /* Email service (inbox list/message, send-on-behalf) — base URL, no trailing slash */
   EMAIL_SERVICE_URL: Env.schema.string.optional(),
