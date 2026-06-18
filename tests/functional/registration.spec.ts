@@ -4,6 +4,7 @@ import { test } from '@japa/runner'
 import { strict as assert } from 'node:assert'
 import User from '#models/user'
 import testUtils from '@adonisjs/core/services/test_utils'
+import EntitlementService from '#services/entitlement_service'
 
 const NEW_EMAIL = 'registration.test.new@example.com'
 const DUPLICATE_EMAIL = 'registration.test.existing@example.com'
@@ -39,12 +40,14 @@ test.group('registration', (group) => {
   test('sad path: duplicate email re-renders the register page with an error message', async ({
     client,
   }) => {
+    const consumerEntitlementId = await EntitlementService.getIdByCanonicalName('CONSUMER')
+
     await User.create({
       fullName: 'Existing User',
       email: DUPLICATE_EMAIL,
       password: VALID_PASSWORD,
       isActive: true,
-      entitlementId: 1,
+      entitlementId: consumerEntitlementId,
     })
 
     try {

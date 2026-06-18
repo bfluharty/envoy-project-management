@@ -2,6 +2,8 @@ import { DateTime } from 'luxon'
 import { BaseModel, column } from '@adonisjs/lucid/orm'
 
 export default class UserEntitlement extends BaseModel {
+  static table = 'envoy_schema.user_entitlements'
+
   @column({ isPrimary: true })
   declare id: number
 
