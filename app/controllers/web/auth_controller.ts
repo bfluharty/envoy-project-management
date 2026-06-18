@@ -14,6 +14,7 @@ import { DateTime } from 'luxon'
 import { getGoogleAuthUrl, getGoogleUser } from '#services/google_auth_service'
 import { sendPasswordResetLink } from '#services/password_reset_service'
 import UserInboxConnection from '#models/user_inbox_connection'
+import EntitlementService from '#services/entitlement_service'
 
 export function resolvePostLoginRedirect(intendedUrl: unknown): string | null {
   if (typeof intendedUrl !== 'string' || intendedUrl.length === 0) {
@@ -103,11 +104,13 @@ export default class AuthController {
     )
 
     try {
+      const consumerEntitlementId = await EntitlementService.getIdByCanonicalName('CONSUMER')
+
       await User.create({
         fullName: data.fullName,
         email: data.email,
         password: data.password,
-        entitlementId: 1, // Default to user entitlement (ID 1)
+        entitlementId: consumerEntitlementId,
         isActive: true,
       })
 
@@ -183,6 +186,8 @@ export default class AuthController {
         user.googleAvatarUrl = googleProfile.picture
         await user.save()
       } else {
+        const consumerEntitlementId = await EntitlementService.getIdByCanonicalName('CONSUMER')
+
         // Create new user
         user = await User.create({
           fullName: googleProfile.fullName,
@@ -190,7 +195,7 @@ export default class AuthController {
           googleId: googleProfile.googleId,
           googleAvatarUrl: googleProfile.picture,
           password: randomBytes(32).toString('hex'),
-          entitlementId: 1,
+          entitlementId: consumerEntitlementId,
           isActive: true,
         })
       }

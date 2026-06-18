@@ -42,7 +42,7 @@ export default class VendorService {
     const listing = await VendorListing.create({
       name: request.name,
       email: request.email,
-      originator: 'USER',
+      originator: 'CONSUMER',
       isActive: true,
       modifiedBy: userUuid,
     })

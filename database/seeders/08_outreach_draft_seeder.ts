@@ -9,7 +9,7 @@ export default class extends BaseSeeder {
 
     const vendors = [
       {
-        uuid: 'vc-apex-house-0001-0000-000000000001',
+        uuid: '8a4d0c2a-9b3e-4f67-8b1a-000000000001',
         projectVendorUuid: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c52',
         vendorUuid: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c51',
         subject: 'Kick-off: Custom Home Construction — Contract Discussion',
@@ -27,7 +27,7 @@ Best,
 Ryan`,
       },
       {
-        uuid: 'vc-summ-house-0001-0000-000000000002',
+        uuid: '8a4d0c2a-9b3e-4f67-8b1a-000000000002',
         projectVendorUuid: 'd4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f82',
         vendorUuid: 'd4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f81',
         subject: 'Revised MEP Bid Request — Custom Home Construction',
@@ -45,16 +45,22 @@ Ryan`,
     ]
 
     for (const v of vendors) {
-      const convo = await VendorConversation.updateOrCreate(
-        { projectVendorUuid: v.projectVendorUuid },
-        {
+      let convo = await VendorConversation.findBy('projectVendorUuid', v.projectVendorUuid)
+
+      if (convo) {
+        convo.channel = 'email'
+        convo.userId = ryan.id
+        convo.vendorUuid = v.vendorUuid
+        await convo.save()
+      } else {
+        convo = await VendorConversation.create({
           uuid: v.uuid,
           channel: 'email',
           userId: ryan.id,
           vendorUuid: v.vendorUuid,
           projectVendorUuid: v.projectVendorUuid,
-        }
-      )
+        })
+      }
 
       await OutreachDraft.updateOrCreate(
         { vendorConversationUuid: convo.uuid },

@@ -1,8 +1,12 @@
 import { BaseSeeder } from '@adonisjs/lucid/seeders'
 import User from '#models/user'
+import EntitlementService from '#services/entitlement_service'
 
 export default class extends BaseSeeder {
   async run() {
+    const consumerEntitlementId = await EntitlementService.getIdByCanonicalName('CONSUMER')
+    const adminEntitlementId = await EntitlementService.getIdByCanonicalName('ADMIN')
+
     // Create test users with properly hashed passwords
     await User.updateOrCreateMany('email', [
       {
@@ -11,7 +15,7 @@ export default class extends BaseSeeder {
         email: 'alice@example.com',
         password: 'hashedpassword1', // This will be automatically hashed by AdonisJS
         isActive: true,
-        entitlementId: 1,
+        entitlementId: consumerEntitlementId,
       },
       {
         uuid: 'c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b4c',
@@ -19,7 +23,7 @@ export default class extends BaseSeeder {
         email: 'bob@example.com',
         password: 'hashedpassword2', // This will be automatically hashed by AdonisJS
         isActive: true,
-        entitlementId: 2,
+        entitlementId: adminEntitlementId,
       },
       {
         uuid: 'c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b41',
@@ -27,7 +31,7 @@ export default class extends BaseSeeder {
         email: 'envoyryan@gmail.com',
         password: 'hashedpassword3', // This will be automatically hashed by AdonisJS
         isActive: true,
-        entitlementId: 2,
+        entitlementId: adminEntitlementId,
       },
     ])
   }
