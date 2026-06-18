@@ -385,7 +385,7 @@
 
     {#if recentProjects.length === 0}
       <!-- Empty state -->
-      <div class="flex flex-col items-center text-center space-y-5 max-w-sm p-6">
+      <div class="flex flex-col items-center text-center space-y-5 max-w-sm p-6 mx-auto mt-42">
         <div class="p-4 rounded-full bg-surface-200-800">
           <FolderPlusIcon class="size-10 text-primary-500" />
         </div>
