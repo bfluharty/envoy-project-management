@@ -39,7 +39,7 @@ export async function syncConnection(
   const emailServiceUrl = env.get('EMAIL_SERVICE_URL')
   if (!emailServiceUrl) {
     throw new Error(
-      'EMAIL_SERVICE_URL is not set. Inbox sync uses only envoy-email-service. Set EMAIL_SERVICE_URL in .env (e.g. http://127.0.0.1:3000).'
+      'EMAIL_SERVICE_URL is not set. Inbox sync uses only envoy-email-service. Set EMAIL_SERVICE_URL in .env (e.g. http://127.0.0.1:8083).'
     )
   }
   logger.info(

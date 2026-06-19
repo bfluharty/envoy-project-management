@@ -22,14 +22,11 @@ const AuthController = () => import('#controllers/web/auth_controller')
 const DashboardController = () => import('#controllers/web/dashboard_controller')
 const InboxController = () => import('#controllers/web/inbox_controller')
 const AccountController = () => import('#controllers/web/account_controller')
+const OnboardingController = () => import('#controllers/web/onboarding_controller')
+const VendorOnboardingController = () => import('#controllers/web/vendor_onboarding_controller')
 
 // Public landing page (no auth required)
-router
-  .get('/', ({ inertia }) => {
-    return inertia.render('landing')
-  })
-  .as('landing')
-  .middleware(middleware.silentAuth())
+router.get('/', [OnboardingController, 'show']).as('landing').middleware(middleware.silentAuth())
 
 router
   .get('/privacy', ({ inertia }) => {
@@ -51,6 +48,10 @@ router
   })
   .as('contact')
   .middleware(middleware.silentAuth())
+
+router.post('/onboarding/draft/restore', [OnboardingController, 'restoreDraft'])
+router.patch('/onboarding/vendor-selection', [OnboardingController, 'updateSelection'])
+router.post('/onboarding/registration-handoff', [OnboardingController, 'registrationHandoff'])
 
 // Auth routes (guest only)
 router
@@ -100,6 +101,9 @@ router
   .post('/account/password/setup-email', [AccountController, 'sendPasswordSetupEmail'])
   .middleware(middleware.auth())
 router.post('/logout', [AuthController, 'logout']).as('auth.logout').middleware(middleware.auth())
+
+router.get('/vendor/pending', [VendorOnboardingController, 'pending']).middleware(middleware.auth())
+router.get('/vendor/listing', [VendorOnboardingController, 'listing']).middleware(middleware.auth())
 
 // Inbox (connect customer inbox to listen and reply to vendors)
 router

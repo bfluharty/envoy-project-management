@@ -1,0 +1,105 @@
+import { test } from '@japa/runner'
+import { strict as assert } from 'node:assert'
+import { v4 as uuidv4 } from 'uuid'
+import testUtils from '@adonisjs/core/services/test_utils'
+import OnboardingDraftService from '#services/onboarding_draft_service'
+
+function cookieHeader(response: any) {
+  const rawSetCookieHeader = response.header('set-cookie')
+  const setCookieValues = Array.isArray(rawSetCookieHeader)
+    ? rawSetCookieHeader
+    : rawSetCookieHeader
+      ? [rawSetCookieHeader]
+      : []
+
+  return setCookieValues.map((cookie: string) => cookie.split(';', 1)[0]).join('; ')
+}
+
+function setCookieHeader(response: any) {
+  const value = response.header('set-cookie')
+  return Array.isArray(value) ? value.join('; ') : (value ?? '')
+}
+
+test.group('onboarding draft routes', (group) => {
+  group.setup(() => testUtils.db().truncate())
+
+  test('restore returns canonical draft state for an active token', async ({ client }) => {
+    const { draft, tokenUuid } = await OnboardingDraftService.createDraft({
+      projectDescription: 'I need a general contractor for a cafe renovation.',
+      postalCode: '23220',
+      anonymousSessionUuid: uuidv4(),
+      vendorSearches: [{ classification: 'general contractor', query: 'general contractor' }],
+      recommendedVendors: [
+        { candidateId: 'search:vendor-a', name: 'Vendor A', email: 'a@example.com' },
+      ],
+    })
+    await OnboardingDraftService.updateSelection(tokenUuid, ['search:vendor-a'])
+
+    const response = await client
+      .post('/onboarding/draft/restore')
+      .json({ onboardingToken: tokenUuid })
+
+    response.assertOk()
+    response.assertBodyContains({
+      draftUuid: draft.uuid,
+      projectDescription: 'I need a general contractor for a cafe renovation.',
+      postalCode: '23220',
+      selectedCandidateIds: ['search:vendor-a'],
+      step: 'selection',
+    })
+  })
+
+  test('restore rejects invalid UUID v4 tokens', async ({ client }) => {
+    const response = await client
+      .post('/onboarding/draft/restore')
+      .json({ onboardingToken: 'not-a-token' })
+
+    response.assertStatus(422)
+  })
+
+  test('vendor selection updates active drafts and enforces candidate membership', async ({
+    client,
+  }) => {
+    const { tokenUuid } = await OnboardingDraftService.createDraft({
+      projectDescription: 'I need flooring and painting for a small office.',
+      postalCode: '23226',
+      anonymousSessionUuid: uuidv4(),
+      recommendedVendors: [
+        { candidateId: 'search:vendor-a', name: 'Vendor A', email: 'a@example.com' },
+      ],
+    })
+
+    const unknownResponse = await client
+      .patch('/onboarding/vendor-selection')
+      .json({ onboardingToken: tokenUuid, selectedCandidateIds: ['search:missing'] })
+
+    unknownResponse.assertStatus(422)
+
+    const successResponse = await client
+      .patch('/onboarding/vendor-selection')
+      .json({ onboardingToken: tokenUuid, selectedCandidateIds: ['search:vendor-a'] })
+
+    successResponse.assertOk()
+    successResponse.assertBodyContains({ selectedCount: 1 })
+  })
+
+  test('registration handoff stores token server-side and returns a token-free redirect target', async ({
+    client,
+  }) => {
+    const { tokenUuid } = await OnboardingDraftService.createDraft({
+      projectDescription: 'I need signage and electrical work for a shop.',
+      postalCode: '23227',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    const response = await client
+      .post('/onboarding/registration-handoff')
+      .json({ onboardingToken: tokenUuid })
+
+    response.assertOk()
+    response.assertBodyContains({ redirectTo: '/register?accountType=consumer' })
+    assert.equal(response.body().redirectTo.includes(tokenUuid), false)
+    assert.match(setCookieHeader(response), /HttpOnly/i)
+    assert.match(cookieHeader(response), /adonis-session=/)
+  })
+})
