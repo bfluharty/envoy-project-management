@@ -50,6 +50,7 @@ router
   .middleware(middleware.silentAuth())
 
 router.post('/onboarding/draft/restore', [OnboardingController, 'restoreDraft'])
+router.post('/onboarding/vendor-search', [OnboardingController, 'searchVendors'])
 router.patch('/onboarding/vendor-selection', [OnboardingController, 'updateSelection'])
 router.post('/onboarding/registration-handoff', [OnboardingController, 'registrationHandoff'])
 

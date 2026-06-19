@@ -1,8 +1,9 @@
 import { test } from '@japa/runner'
 import { strict as assert } from 'node:assert'
-import { v4 as uuidv4 } from 'uuid'
+import { validate as validateUuid, version as uuidVersion, v4 as uuidv4 } from 'uuid'
 import testUtils from '@adonisjs/core/services/test_utils'
 import OnboardingDraftService from '#services/onboarding_draft_service'
+import OnboardingVendorDiscoveryService from '#services/onboarding_vendor_discovery_service'
 
 function cookieHeader(response: any) {
   const rawSetCookieHeader = response.header('set-cookie')
@@ -23,6 +24,58 @@ function setCookieHeader(response: any) {
 test.group('onboarding draft routes', (group) => {
   group.setup(() => testUtils.db().truncate())
 
+  test('vendor search validates intake and delegates with an anonymous session UUID', async ({
+    client,
+  }) => {
+    const originalSearch = OnboardingVendorDiscoveryService.search
+    const onboardingToken = uuidv4()
+    const draftUuid = uuidv4()
+    const projectDescription = 'I need a commercial electrician for a new restaurant buildout.'
+    const received: Array<{
+      projectDescription: string
+      postalCode: string
+      anonymousSessionUuid: string
+    }> = []
+
+    OnboardingVendorDiscoveryService.search = (async (input) => {
+      received.push(input)
+
+      return {
+        onboardingToken,
+        draftUuid,
+        vendorSearches: [{ classification: 'Electrician', query: 'commercial electrician' }],
+        vendors: [],
+        emptyStateReason: 'NO_EMAIL_READY_VENDORS',
+        expiresAt: '2026-06-20T00:00:00.000Z',
+      }
+    }) as typeof OnboardingVendorDiscoveryService.search
+
+    try {
+      const invalidResponse = await client
+        .post('/onboarding/vendor-search')
+        .json({ projectDescription: 'too short', postalCode: '23220' })
+
+      invalidResponse.assertStatus(422)
+
+      const response = await client
+        .post('/onboarding/vendor-search')
+        .json({ projectDescription, postalCode: '23220' })
+
+      response.assertOk()
+      response.assertBodyContains({ onboardingToken, draftUuid, vendors: [] })
+      assert.equal(received.length, 1)
+      const [searchInput] = received
+      assert.ok(searchInput)
+      assert.equal(searchInput.projectDescription, projectDescription)
+      assert.equal(searchInput.postalCode, '23220')
+      assert.equal(validateUuid(searchInput.anonymousSessionUuid), true)
+      assert.equal(uuidVersion(searchInput.anonymousSessionUuid), 4)
+      assert.match(cookieHeader(response), /adonis-session=/)
+    } finally {
+      OnboardingVendorDiscoveryService.search = originalSearch
+    }
+  })
+
   test('restore returns canonical draft state for an active token', async ({ client }) => {
     const { draft, tokenUuid } = await OnboardingDraftService.createDraft({
       projectDescription: 'I need a general contractor for a cafe renovation.',
@@ -30,7 +83,12 @@ test.group('onboarding draft routes', (group) => {
       anonymousSessionUuid: uuidv4(),
       vendorSearches: [{ classification: 'general contractor', query: 'general contractor' }],
       recommendedVendors: [
-        { candidateId: 'search:vendor-a', name: 'Vendor A', email: 'a@example.com' },
+        {
+          candidateId: 'search:vendor-a',
+          name: 'Vendor A',
+          email: 'a@example.com',
+          sourcePayload: { raw: true },
+        },
       ],
     })
     await OnboardingDraftService.updateSelection(tokenUuid, ['search:vendor-a'])
@@ -47,6 +105,7 @@ test.group('onboarding draft routes', (group) => {
       selectedCandidateIds: ['search:vendor-a'],
       step: 'selection',
     })
+    assert.equal('sourcePayload' in response.body().vendors[0], false)
   })
 
   test('restore rejects invalid UUID v4 tokens', async ({ client }) => {

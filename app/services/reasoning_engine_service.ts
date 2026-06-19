@@ -6,9 +6,29 @@ import { Turn } from '../../types/turn.js'
 import { ReasoningRequest } from '../../types/request.js'
 import Project from '#models/project'
 import { HttpContext } from '@adonisjs/core/http'
-import env from '#start/env'
+import { getReasoningChatUrl, getVendorDiscoveryUrl } from '#utils/reasoning_engine_urls'
 
 export default class ReasoningEngineService {
+  public static async requestVendorDiscovery(input: { projectDescription: string }) {
+    let reasoningResponse
+
+    try {
+      reasoningResponse = await axios.post(getVendorDiscoveryUrl(), input)
+    } catch (error) {
+      logger.error('Error calling reasoning engine vendor discovery:')
+      logger.error(error)
+      throw error
+    }
+
+    if (reasoningResponse.status !== 200) {
+      logger.error('Reasoning engine vendor discovery returned error:')
+      logger.error(reasoningResponse.data)
+      throw new Error('Reasoning engine vendor discovery error')
+    }
+
+    return reasoningResponse.data
+  }
+
   public static async handleReasoningChat(
     reasoningRequest: ReasoningRequest,
     project: Project,
@@ -17,10 +37,7 @@ export default class ReasoningEngineService {
   ) {
     const { saveToHistory = true } = options
     try {
-      const reasoningResponse = await axios.post(
-        env.get('REASONING_ENGINE_URL', ''),
-        reasoningRequest
-      )
+      const reasoningResponse = await axios.post(getReasoningChatUrl(), reasoningRequest)
       if (reasoningResponse.status !== 200) {
         logger.error('Reasoning engine returned error:')
         logger.error(reasoningResponse.data)

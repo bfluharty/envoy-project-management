@@ -3,10 +3,15 @@ import OnboardingDraftService, {
   ONBOARDING_TOKEN_SESSION_KEY,
   OnboardingDraftError,
 } from '#services/onboarding_draft_service'
+import OnboardingVendorDiscoveryService, {
+  VendorDiscoveryDependencyError,
+  stripVendorSourcePayloads,
+} from '#services/onboarding_vendor_discovery_service'
 import UserRoleService from '#services/user_role_service'
 import {
   registrationHandoffValidator,
   restoreOnboardingDraftValidator,
+  vendorSearchValidator,
   vendorSelectionValidator,
 } from '#validators/onboarding_validator'
 
@@ -52,7 +57,7 @@ function serializeDraft(draft: {
     projectDescription: draft.projectDescription,
     postalCode: draft.postalCode,
     vendorSearches: Array.isArray(draft.vendorSearches) ? draft.vendorSearches : [],
-    vendors: recommendedVendors,
+    vendors: stripVendorSourcePayloads(recommendedVendors),
     selectedCandidateIds: getSelectedCandidateIds(selectedVendors),
     step: getDraftStep({ recommendedVendors, selectedVendors }),
     expiresAt: draft.expiresAt.toISO(),
@@ -87,6 +92,30 @@ export default class OnboardingController {
     }
 
     return response.ok(serializeDraft(draft))
+  }
+
+  async searchVendors({ request, response, session }: HttpContext) {
+    const payload = await request.validateUsing(vendorSearchValidator)
+    const anonymousSessionUuid = OnboardingDraftService.getOrCreateAnonymousSessionUuid(session)
+
+    try {
+      return response.ok(
+        await OnboardingVendorDiscoveryService.search({
+          projectDescription: payload.projectDescription,
+          postalCode: payload.postalCode,
+          anonymousSessionUuid,
+        })
+      )
+    } catch (error) {
+      if (error instanceof VendorDiscoveryDependencyError) {
+        return response.status(502).send({
+          error: error.message,
+          retryable: true,
+        })
+      }
+
+      throw error
+    }
   }
 
   async updateSelection({ request, response }: HttpContext) {

@@ -20,3 +20,10 @@ export const registrationHandoffValidator = vine.compile(
     onboardingToken: onboardingToken(),
   })
 )
+
+export const vendorSearchValidator = vine.compile(
+  vine.object({
+    projectDescription: vine.string().trim().minLength(20).maxLength(2000),
+    postalCode: vine.string().trim().minLength(1).maxLength(64),
+  })
+)

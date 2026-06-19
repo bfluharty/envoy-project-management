@@ -13,6 +13,7 @@ import UserInboxConnection from '#models/user_inbox_connection'
 import VendorConversation from '#models/vendor_conversation'
 import ProjectService from '#services/project_service'
 import ReasoningRequestContextService from '#services/reasoning_request_context_service'
+import { getReasoningChatUrl } from '#utils/reasoning_engine_urls'
 import type { ActionExecution, Turn } from '../../types/turn.js'
 import { getOrCreateEmailCommunicationForProjectVendor } from './email_communication_context.js'
 import {
@@ -1087,7 +1088,7 @@ export async function reviseOutreachDraft(
 
   let response: AxiosResponse
   try {
-    response = await axios.post(env.get('REASONING_ENGINE_URL', ''), {
+    response = await axios.post(getReasoningChatUrl(), {
       agentId: 'envoy-reasoning-agent-001',
       prompt,
       variables: { context: 'INITIAL_OUTREACH' },
@@ -1234,7 +1235,7 @@ export async function reviseThreadReply(
 
   let response: AxiosResponse
   try {
-    response = await axios.post(env.get('REASONING_ENGINE_URL', ''), {
+    response = await axios.post(getReasoningChatUrl(), {
       agentId: 'envoy-reasoning-agent-001',
       prompt,
       variables: { context: 'HANDLE_VENDOR_RESPONSE' },
