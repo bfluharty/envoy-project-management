@@ -1,4 +1,5 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
 import { validate as validateUuid, version as uuidVersion, v4 as uuidv4 } from 'uuid'
 import AnonymousOnboardingDraft from '#models/anonymous_onboarding_draft'
@@ -65,17 +66,21 @@ export default class OnboardingDraftService {
     const existingValue = session.get(ANONYMOUS_ONBOARDING_SESSION_KEY)
 
     if (isUuidV4(existingValue)) {
+      logger.debug('Reusing existing anonymous onboarding session')
       return existingValue
     }
 
     const anonymousSessionUuid = uuidv4()
     session.put(ANONYMOUS_ONBOARDING_SESSION_KEY, anonymousSessionUuid)
+    logger.info('Created anonymous onboarding session')
     return anonymousSessionUuid
   }
 
   public static async createDraft(input: CreateDraftInput) {
     this.assertUuidV4(input.anonymousSessionUuid, 'Anonymous onboarding session is invalid')
-    await this.abandonActiveDraftsForAnonymousSession(input.anonymousSessionUuid)
+    const abandonedDraftCount = await this.abandonActiveDraftsForAnonymousSession(
+      input.anonymousSessionUuid
+    )
 
     const draft = await AnonymousOnboardingDraft.create({
       tokenUuid: uuidv4(),
@@ -92,11 +97,22 @@ export default class OnboardingDraftService {
       expiresAt: input.expiresAt ?? DateTime.utc().plus({ hours: 24 }),
     })
 
+    logger.info(
+      {
+        draftUuid: draft.uuid,
+        postalCode: draft.postalCode,
+        abandonedDraftCount,
+        expiresAt: draft.expiresAt.toISO(),
+      },
+      'Created anonymous onboarding draft'
+    )
+
     return { draft, tokenUuid: draft.tokenUuid }
   }
 
   public static async getActiveDraftByToken(token: string) {
     if (!isUuidV4(token)) {
+      logger.debug('Rejected invalid onboarding draft token')
       return null
     }
 
@@ -106,6 +122,7 @@ export default class OnboardingDraftService {
 
   public static async getActiveDraftByUserUuid(userUuid: string) {
     if (!isUuidV4(userUuid)) {
+      logger.debug('Rejected invalid user UUID during onboarding draft lookup')
       return null
     }
 
@@ -136,16 +153,32 @@ export default class OnboardingDraftService {
     draft.vendorSearches = data.vendorSearches ?? draft.vendorSearches ?? []
     draft.recommendedVendors = data.recommendedVendors ?? draft.recommendedVendors ?? []
     await draft.save()
+    logger.info(
+      {
+        draftUuid: draft.uuid,
+        vendorSearchCount: draft.vendorSearches.length,
+        recommendedVendorCount: draft.recommendedVendors.length,
+      },
+      'Updated onboarding draft recommendations'
+    )
     return draft
   }
 
   public static async updateSelection(token: string, selectedCandidateIds: string[]) {
     if (selectedCandidateIds.length < 1 || selectedCandidateIds.length > 8) {
+      logger.warn(
+        { selectedCandidateCount: selectedCandidateIds.length },
+        'Rejected onboarding vendor selection count'
+      )
       throw new OnboardingDraftError('Select between 1 and 8 vendors')
     }
 
     const uniqueCandidateIds = new Set(selectedCandidateIds)
     if (uniqueCandidateIds.size !== selectedCandidateIds.length) {
+      logger.warn(
+        { selectedCandidateCount: selectedCandidateIds.length },
+        'Rejected duplicate onboarding vendor selections'
+      )
       throw new OnboardingDraftError('Selected vendor IDs must be unique')
     }
 
@@ -166,10 +199,12 @@ export default class OnboardingDraftService {
       const candidate = candidatesById.get(candidateId)
 
       if (!candidate) {
+        logger.warn({ draftUuid: draft.uuid }, 'Rejected unknown onboarding vendor selection')
         throw new OnboardingDraftError('Selected vendor does not exist in this draft')
       }
 
       if (!hasEmail(candidate)) {
+        logger.warn({ draftUuid: draft.uuid }, 'Rejected onboarding vendor selection without email')
         throw new OnboardingDraftError('Selected vendors must have email addresses')
       }
 
@@ -178,6 +213,10 @@ export default class OnboardingDraftService {
 
     draft.selectedVendors = selectedVendors
     await draft.save()
+    logger.info(
+      { draftUuid: draft.uuid, selectedVendorCount: draft.selectedVendors.length },
+      'Updated onboarding draft vendor selection'
+    )
     return draft
   }
 
@@ -186,11 +225,13 @@ export default class OnboardingDraftService {
 
     const draft = await this.getActiveDraftOrFail(token)
     if (draft.registeredUserUuid && draft.registeredUserUuid !== userUuid) {
+      logger.warn({ draftUuid: draft.uuid }, 'Onboarding draft is already associated')
       throw new OnboardingDraftError('Onboarding draft is already associated', 409)
     }
 
     draft.registeredUserUuid = userUuid
     await draft.save()
+    logger.info({ draftUuid: draft.uuid, userUuid }, 'Associated onboarding draft to user')
     return draft
   }
 
@@ -200,6 +241,7 @@ export default class OnboardingDraftService {
 
     const draft = await this.getActiveDraftOrFail(token)
     if (draft.registeredUserUuid && draft.registeredUserUuid !== userUuid) {
+      logger.warn({ draftUuid: draft.uuid }, 'Rejected onboarding draft consumption by wrong user')
       throw new OnboardingDraftError('Onboarding draft is not associated with this user', 403)
     }
 
@@ -211,6 +253,7 @@ export default class OnboardingDraftService {
 
     const draft = await this.getActiveDraftByUserUuid(userUuid)
     if (!draft) {
+      logger.warn({ userUuid }, 'Active onboarding draft not found for user consumption')
       throw new OnboardingDraftError('Onboarding draft not found', 404)
     }
 
@@ -226,6 +269,7 @@ export default class OnboardingDraftService {
       .select('id')
 
     if (activeDrafts.length === 0) {
+      logger.debug('No active anonymous onboarding drafts to abandon')
       return 0
     }
 
@@ -239,6 +283,7 @@ export default class OnboardingDraftService {
         updatedTimestamp: DateTime.utc(),
       })
 
+    logger.info({ abandonedDraftCount: activeDrafts.length }, 'Abandoned active onboarding drafts')
     return activeDrafts.length
   }
 
@@ -250,6 +295,7 @@ export default class OnboardingDraftService {
       .select('id')
 
     if (expiredDrafts.length === 0) {
+      logger.debug('No expired anonymous onboarding drafts to mark')
       return 0
     }
 
@@ -263,6 +309,7 @@ export default class OnboardingDraftService {
         updatedTimestamp: now,
       })
 
+    logger.info({ expiredDraftCount: expiredDrafts.length }, 'Marked onboarding drafts expired')
     return expiredDrafts.length
   }
 
@@ -271,6 +318,7 @@ export default class OnboardingDraftService {
 
     const draft = await this.getActiveDraftByToken(token)
     if (!draft) {
+      logger.warn('Active onboarding draft lookup failed')
       throw new OnboardingDraftError('Onboarding draft not found', 404)
     }
 
@@ -279,12 +327,14 @@ export default class OnboardingDraftService {
 
   private static async ensureDraftIsActiveAndFresh(draft: AnonymousOnboardingDraft | null) {
     if (!draft || draft.status !== 'ACTIVE') {
+      logger.debug('Onboarding draft is missing or not active')
       return null
     }
 
     if (draft.expiresAt.toMillis() <= DateTime.utc().toMillis()) {
       draft.status = 'EXPIRED'
       await draft.save()
+      logger.info({ draftUuid: draft.uuid }, 'Expired stale onboarding draft during lookup')
       return null
     }
 
@@ -306,5 +356,6 @@ export default class OnboardingDraftService {
     draft.consumedByUserUuid = userUuid
     draft.consumedProjectUuid = projectUuid
     await draft.save()
+    logger.info({ draftUuid: draft.uuid, userUuid, projectUuid }, 'Consumed onboarding draft')
   }
 }

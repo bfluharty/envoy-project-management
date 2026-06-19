@@ -1,4 +1,5 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import logger from '@adonisjs/core/services/logger'
 import OnboardingDraftService, {
   ONBOARDING_TOKEN_SESSION_KEY,
   OnboardingDraftError,
@@ -88,26 +89,60 @@ export default class OnboardingController {
     const draft = await OnboardingDraftService.getActiveDraftByToken(onboardingToken)
 
     if (!draft) {
+      logger.warn('Onboarding draft restore requested for missing or inactive draft')
       return response.notFound({ error: 'Onboarding draft not found' })
     }
 
-    return response.ok(serializeDraft(draft))
+    const serializedDraft = serializeDraft(draft)
+    logger.info(
+      {
+        draftUuid: serializedDraft.draftUuid,
+        step: serializedDraft.step,
+        vendorCount: serializedDraft.vendors.length,
+        selectedVendorCount: serializedDraft.selectedCandidateIds.length,
+      },
+      'Restored onboarding draft'
+    )
+
+    return response.ok(serializedDraft)
   }
 
   async searchVendors({ request, response, session }: HttpContext) {
     const payload = await request.validateUsing(vendorSearchValidator)
     const anonymousSessionUuid = OnboardingDraftService.getOrCreateAnonymousSessionUuid(session)
 
+    logger.info(
+      {
+        postalCode: payload.postalCode,
+        projectDescriptionLength: payload.projectDescription.length,
+      },
+      'Received onboarding vendor search request'
+    )
+
     try {
-      return response.ok(
-        await OnboardingVendorDiscoveryService.search({
-          projectDescription: payload.projectDescription,
-          postalCode: payload.postalCode,
-          anonymousSessionUuid,
-        })
+      const result = await OnboardingVendorDiscoveryService.search({
+        projectDescription: payload.projectDescription,
+        postalCode: payload.postalCode,
+        anonymousSessionUuid,
+      })
+
+      logger.info(
+        {
+          draftUuid: result.draftUuid,
+          vendorSearchCount: result.vendorSearches.length,
+          vendorCount: result.vendors.length,
+          emptyStateReason: result.emptyStateReason,
+        },
+        'Completed onboarding vendor search request'
       )
+
+      return response.ok(result)
     } catch (error) {
       if (error instanceof VendorDiscoveryDependencyError) {
+        logger.warn(
+          { err: error },
+          'Onboarding vendor search failed with retryable dependency error'
+        )
         return response.status(502).send({
           error: error.message,
           retryable: true,
@@ -128,12 +163,21 @@ export default class OnboardingController {
         selectedCandidateIds
       )
 
+      logger.info(
+        { selectedVendorCount: draft.selectedVendors.length },
+        'Updated onboarding vendor selection'
+      )
+
       return response.ok({
         selectedCount: draft.selectedVendors.length,
         expiresAt: draft.expiresAt.toISO(),
       })
     } catch (error) {
       if (error instanceof OnboardingDraftError) {
+        logger.warn(
+          { err: error, statusCode: error.statusCode },
+          'Onboarding vendor selection failed'
+        )
         if (error.statusCode === 404) {
           return response.notFound({ error: error.message })
         }
@@ -150,11 +194,14 @@ export default class OnboardingController {
     const draft = await OnboardingDraftService.getActiveDraftByToken(onboardingToken)
 
     if (!draft) {
+      logger.warn('Onboarding registration handoff requested for missing or inactive draft')
       return response.notFound({ error: 'Onboarding draft not found' })
     }
 
     OnboardingDraftService.getOrCreateAnonymousSessionUuid(session)
     session.put(ONBOARDING_TOKEN_SESSION_KEY, onboardingToken)
+
+    logger.info({ draftUuid: draft.uuid }, 'Prepared onboarding registration handoff')
 
     return response.ok({ redirectTo: '/register?accountType=consumer' })
   }

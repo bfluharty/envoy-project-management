@@ -4,6 +4,7 @@ import VendorListing, { type VendorListingLocation } from '#models/vendor_listin
 import OnboardingDraftService from '#services/onboarding_draft_service'
 import ReasoningEngineService from '#services/reasoning_engine_service'
 import VendorSearchService from '#services/vendor_search_service'
+import logger from '@adonisjs/core/services/logger'
 
 const MAX_VENDOR_SEARCHES = 4
 const MAX_RECOMMENDATIONS = 30
@@ -311,10 +312,15 @@ export function stripVendorSourcePayloads(candidates: unknown[]) {
 
 async function matchExistingListings(candidates: RankedVendorCandidate[]) {
   if (candidates.length === 0) {
+    logger.debug('Skipping existing vendor listing matching because there are no candidates')
     return candidates
   }
 
   const listings = await VendorListing.query().where('is_active', true)
+  logger.debug(
+    { candidateCount: candidates.length, activeListingCount: listings.length },
+    'Matching vendor candidates against existing listings'
+  )
 
   return candidates.map((candidate) => {
     const match =
@@ -386,52 +392,188 @@ export default class OnboardingVendorDiscoveryService {
     postalCode: string
     anonymousSessionUuid: string
   }) {
+    logger.info(
+      {
+        postalCode: input.postalCode,
+        projectDescriptionLength: input.projectDescription.length,
+      },
+      'Starting onboarding vendor discovery'
+    )
+
     const { draft, tokenUuid } = await OnboardingDraftService.createDraft({
       projectDescription: input.projectDescription,
       postalCode: input.postalCode,
       anonymousSessionUuid: input.anonymousSessionUuid,
     })
 
+    logger.info(
+      { draftUuid: draft.uuid, expiresAt: draft.expiresAt.toISO() },
+      'Created onboarding vendor discovery draft'
+    )
+
     let vendorSearches: VendorDiscoverySearch[]
     try {
+      logger.debug(
+        { draftUuid: draft.uuid },
+        'Requesting vendor search classifications from reasoning engine'
+      )
       vendorSearches = validateVendorSearches(
         await ReasoningEngineService.requestVendorDiscovery({
           projectDescription: input.projectDescription,
         })
       )
+      logger.info(
+        {
+          draftUuid: draft.uuid,
+          searchCount: vendorSearches.length,
+          classifications: vendorSearches.map((vendorSearch) => vendorSearch.classification),
+        },
+        'Validated reasoning vendor searches'
+      )
+      logger.debug(
+        {
+          draftUuid: draft.uuid,
+          vendorSearches: vendorSearches.map((vendorSearch) => ({
+            classification: vendorSearch.classification,
+            query: vendorSearch.query,
+          })),
+        },
+        'Reasoning vendor search details'
+      )
     } catch (error) {
       if (error instanceof VendorDiscoveryDependencyError) {
+        logger.warn(
+          { err: error, draftUuid: draft.uuid },
+          'Reasoning vendor search output failed validation'
+        )
         throw error
       }
 
+      logger.error({ err: error, draftUuid: draft.uuid }, 'Reasoning vendor discovery failed')
       throw new VendorDiscoveryDependencyError('Reasoning engine vendor discovery failed')
     }
 
     let relevanceRank = 0
     const normalizedCandidates: RankedVendorCandidate[] = []
+    let rawPlaceCount = 0
+    let invalidPlaceCount = 0
+    let noEmailPlaceCount = 0
+    let completedSearchCount = 0
 
     try {
       for (const vendorSearch of vendorSearches.slice(0, MAX_VENDOR_SEARCHES)) {
+        logger.debug(
+          {
+            draftUuid: draft.uuid,
+            classification: vendorSearch.classification,
+            query: vendorSearch.query,
+          },
+          'Searching Foursquare for vendor classification'
+        )
         const places = await VendorSearchService.searchPlaces(vendorSearch.query, input.postalCode)
+        completedSearchCount += 1
+        rawPlaceCount += places.length
+        let searchEligibleCandidateCount = 0
+        let searchInvalidPlaceCount = 0
+        let searchNoEmailPlaceCount = 0
 
         for (const place of places) {
           const candidate = normalizeFoursquarePlace(place, relevanceRank++)
-          if (candidate?.email) {
-            normalizedCandidates.push(candidate)
+          if (!candidate) {
+            invalidPlaceCount += 1
+            searchInvalidPlaceCount += 1
+            continue
           }
+
+          if (!candidate.email) {
+            noEmailPlaceCount += 1
+            searchNoEmailPlaceCount += 1
+            continue
+          }
+
+          searchEligibleCandidateCount += 1
+          normalizedCandidates.push(candidate)
         }
+
+        logger.info(
+          {
+            draftUuid: draft.uuid,
+            classification: vendorSearch.classification,
+            rawPlaceCount: places.length,
+            eligibleCandidateCount: searchEligibleCandidateCount,
+            excludedNoEmailCount: searchNoEmailPlaceCount,
+            invalidPlaceCount: searchInvalidPlaceCount,
+          },
+          'Completed Foursquare vendor classification search'
+        )
       }
-    } catch {
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          draftUuid: draft.uuid,
+          completedSearchCount,
+          rawPlaceCount,
+          eligibleCandidateCount: normalizedCandidates.length,
+        },
+        'Foursquare vendor discovery failed'
+      )
       throw new VendorDiscoveryDependencyError('Foursquare vendor search failed')
     }
 
     const matchedCandidates = await matchExistingListings(normalizedCandidates)
+    const matchedListingCount = matchedCandidates.filter(
+      (candidate) => candidate.vendorListingUuid
+    ).length
+    logger.debug(
+      {
+        draftUuid: draft.uuid,
+        eligibleCandidateCount: normalizedCandidates.length,
+        matchedListingCount,
+      },
+      'Matched vendor candidates against existing listings'
+    )
+
     const vendors = dedupeAndRankCandidates(matchedCandidates)
+    const dedupedCandidateCount = matchedCandidates.length - vendors.length
+
+    if (vendors.length === 0) {
+      logger.warn(
+        {
+          draftUuid: draft.uuid,
+          rawPlaceCount,
+          invalidPlaceCount,
+          excludedNoEmailCount: noEmailPlaceCount,
+          eligibleCandidateCount: normalizedCandidates.length,
+        },
+        'No email-ready vendors found for onboarding discovery'
+      )
+    } else {
+      logger.info(
+        {
+          draftUuid: draft.uuid,
+          vendorCount: vendors.length,
+          rawPlaceCount,
+          eligibleCandidateCount: normalizedCandidates.length,
+          matchedListingCount,
+          dedupedCandidateCount,
+        },
+        'Prepared onboarding vendor recommendations'
+      )
+    }
 
     await OnboardingDraftService.updateRecommendations(tokenUuid, {
       vendorSearches,
       recommendedVendors: vendors,
     })
+    logger.info(
+      {
+        draftUuid: draft.uuid,
+        vendorSearchCount: vendorSearches.length,
+        recommendedVendorCount: vendors.length,
+      },
+      'Persisted onboarding vendor discovery recommendations'
+    )
 
     const freshDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
 

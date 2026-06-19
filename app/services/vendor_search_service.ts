@@ -1,4 +1,5 @@
 import env from '#start/env'
+import logger from '@adonisjs/core/services/logger'
 import type { PlaceSearchMetadataParam, PlaceSearchResponse200 } from '@api/fsq-developers-places'
 
 const FOURSQUARE_API_VERSION = '2025-06-17'
@@ -26,32 +27,60 @@ export default class VendorSearchService {
 
   private static async getClient() {
     if (this.client) {
+      logger.debug('Using cached Foursquare Places SDK client')
       return this.client
     }
 
-    const sdkModule = await import('@api/fsq-developers-places')
-    const defaultExport = sdkModule.default as
-      | FoursquarePlacesClient
-      | { default: FoursquarePlacesClient }
-    this.client = 'default' in defaultExport ? defaultExport.default : defaultExport
+    logger.debug('Loading Foursquare Places SDK client')
+    try {
+      const sdkModule = await import('@api/fsq-developers-places')
+      const defaultExport = sdkModule.default as
+        | FoursquarePlacesClient
+        | { default: FoursquarePlacesClient }
+      this.client = 'default' in defaultExport ? defaultExport.default : defaultExport
+    } catch (error) {
+      logger.error({ err: error }, 'Failed to load Foursquare Places SDK client')
+      throw error
+    }
 
+    logger.debug('Foursquare Places SDK client loaded')
     return this.client
   }
 
   public static async searchPlaces(query: string, postalCode: string) {
     const client = await this.getClient()
-    client.auth(env.get('FOURSQUARE_PLACES_API_KEY', ''))
-    const response = await client.placeSearch({
-      query,
-      'near': postalCode,
-      'tel_format': TEL_FORMAT,
-      'sort': SORT,
-      'limit': DEFAULT_LIMIT,
-      'X-Places-Api-Version': FOURSQUARE_API_VERSION,
-    })
+    const apiKey = env.get('FOURSQUARE_PLACES_API_KEY', '')
+    if (!apiKey) {
+      logger.warn('Foursquare Places API key is not configured')
+    }
+
+    logger.info(
+      { query, postalCode, limit: DEFAULT_LIMIT },
+      'Searching Foursquare Places for vendor candidates'
+    )
+    client.auth(apiKey)
+
+    let response
+    try {
+      response = await client.placeSearch({
+        query,
+        'near': postalCode,
+        'tel_format': TEL_FORMAT,
+        'sort': SORT,
+        'limit': DEFAULT_LIMIT,
+        'X-Places-Api-Version': FOURSQUARE_API_VERSION,
+      })
+    } catch (error) {
+      logger.error({ err: error, query, postalCode }, 'Foursquare Place Search request failed')
+      throw error
+    }
 
     const data = response.data
     if (Array.isArray(data)) {
+      logger.info(
+        { query, postalCode, resultCount: data.length },
+        'Foursquare Place Search returned results'
+      )
       return data
     }
 
@@ -60,9 +89,18 @@ export default class VendorSearchService {
       typeof data === 'object' &&
       Array.isArray((data as { results?: unknown[] }).results)
     ) {
-      return (data as { results: unknown[] }).results
+      const results = (data as { results: unknown[] }).results
+      logger.info(
+        { query, postalCode, resultCount: results.length },
+        'Foursquare Place Search returned results'
+      )
+      return results
     }
 
+    logger.warn(
+      { query, postalCode, responseDataType: typeof data },
+      'Foursquare Place Search returned an unexpected response shape'
+    )
     return []
   }
 }
