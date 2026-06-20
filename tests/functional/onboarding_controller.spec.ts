@@ -2,6 +2,7 @@ import { test } from '@japa/runner'
 import { strict as assert } from 'node:assert'
 import { validate as validateUuid, version as uuidVersion, v4 as uuidv4 } from 'uuid'
 import testUtils from '@adonisjs/core/services/test_utils'
+import VendorListing from '#models/vendor_listing'
 import OnboardingDraftService from '#services/onboarding_draft_service'
 import OnboardingVendorDiscoveryService from '#services/onboarding_vendor_discovery_service'
 
@@ -45,7 +46,7 @@ test.group('onboarding draft routes', (group) => {
         draftUuid,
         vendorSearches: [{ classification: 'Electrician', query: 'commercial electrician' }],
         vendors: [],
-        emptyStateReason: 'NO_EMAIL_READY_VENDORS',
+        emptyStateReason: 'NO_VENDOR_RESULTS',
         expiresAt: '2026-06-20T00:00:00.000Z',
       }
     }) as typeof OnboardingVendorDiscoveryService.search
@@ -77,21 +78,21 @@ test.group('onboarding draft routes', (group) => {
   })
 
   test('restore returns canonical draft state for an active token', async ({ client }) => {
+    const vendor = await VendorListing.create({
+      name: 'Vendor A',
+      email: 'a@example.com',
+      originator: 'SEARCH',
+      sourcePayload: { raw: true },
+      isActive: true,
+    })
     const { draft, tokenUuid } = await OnboardingDraftService.createDraft({
       projectDescription: 'I need a general contractor for a cafe renovation.',
       postalCode: '23220',
       anonymousSessionUuid: uuidv4(),
       vendorSearches: [{ classification: 'general contractor', query: 'general contractor' }],
-      recommendedVendors: [
-        {
-          candidateId: 'search:vendor-a',
-          name: 'Vendor A',
-          email: 'a@example.com',
-          sourcePayload: { raw: true },
-        },
-      ],
+      recommendedVendorListingUuids: [vendor.uuid],
     })
-    await OnboardingDraftService.updateSelection(tokenUuid, ['search:vendor-a'])
+    await OnboardingDraftService.updateSelection(tokenUuid, [vendor.uuid])
 
     const response = await client
       .post('/onboarding/draft/restore')
@@ -102,9 +103,11 @@ test.group('onboarding draft routes', (group) => {
       draftUuid: draft.uuid,
       projectDescription: 'I need a general contractor for a cafe renovation.',
       postalCode: '23220',
-      selectedCandidateIds: ['search:vendor-a'],
+      selectedVendorListingUuids: [vendor.uuid],
       step: 'selection',
     })
+    assert.equal(response.body().vendors[0].hasEmail, true)
+    assert.equal('email' in response.body().vendors[0], false)
     assert.equal('sourcePayload' in response.body().vendors[0], false)
   })
 
@@ -119,24 +122,28 @@ test.group('onboarding draft routes', (group) => {
   test('vendor selection updates active drafts and enforces candidate membership', async ({
     client,
   }) => {
+    const vendor = await VendorListing.create({
+      name: 'Vendor A',
+      email: null,
+      originator: 'SEARCH',
+      isActive: true,
+    })
     const { tokenUuid } = await OnboardingDraftService.createDraft({
       projectDescription: 'I need flooring and painting for a small office.',
       postalCode: '23226',
       anonymousSessionUuid: uuidv4(),
-      recommendedVendors: [
-        { candidateId: 'search:vendor-a', name: 'Vendor A', email: 'a@example.com' },
-      ],
+      recommendedVendorListingUuids: [vendor.uuid],
     })
 
     const unknownResponse = await client
       .patch('/onboarding/vendor-selection')
-      .json({ onboardingToken: tokenUuid, selectedCandidateIds: ['search:missing'] })
+      .json({ onboardingToken: tokenUuid, selectedVendorListingUuids: [uuidv4()] })
 
     unknownResponse.assertStatus(422)
 
     const successResponse = await client
       .patch('/onboarding/vendor-selection')
-      .json({ onboardingToken: tokenUuid, selectedCandidateIds: ['search:vendor-a'] })
+      .json({ onboardingToken: tokenUuid, selectedVendorListingUuids: [vendor.uuid] })
 
     successResponse.assertOk()
     successResponse.assertBodyContains({ selectedCount: 1 })

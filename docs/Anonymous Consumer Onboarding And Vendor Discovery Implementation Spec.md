@@ -11,7 +11,7 @@ It covers changes across:
 - Postgres schema
 - Inertia/Svelte UI
 - Foursquare Places integration
-- Existing outreach draft infrastructure
+- Vendor listing ownership and claim-aware authorization
 
 The product and architecture decisions are defined in:
 
@@ -96,8 +96,6 @@ router.post('/onboarding/vendor-search', [OnboardingController, 'searchVendors']
 router.patch('/onboarding/vendor-selection', [OnboardingController, 'updateSelection'])
 router.get('/onboarding/project', [OnboardingProjectController, 'show']).middleware(middleware.auth())
 router.post('/onboarding/project', [OnboardingProjectController, 'store']).middleware(middleware.auth())
-router.get('/onboarding/outreach-preparing/:projectUuid', [OnboardingProjectController, 'showOutreachPreparing']).middleware(middleware.auth())
-router.post('/api/projects/:uuid/outreach/prepare-initial', [ProjectOutreachApiController, 'prepareInitialOnboarding']).middleware(middleware.auth())
 ```
 
 Keep existing routes:
@@ -263,6 +261,7 @@ Add or alter fields:
 
 ```sql
 alter table envoy_schema.vendor_listings
+  alter column email drop not null,
   add column fsq_place_id text null,
   add column categories text[] not null default '{}',
   add column phone_number varchar(32) null,
@@ -270,9 +269,11 @@ alter table envoy_schema.vendor_listings
   add column date_refreshed date null,
   add column location jsonb null,
   add column source_payload jsonb null,
+  add column owner_user_uuid uuid null,
   add column claimed_by_user_uuid uuid null,
   add column claimed_at timestamptz null,
-  add column claim_status varchar(32) not null default 'UNCLAIMED';
+  add column claim_status varchar(32) not null default 'UNCLAIMED',
+  add column superseded_by_vendor_listing_uuid uuid null;
 ```
 
 Recommended constraints and indexes:
@@ -300,8 +301,26 @@ foreign key (claimed_by_user_uuid)
 references envoy_schema.users(uuid);
 
 alter table envoy_schema.vendor_listings
+add constraint vendor_listings_owner_user_uuid_foreign
+foreign key (owner_user_uuid)
+references envoy_schema.users(uuid);
+
+alter table envoy_schema.vendor_listings
+add constraint vendor_listings_superseded_by_foreign
+foreign key (superseded_by_vendor_listing_uuid)
+references envoy_schema.vendor_listings(uuid);
+
+alter table envoy_schema.vendor_listings
 add constraint vendor_listings_claim_status_check
 check (claim_status in ('UNCLAIMED', 'PENDING_CLAIM', 'CLAIMED', 'CONFLICT'));
+
+create index vendor_listings_owner_user_uuid_idx
+  on envoy_schema.vendor_listings (owner_user_uuid)
+  where owner_user_uuid is not null;
+
+create index vendor_listings_superseded_by_idx
+  on envoy_schema.vendor_listings (superseded_by_vendor_listing_uuid)
+  where superseded_by_vendor_listing_uuid is not null;
 ```
 
 UUID columns in new migrations should use PostgreSQL `uuid`, not `text`. Existing model properties can remain TypeScript `string`.
@@ -333,8 +352,8 @@ create table envoy_schema.anonymous_onboarding_drafts (
   project_description text not null,
   postal_code text not null,
   vendor_searches jsonb not null default '[]'::jsonb,
-  recommended_vendors jsonb not null default '[]'::jsonb,
-  selected_vendors jsonb not null default '[]'::jsonb,
+  recommended_vendor_listing_uuids uuid[] not null default '{}',
+  selected_vendor_listing_uuids uuid[] not null default '{}',
   status varchar(32) not null default 'ACTIVE',
   anonymous_session_uuid uuid not null,
   registered_user_uuid uuid null references envoy_schema.users(uuid),
@@ -373,7 +392,15 @@ create index anonymous_onboarding_drafts_anonymous_session_active_idx
 create unique index anonymous_onboarding_drafts_consumed_project_unique
   on envoy_schema.anonymous_onboarding_drafts (consumed_project_uuid)
   where consumed_project_uuid is not null;
+
+create index anonymous_onboarding_drafts_recommended_vendor_uuids_gin_idx
+  on envoy_schema.anonymous_onboarding_drafts using gin (recommended_vendor_listing_uuids);
+
+create index anonymous_onboarding_drafts_selected_vendor_uuids_gin_idx
+  on envoy_schema.anonymous_onboarding_drafts using gin (selected_vendor_listing_uuids);
 ```
+
+PostgreSQL array elements cannot carry individual foreign keys. Services must validate every listing UUID before writing either array and must resolve the UUIDs again inside the project creation transaction.
 
 Token handling:
 
@@ -386,23 +413,18 @@ Token handling:
 - Draft lookup enforces `status = ACTIVE` and `expires_at > now()`.
 - Expired active rows are marked `EXPIRED` by a cleanup command or scheduled job.
 
-### 4.5 Outreach Draft Idempotency
+### 4.5 Vendor Listing Ownership
 
-Do not add a project-level outreach progress column for MVP. The onboarding flow routes to an outreach-preparing page after the project transaction commits. That page keeps the user in a loading/preparing state while it calls the synchronous outreach preparation endpoint.
+`originator` is immutable provenance. Edit authority is derived independently:
 
-For idempotency, ensure an initial onboarding draft cannot be duplicated for the same project/vendor/purpose. Recommended options:
+- `claim_status = 'CLAIMED'`: only `claimed_by_user_uuid` may edit canonical listing data. This is the sole condition for `onboardedToEnvoy = true`.
+- Unclaimed listing with `owner_user_uuid`: only that consumer may edit listing data.
+- Unclaimed listing without `owner_user_uuid`: consumers cannot edit listing data.
+- An ownerless `SEARCH` listing without email is assigned to the first consumer who adds it to a project. Use a conditional update inside the project transaction so concurrent additions cannot create multiple owners.
+- An email-bearing `SEARCH` listing remains ownerless and consumer-immutable until claimed.
+- Search ingestion never refreshes or overwrites an existing listing.
 
-```text
-unique(project_vendor_uuid, draft_type)
-```
-
-or:
-
-```text
-unique(project_uuid, vendor_uuid, draft_type)
-```
-
-where `draft_type = 'INITIAL_ONBOARDING_OUTREACH'`.
+All active listings with no `superseded_by_vendor_listing_uuid` are available for consumers to add to projects regardless of ownership. Availability never grants edit authority.
 
 ---
 
@@ -424,8 +446,8 @@ tokenUuid: string
 projectDescription: string
 postalCode: string
 vendorSearches: unknown[]
-recommendedVendors: unknown[]
-selectedVendors: unknown[]
+recommendedVendorListingUuids: string[]
+selectedVendorListingUuids: string[]
 status: 'ACTIVE' | 'CONSUMED' | 'EXPIRED' | 'ABANDONED'
 anonymousSessionUuid: string
 registeredUserUuid: string | null
@@ -447,6 +469,7 @@ app/models/vendor_listing.ts
 Add:
 
 ```ts
+declare email: string | null
 declare originator: 'CONSUMER' | 'SEARCH' | 'VENDOR'
 declare fsqPlaceId: string | null
 declare categories: string[]
@@ -462,12 +485,14 @@ declare location: {
   formatted_address?: string
 } | null
 declare sourcePayload: unknown | null
+declare ownerUserUuid: string | null
 declare claimedByUserUuid: string | null
 declare claimedAt: DateTime | null
 declare claimStatus: 'UNCLAIMED' | 'PENDING_CLAIM' | 'CLAIMED' | 'CONFLICT'
+declare supersededByVendorListingUuid: string | null
 ```
 
-Foursquare candidates without email are excluded from the recommendation list for MVP, so search-originated `vendor_listings` must still have an email before insertion.
+`email` is nullable. Search-originated listings are inserted even when Foursquare does not provide email. `originator` remains `SEARCH` if a consumer later gains edit authority.
 
 ### 5.3 `User`
 
@@ -518,16 +543,9 @@ Response:
   ],
   "vendors": [
     {
-      "candidateId": "search:fsq-place-id",
-      "source": "SEARCH",
-      "vendorListingUuid": null,
-      "fsqPlaceId": "fsq-place-id",
+      "vendorListingUuid": "uuid",
       "name": "Richmond Build Co.",
-      "email": "hello@example.com",
       "categories": ["Commercial Contractor", "Construction"],
-      "phoneNumber": "+18045550199",
-      "website": "https://richmondbuild.example",
-      "dateRefreshed": "2026-05-20",
       "location": {
         "address": "456 Broad St",
         "locality": "Richmond",
@@ -536,18 +554,23 @@ Response:
         "country": "US",
         "formatted_address": "456 Broad St, Richmond, VA 23220"
       },
-      "onboardedToEnvoy": false
+      "hasEmail": true,
+      "onboardedToEnvoy": false,
+      "consumerOwned": false,
+      "ownershipWarning": null
     }
   ],
   "expiresAt": "2026-06-17T20:15:00.000Z"
 }
 ```
 
-If Foursquare returns no results with email after filtering, return `200` with an empty `vendors` array and:
+Every normalized Foursquare result is inserted or matched to a `vendor_listing` before this response is built. The response contains at most eight listings, ordered with email-bearing listings first and no-email listings afterward. Raw source data and contact fields are not returned to the anonymous UI.
+
+If no usable Foursquare results or existing listings can be returned, return `200` with an empty `vendors` array and:
 
 ```json
 {
-  "emptyStateReason": "NO_EMAIL_READY_VENDORS"
+  "emptyStateReason": "NO_VENDOR_RESULTS"
 }
 ```
 
@@ -576,7 +599,7 @@ Response:
   "postalCode": "23220",
   "vendorSearches": [],
   "vendors": [],
-  "selectedCandidateIds": [],
+  "selectedVendorListingUuids": [],
   "step": "recommendations",
   "expiresAt": "2026-06-17T20:15:00.000Z"
 }
@@ -595,16 +618,17 @@ Request:
 ```json
 {
   "onboardingToken": "7d9b5f0a-79b9-4b73-8b25-79677e31c2c5",
-  "selectedCandidateIds": ["search:fsq-place-id"]
+  "selectedVendorListingUuids": ["uuid"]
 }
 ```
 
 Validation:
 
 - `onboardingToken` is required and must be UUID v4.
-- `selectedCandidateIds` must contain 1 to 8 IDs.
-- Every selected ID must exist in the draft's `recommended_vendors`.
-- Every selected vendor must have email because candidates without email are filtered before recommendations are shown.
+- `selectedVendorListingUuids` must contain 1 to 8 UUIDs.
+- Every selected UUID must exist in the draft's `recommended_vendor_listing_uuids`.
+- Every selected UUID must resolve to an active, non-superseded listing or a canonical replacement.
+- Missing email does not make a listing ineligible for selection.
 
 Response:
 
@@ -671,7 +695,7 @@ Request:
 
 Project completion is authenticated and loads the draft by `registered_user_uuid = auth.user.uuid`. It does not accept the raw onboarding token.
 
-The project completion request should create the project and vendor links only. It should not call OpenAI or create outreach drafts. After the transaction commits, redirect the user to the outreach-preparing page.
+The project completion request should create the project and vendor links only. It should not call OpenAI or create outreach drafts. After the transaction commits, redirect the user to the project's default Convo page.
 
 Response:
 
@@ -679,33 +703,14 @@ Response:
 {
   "projectUuid": "uuid",
   "linkedVendorCount": 4,
-  "redirectTo": "/onboarding/outreach-preparing/uuid"
+  "redirectTo": "/projects/uuid"
 }
 ```
 
 The controller may redirect to:
 
 ```text
-/onboarding/outreach-preparing/:projectUuid
-```
-
-### 6.6 Initial Outreach Preparation Request
-
-```http
-POST /api/projects/:uuid/outreach/prepare-initial
-```
-
-This authenticated endpoint is called by the outreach-preparing page after project creation. It blocks until initial onboarding outreach draft preparation finishes, then returns the destination for the final navigation.
-
-Response:
-
-```json
-{
-  "projectUuid": "uuid",
-  "draftCount": 4,
-  "draftErrors": [],
-  "redirectTo": "/projects/uuid?tab=outreach"
-}
+/projects/:projectUuid
 ```
 
 ---
@@ -803,9 +808,9 @@ Responsibilities:
 - Call Foursquare Place Search.
 - Request contact, category, location, website, and freshness fields.
 - Normalize Foursquare results into internal vendor candidate objects.
-- Exclude results that do not include email.
 - Store only human-readable category labels in `categories`.
-- Preserve raw response data in `sourcePayload` for selected vendors.
+- Preserve raw response data in `sourcePayload` when initially inserting every search result.
+- Do not refresh or overwrite an existing listing on later searches.
 
 Recommended Foursquare request shape:
 
@@ -836,9 +841,8 @@ The local service currently sets `tel_format = 'E164'`, which should remain beca
 
 ```ts
 type VendorCandidate = {
-  candidateId: string
   source: 'SEARCH'
-  vendorListingUuid: string | null
+  vendorListingUuid: string
   fsqPlaceId: string | null
   name: string
   email: string | null
@@ -855,6 +859,8 @@ type VendorCandidate = {
     formatted_address?: string
   } | null
   onboardedToEnvoy: boolean
+  consumerOwned: boolean
+  ownershipWarning: string | null
   sourcePayload: unknown
 }
 ```
@@ -866,7 +872,7 @@ Recommended MVP limits:
 - Max vendor searches/classifications: 4.
 - Max Foursquare calls: 4.
 - Max Foursquare results per query: 50.
-- Max merged recommendations shown: 30.
+- Max recommendations returned: 8.
 - Max selected vendors: 8.
 
 ---
@@ -885,12 +891,13 @@ Responsibilities:
 2. Create or update an anonymous onboarding draft.
 3. Call reasoning-engine vendor discovery endpoint.
 4. Call Foursquare through `vendor_search_service`.
-5. Normalize Foursquare responses.
-6. Filter out results without email.
-7. Match results to existing `vendor_listings` by `fsq_place_id`, email, phone, or normalized name plus postcode.
-8. Merge, rank, and dedupe candidates.
-9. Persist vendor searches and recommendations to the draft.
-10. Return recommendations to the UI.
+5. Normalize Foursquare responses, including results without email.
+6. Dedupe candidates produced by the current search batch.
+7. Insert or reuse a `vendor_listing` for every normalized candidate.
+8. Do not overwrite listings that already exist.
+9. Rank persisted listings with email first and no-email listings afterward.
+10. Store the top eight recommendation UUIDs and any selected UUIDs on the draft.
+11. Return the top eight recommendations to the UI.
 
 When creating a draft, mark all prior `ACTIVE` drafts for the same HTTP-only anonymous session UUID as `ABANDONED` before inserting the new row.
 
@@ -903,7 +910,7 @@ Recommended matching order:
 3. E.164 phone number
 4. Normalized name plus `location.postcode` only as a weak fallback
 
-Name plus postcode matching should only be used when `fsq_place_id`, email, and phone are unavailable. Since Foursquare candidates without email are filtered out, most matching should happen through:
+Name plus postcode matching should only be used when `fsq_place_id`, email, and phone are unavailable.
 
 ```text
 fsq_place_id -> email -> phone
@@ -912,16 +919,21 @@ fsq_place_id -> email -> phone
 If a Foursquare result matches an existing listing:
 
 - Return the existing `vendorListingUuid`.
-- Keep the Foursquare fields as candidate data.
-- Show an Envoy/onboarded distinction when the existing listing is vendor-owned or already mapped in Envoy.
+- Do not overwrite the existing listing with newly returned Foursquare data.
+- Set `onboardedToEnvoy` only when `claim_status = 'CLAIMED'`.
+- Set `consumerOwned` when the listing is unclaimed and has `owner_user_uuid`.
+- Return a consumer-owned/unverified warning when `consumerOwned` is true.
 
 ### 9.2 Ranking
 
 Sort order:
 
-1. `date_refreshed` descending.
-2. Foursquare relevance order.
-3. Name ascending for stable display.
+1. Email present before email absent.
+2. Within each group, `date_refreshed` descending.
+3. Foursquare relevance order.
+4. Name ascending for stable display.
+
+Take the first eight only after applying this ordering. Five email-bearing results plus five no-email results therefore return the five email-bearing results followed by the top three no-email results.
 
 ### 9.3 Dedupe
 
@@ -943,11 +955,13 @@ Deduplication keys, in order:
 
 Do not over-trust name matching. Only use normalized name plus postcode when stable identifiers and contact keys are unavailable.
 
-If duplicate candidates exist:
+If duplicate candidates exist within search ingestion:
 
 - Prefer candidate with newer `date_refreshed`.
 - Prefer candidate with richer contact fields.
 - Prefer candidate already matched to an existing `vendor_listing`.
+
+Do not force these dedupe rules on manual consumer-created listings. During manual creation, suggest a likely existing listing only when it is vendor-originated or `CLAIMED`; allow the consumer to choose that trusted listing or continue creating a separate consumer-owned listing.
 
 ---
 
@@ -966,7 +980,7 @@ Responsibilities:
 - Load active draft by token.
 - Load active draft by registered user UUID.
 - Load consumed draft by registered user UUID for retry recovery.
-- Update selected candidates.
+- Update recommended and selected vendor listing UUID arrays.
 - Associate draft to registered user.
 - Mark draft consumed.
 - Mark expired drafts.
@@ -979,8 +993,8 @@ createDraft(input: { projectDescription: string; postalCode: string; anonymousSe
 getActiveDraftByToken(token: string): Promise<AnonymousOnboardingDraft | null>
 getActiveDraftByUserUuid(userUuid: string): Promise<AnonymousOnboardingDraft | null>
 getConsumedDraftByUserUuid(userUuid: string): Promise<AnonymousOnboardingDraft | null>
-updateRecommendations(token: string, data): Promise<AnonymousOnboardingDraft>
-updateSelection(token: string, selectedCandidateIds: string[]): Promise<AnonymousOnboardingDraft>
+updateRecommendations(token: string, vendorSearches: VendorDiscoverySearch[], recommendedVendorListingUuids: string[]): Promise<AnonymousOnboardingDraft>
+updateSelection(token: string, selectedVendorListingUuids: string[]): Promise<AnonymousOnboardingDraft>
 associateDraftToUser(token: string, userUuid: string): Promise<AnonymousOnboardingDraft>
 consumeDraft(token: string, userUuid: string, projectUuid: string): Promise<void>
 consumeDraftByUserUuid(userUuid: string, projectUuid: string): Promise<void>
@@ -1073,7 +1087,6 @@ Methods:
 ```ts
 show({ auth, inertia, request, response, session })
 store({ auth, request, response, session })
-showOutreachPreparing({ auth, inertia, params, response })
 ```
 
 `show`:
@@ -1081,29 +1094,22 @@ showOutreachPreparing({ auth, inertia, params, response })
 - Requires authenticated consumer.
 - Loads active anonymous draft by authenticated user UUID.
 - Renders first-project completion page.
-- Prefills project description, ZIP/location, and selected vendors.
+- Prefills project description, ZIP/location, and selected vendors resolved from `selectedVendorListingUuids`.
 
 `store`:
 
 - Requires authenticated consumer.
 - Calls `getActiveDraftByUserUuid(auth.user.uuid)`.
-- If no active draft is found, calls `getConsumedDraftByUserUuid(auth.user.uuid)` and redirects to `/onboarding/outreach-preparing/:consumedProjectUuid` when present.
+- If no active draft is found, calls `getConsumedDraftByUserUuid(auth.user.uuid)` and redirects to `/projects/:consumedProjectUuid` when present.
 - If the associated draft is expired, renders or redirects to an authenticated expired-draft state instead of returning the user to anonymous intake.
 - Validates project fields using existing project rules where possible.
-- Creates/reuses selected vendor listings.
-- Creates user vendor mappings.
+- Resolves selected vendor listing UUIDs; listings were already inserted during discovery.
+- Creates user vendor mappings without granting edit authority merely because a listing is available or mapped.
+- For each selected ownerless `SEARCH` listing without email, conditionally assigns `owner_user_uuid = auth.user.uuid` if it is still ownerless.
 - Creates project.
 - Links selected vendors to the project.
 - Marks draft consumed.
-- Redirects to `/onboarding/outreach-preparing/:projectUuid` after the transaction commits.
-
-`showOutreachPreparing`:
-
-- Requires authenticated consumer.
-- Verifies the project belongs to the current user.
-- Renders an outreach-preparing page with `projectUuid`.
-- The page calls `POST /api/projects/:uuid/outreach/prepare-initial`.
-- After the API call resolves, the page navigates to `/projects/:projectUuid?tab=outreach`.
+- Redirects to `/projects/:projectUuid` after the transaction commits so the existing default Convo experience opens.
 
 ### 12.2 UI
 
@@ -1111,7 +1117,6 @@ Add:
 
 ```text
 inertia/pages/onboarding/project.svelte
-inertia/pages/onboarding/outreach_preparing.svelte
 ```
 
 Use existing project creation UX patterns from:
@@ -1145,26 +1150,31 @@ Expired authenticated draft behavior:
 
 ---
 
-## 13. Vendor Listing Creation From Selected Candidates
+## 13. Vendor Listing Persistence And Ownership
 
 Add to `VendorService` or a new marketplace service:
 
 ```ts
-upsertListingFromCandidate(candidate, userUuid): Promise<VendorListing>
+insertOrReuseSearchListing(candidate): Promise<VendorListing>
 ensureUserVendorMapping(userUuid, vendorListingUuid): Promise<Vendor>
+adoptOwnerlessNoEmailSearchListing(userUuid, vendorListingUuid, transaction): Promise<VendorListing>
+canEditListing(userUuid, vendorListing): boolean
 ```
 
 Rules:
 
-- If candidate has an existing `vendorListingUuid`, reuse that listing.
-- If candidate has `fsqPlaceId`, upsert by `fsq_place_id`.
-- If candidate has email, dedupe by lowercased email.
-- If candidate has phone, dedupe by E.164 phone number.
-- If no stable contact key exists, upsert by normalized name plus `location.postcode`.
-- For Foursquare candidates, set `originator = 'SEARCH'`.
-- For consumer-created manual vendors, set `originator = 'CONSUMER'`.
-- Store `categories`, `phone_number`, `website`, `date_refreshed`, and `location`.
-- Set `modified_by = userUuid`.
+- Run `insertOrReuseSearchListing` for every normalized Foursquare result before recommendation ranking.
+- Reuse an existing listing by `fsq_place_id`, then lowercased email, then E.164 phone, then normalized name plus postcode only when stable keys are absent.
+- Never overwrite or refresh a reused listing.
+- New Foursquare listings use immutable `originator = 'SEARCH'` and store email when present plus categories, phone, website, date refreshed, location, and source payload.
+- New search listings have `owner_user_uuid = null` and `claim_status = 'UNCLAIMED'`.
+- `ensureUserVendorMapping` makes the listing available in a consumer's vendor/project context but does not grant edit access.
+- `adoptOwnerlessNoEmailSearchListing` uses a conditional update requiring `originator = 'SEARCH'`, `email is null`, `claim_status <> 'CLAIMED'`, and `owner_user_uuid is null`. The first successful project addition wins ownership; concurrent or later consumers may still add the listing but cannot edit it.
+- `canEditListing` allows the claiming vendor when `claim_status = 'CLAIMED'`; otherwise it allows only `owner_user_uuid`.
+- Vendor-created listings start vendor-controlled and claimed.
+- Consumer-created manual listings use immutable `originator = 'CONSUMER'` and set `owner_user_uuid` to the creator.
+- Manual consumer creation does not force deduplication. Suggest likely matches only when the existing listing is vendor-originated or claimed, and allow the consumer to select the trusted existing listing or proceed with a separate listing.
+- Claim completion removes consumer edit authority, makes the vendor-controlled listing canonical, and marks matching consumer-controlled duplicates superseded while preserving or migrating project links.
 
 ---
 
@@ -1176,78 +1186,33 @@ Recommended sequence inside one database transaction:
 
 1. Lock the user's active onboarding draft row with `for update`.
 2. Validate project details.
-3. Resolve selected vendor candidates from draft.
-4. Upsert/reuse vendor listings.
-5. Ensure user vendor mappings.
+3. Resolve `selected_vendor_listing_uuids` to active listings and canonical replacements.
+4. Conditionally assign the consumer as owner of selected ownerless, no-email `SEARCH` listings.
+5. Ensure user vendor mappings without changing edit authority for other listing types.
 6. Create project.
 7. Create project-vendor mappings.
 8. Set draft status to `CONSUMED`.
 9. Set `consumed_by_user_uuid` and `consumed_project_uuid`.
 10. Commit transaction.
-11. Redirect to `/onboarding/outreach-preparing/:projectUuid`.
+11. Redirect to `/projects/:projectUuid`.
 
-At the start of `store`, call `getActiveDraftByUserUuid(auth.user.uuid)`. If it returns `null`, call `getConsumedDraftByUserUuid(auth.user.uuid)`. That secondary query must look for `status = 'CONSUMED'`, `registered_user_uuid = auth.user.uuid`, and a populated `consumed_project_uuid`. If found, redirect to `/onboarding/outreach-preparing/:consumedProjectUuid` instead of creating a second project. If a consumed draft exists without a project UUID, return a recovery error and log it.
+At the start of `store`, call `getActiveDraftByUserUuid(auth.user.uuid)`. If it returns `null`, call `getConsumedDraftByUserUuid(auth.user.uuid)`. That secondary query must look for `status = 'CONSUMED'`, `registered_user_uuid = auth.user.uuid`, and a populated `consumed_project_uuid`. If found, redirect to `/projects/:consumedProjectUuid` instead of creating a second project. If a consumed draft exists without a project UUID, return a recovery error and log it.
 
-Do not hold a transaction open around OpenAI or external calls. Commit project/vendor data first, then route to the preparing page.
+Do not hold a transaction open around OpenAI or external calls. Project completion performs no OpenAI or outreach work.
 
 ---
 
-## 15. Outreach Draft Automation
+## 15. Project Conversation Handoff
 
-Use existing `project_outreach_service`.
-
-Add to `ProjectOutreachApiController`:
-
-```ts
-prepareInitialOnboarding({ auth, request, response })
-```
-
-This method validates project access, calls the onboarding draft automation service method, and returns the Outreach tab destination.
-
-Recommended implementation:
-
-- Add a service method specifically for onboarding:
-
-```ts
-createInitialOutreachDraftsForProject(user: User, projectUuid: string): Promise<{
-  draftCount: number
-  errors: string[]
-}>
-```
-
-- Or call the existing draft creation path per selected vendor with generated purpose/instructions.
-- Initial onboarding outreach draft creation must be idempotent per project, vendor, and purpose.
-- Retrying project completion, refreshing after timeout, or re-running draft generation must not create duplicate outreach drafts.
-
-Implementation options:
-
-- Add a unique key for `project_uuid + vendor_uuid + draft_type/purpose`.
-- Or make `createInitialOutreachDraftsForProject` skip vendors that already have an initial onboarding outreach draft.
-
-Draft generation runs synchronously inside `POST /api/projects/:uuid/outreach/prepare-initial`, not inside `POST /onboarding/project`. The outreach-preparing page should show a loading/preparing state while the preparation request is pending.
-
-Prompt purpose:
+Project completion redirects directly to:
 
 ```text
-Draft an initial outreach email introducing the project and asking about availability, fit, pricing, and next steps.
+/projects/:projectUuid
 ```
 
-The drafts must stay in `draft` status and must not be sent automatically.
+The existing project page opens its established default Convo experience. Do not add an outreach-preparing page, do not call an initial outreach preparation endpoint, and do not automatically create outreach drafts during onboarding.
 
-Redirect after synchronous draft preparation:
-
-```text
-/projects/:projectUuid?tab=outreach
-```
-
-Outreach-preparing UI states:
-
-- Preparing outreach drafts...
-- Drafts ready for review.
-- Some drafts could not be generated.
-- No vendors were linked, so no outreach drafts were generated.
-
-If `project.svelte` does not currently read a `tab` query param, add support.
+The project conversation can gather additional project context before the existing user- or agent-initiated outreach flow is used. Gathering missing vendor email or other vendor contact details through the agent is out of scope for this phase.
 
 ---
 
@@ -1319,6 +1284,8 @@ Recommended helpers:
 isConsumer(user): boolean
 isVendor(user): boolean
 isApprovedVendor(user): boolean
+isOnboardedListing(listing): boolean // claimStatus === 'CLAIMED'
+canEditVendorListing(user, listing): boolean
 ```
 
 Avoid checking entitlement IDs directly.
@@ -1332,6 +1299,14 @@ approvedVendorAuth
 ```
 
 MVP can keep checks inside controllers if scope is small.
+
+Every vendor listing mutation must call the same authorization rule:
+
+- If `claim_status = 'CLAIMED'`, only `claimed_by_user_uuid` may update it.
+- Otherwise, only `owner_user_uuid` may update it.
+- A user/vendor mapping, project-vendor mapping, or general marketplace availability does not grant edit access.
+- Ownerless listings are read-only to consumers.
+- Superseded listings cannot be edited or newly added; resolve them to their canonical replacement.
 
 ---
 
@@ -1402,12 +1377,16 @@ Cover:
 - Draft lookup by UUID v4 token.
 - Lazy draft expiration during lookup.
 - Expire-drafts cleanup command.
-- No-email Foursquare result set returns `NO_EMAIL_READY_VENDORS`.
+- No-email Foursquare results remain eligible and fill remaining recommendation slots.
 - Vendor selection update.
 - Vendor selection rejects more than 8 candidates.
+- Vendor selection stores listing UUIDs and accepts listings without email.
 - Vendor search classification is capped at 4.
 - Foursquare candidate normalization.
-- Foursquare candidates without email are excluded from recommendations.
+- Every normalized Foursquare candidate is inserted or reuses a listing before recommendations are returned.
+- Existing search listings are not refreshed or overwritten.
+- Email-bearing listings rank before no-email listings.
+- Recommendation response is capped at 8 after email-first ranking.
 - Newer `date_refreshed` ranks before older `date_refreshed`.
 - Dedupe by `fsq_place_id`.
 - Dedupe by email.
@@ -1416,17 +1395,24 @@ Cover:
 - Vendor listing upsert from Foursquare candidate.
 - Search-originated vendor originator uses `SEARCH`.
 - Manual consumer vendor originator uses `CONSUMER`.
+- `onboardedToEnvoy` is true only for `claim_status = 'CLAIMED'`.
+- Consumer-owned listings return an unverified ownership warning.
+- Manual consumer creation suggests vendor-originated or claimed matches without forcing reuse.
+- Claimed listing edits are restricted to the claiming vendor.
+- Unclaimed consumer-controlled listing edits are restricted to `owner_user_uuid`.
+- User/project mappings alone do not grant edit access.
+- Ownerless email-bearing search listings remain consumer-immutable.
+- First project addition atomically adopts an ownerless no-email search listing without changing `originator`.
+- Concurrent additions cannot assign multiple owners.
+- Claim canonicalization supersedes matching consumer-controlled duplicates while preserving project links.
 - Project creation from onboarding draft.
 - Double-submit project completion does not create a duplicate project.
 - Double-submit project completion after the first transaction commits uses `getConsumedDraftByUserUuid` to redirect to the consumed project.
 - Project completion loads draft by registered user UUID without token.
 - Project-vendor linking.
 - Draft marked consumed after project creation.
-- Project completion redirects to the outreach-preparing page after the project transaction commits.
-- Outreach-preparing page calls `POST /api/projects/:uuid/outreach/prepare-initial`.
-- Outreach-preparing page redirects to the Outreach tab after draft preparation completes.
-- Initial onboarding outreach draft generation is idempotent per project/vendor/purpose.
-- Re-running outreach draft generation skips existing initial onboarding drafts.
+- Project completion redirects to `/projects/:projectUuid` after the transaction commits.
+- Project completion does not create outreach drafts or call an outreach preparation endpoint.
 - Anonymous expired draft cannot create project.
 - Authenticated expired draft cannot create project and shows authenticated recovery actions.
 
@@ -1447,7 +1433,7 @@ Cover:
 Happy path:
 
 ```text
-anonymous intake -> reasoning vendor searches -> Foursquare recommendations -> select vendors -> register -> auto-login -> project completion -> project created -> vendors linked -> outreach-preparing page -> outreach drafts created -> user sees Outreach tab
+anonymous intake -> reasoning vendor searches -> Foursquare results persisted as listings -> email-first recommendations -> select listing UUIDs -> register -> auto-login -> project completion -> project created -> vendors linked -> user sees project Convo
 ```
 
 Failure scenarios:
@@ -1460,12 +1446,13 @@ Failure scenarios:
 6. Selected Foursquare vendor already exists by `fsq_place_id`.
 7. Selected Foursquare vendor already exists by email.
 8. Selected Foursquare vendor already exists by E.164 phone number.
-9. Outreach draft creation partially fails.
-10. Vendor account attempts to access consumer project completion.
-11. Consumer account attempts to access vendor pending page.
-12. User double-submits project completion.
-13. Foursquare returns results but all are filtered out because they lack email.
-14. Outreach draft generation is retried after timeout.
+9. Vendor account attempts to access consumer project completion.
+10. Consumer account attempts to access vendor pending page.
+11. User double-submits project completion.
+12. Foursquare returns only results without email.
+13. Two consumers concurrently add the same ownerless no-email search listing.
+14. A non-owner attempts to edit a consumer-controlled listing.
+15. A consumer attempts to edit a claimed or ownerless search listing.
 
 ### 20.4 UI Tests
 
@@ -1478,11 +1465,11 @@ Use Playwright for:
 - Vendor CTA preselects vendor registration.
 - Vendor recommendations can be selected.
 - Vendor recommendation selection enforces the max selection count.
-- Vendors without email are not shown in recommendations.
+- Vendors without email appear after vendors with email and remain selectable.
+- Recommendation UI shows claimed/onboarded and consumer-owned/unverified states accurately.
 - Registration auto-login redirects correctly.
 - Project completion form is prefilled.
-- Project creation redirects to the outreach-preparing page.
-- Outreach-preparing page shows preparing, ready, partial-failure, and no-vendors loading states before redirect.
+- Project creation redirects to the project page and opens the default Convo experience.
 
 ---
 
@@ -1491,8 +1478,8 @@ Use Playwright for:
 ### Step 1: Data Foundation
 
 - Add entitlement migration.
-- Add vendor listing fields.
-- Add anonymous onboarding draft table.
+- Add vendor listing ownership, claim, nullable email, and supersession fields.
+- Add anonymous onboarding draft table with recommended and selected listing UUID arrays.
 - Update models.
 
 ### Step 2: Registration And Routing
@@ -1518,35 +1505,43 @@ Use Playwright for:
 
 - Complete `vendor_search_service`.
 - Add Foursquare candidate normalization.
-- Add merge/rank/dedupe.
+- Insert or reuse listings for every normalized result without refreshes.
+- Add email-first merge/rank/dedupe and cap recommendations at eight.
 - Render recommendation UI.
 
 ### Step 6: Project Completion
 
 - Add onboarding project page.
-- Create project and vendors from draft.
+- Resolve selected listing UUIDs from draft.
 - Attach vendors to project.
+- Adopt ownerless no-email search listings when first added.
 - Mark draft consumed.
+- Redirect to the default project Convo experience.
 
-### Step 7: Outreach Drafts
+### Step 7: Ownership And Availability
 
-- Add onboarding draft automation method.
-- Add the outreach-preparing page.
-- Show a loading/preparing state while the synchronous preparation endpoint runs.
-- Redirect to Outreach after draft preparation completes.
-- Add idempotent initial outreach draft creation.
-- Add partial-failure handling.
+- Make active, non-superseded listings available to all consumers for project addition.
+- Enforce claimed-vendor and consumer-owner edit authorization.
+- Add consumer-owned/unverified UI warnings.
+- Suggest trusted existing listings during manual creation without forcing deduplication.
 
 ---
 
 ## 22. Open Follow-Up For Later Vendor Claiming
 
-This feature prepares data fields for future vendor claiming, but later work must decide:
+This feature prepares data fields for future vendor claiming. Confirmed claim behavior is:
+
+- `claim_status = 'CLAIMED'` is the sole definition of onboarded to Envoy.
+- The claiming vendor receives exclusive edit authority.
+- A claimed listing becomes canonical.
+- Matching consumer-controlled duplicates are superseded while project references remain valid or are migrated.
+
+Later work must still decide:
 
 - Exact business verification flow.
 - How Envoy receives verification success.
 - Whether verification can auto-approve.
-- How to resolve conflicts if multiple accounts attempt to claim the same `fsq_place_id`.
+- The operational/manual process for conflicts if multiple accounts attempt to claim the same business.
 - Whether support/admin tooling is needed for disputed claims.
 
-For MVP, a single vendor account can claim one business later, and unapproved vendors remain blocked.
+For MVP, a single approved vendor account can claim one business later, and unapproved vendors remain blocked.

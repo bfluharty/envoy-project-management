@@ -4,6 +4,7 @@ import { DateTime } from 'luxon'
 import { validate as validateUuid, version as uuidVersion, v4 as uuidv4 } from 'uuid'
 import testUtils from '@adonisjs/core/services/test_utils'
 import AnonymousOnboardingDraft from '#models/anonymous_onboarding_draft'
+import VendorListing from '#models/vendor_listing'
 import OnboardingDraftService, {
   ANONYMOUS_ONBOARDING_SESSION_KEY,
   OnboardingDraftError,
@@ -78,54 +79,102 @@ test.group('OnboardingDraftService', (group) => {
     assert.equal(reloaded.status, 'EXPIRED')
   })
 
-  test('updates vendor selection only for known email-ready candidates', async () => {
+  test('updates vendor selection only for available recommended listing UUIDs', async () => {
+    const vendorA = await VendorListing.create({
+      name: 'Vendor A',
+      email: 'a@example.com',
+      originator: 'SEARCH',
+      isActive: true,
+    })
+    const vendorB = await VendorListing.create({
+      name: 'Vendor B',
+      email: 'b@example.com',
+      originator: 'SEARCH',
+      isActive: true,
+    })
+    const noEmailVendor = await VendorListing.create({
+      name: 'No Email Vendor',
+      email: null,
+      originator: 'SEARCH',
+      isActive: true,
+    })
     const { draft, tokenUuid } = await OnboardingDraftService.createDraft({
       projectDescription: 'I need a plumber and electrician for a remodel.',
       postalCode: '23223',
       anonymousSessionUuid: uuidv4(),
-      recommendedVendors: [
-        { candidateId: 'search:vendor-a', name: 'Vendor A', email: 'a@example.com' },
-        { candidateId: 'search:vendor-b', name: 'Vendor B', email: 'b@example.com' },
-        { candidateId: 'search:vendor-no-email', name: 'No Email Vendor', email: '' },
-      ],
+      recommendedVendorListingUuids: [vendorA.uuid, vendorB.uuid, noEmailVendor.uuid],
     })
 
     await assert.rejects(
-      () => OnboardingDraftService.updateSelection(tokenUuid, ['search:missing']),
+      () => OnboardingDraftService.updateSelection(tokenUuid, [uuidv4()]),
       (error: unknown) =>
         error instanceof OnboardingDraftError &&
         error.message === 'Selected vendor does not exist in this draft'
     )
 
-    await assert.rejects(
-      () => OnboardingDraftService.updateSelection(tokenUuid, ['search:vendor-no-email']),
-      (error: unknown) =>
-        error instanceof OnboardingDraftError &&
-        error.message === 'Selected vendors must have email addresses'
-    )
+    const noEmailSelection = await OnboardingDraftService.updateSelection(tokenUuid, [
+      noEmailVendor.uuid,
+    ])
+    assert.deepEqual(noEmailSelection.selectedVendorListingUuids, [noEmailVendor.uuid])
 
     await assert.rejects(
       () =>
         OnboardingDraftService.updateSelection(
           tokenUuid,
-          Array.from({ length: 9 }, (_, index) => `search:${index}`)
+          Array.from({ length: 9 }, () => uuidv4())
         ),
       (error: unknown) =>
         error instanceof OnboardingDraftError && error.message === 'Select between 1 and 8 vendors'
     )
 
     const updated = await OnboardingDraftService.updateSelection(tokenUuid, [
-      'search:vendor-a',
-      'search:vendor-b',
+      vendorA.uuid,
+      vendorB.uuid,
     ])
 
-    assert.deepEqual(
-      updated.selectedVendors.map((vendor) => (vendor as { candidateId: string }).candidateId),
-      ['search:vendor-a', 'search:vendor-b']
-    )
+    assert.deepEqual(updated.selectedVendorListingUuids, [vendorA.uuid, vendorB.uuid])
 
     const reloaded = await AnonymousOnboardingDraft.findOrFail(draft.id)
-    assert.equal(reloaded.selectedVendors.length, 2)
+    assert.deepEqual(reloaded.selectedVendorListingUuids, [vendorA.uuid, vendorB.uuid])
+  })
+
+  test('rejects unavailable and duplicate recommendation UUIDs', async () => {
+    const active = await VendorListing.create({
+      name: 'Active Vendor',
+      email: null,
+      originator: 'SEARCH',
+      isActive: true,
+    })
+    const inactive = await VendorListing.create({
+      name: 'Inactive Vendor',
+      email: null,
+      originator: 'SEARCH',
+      isActive: false,
+    })
+    const { tokenUuid } = await OnboardingDraftService.createDraft({
+      projectDescription: 'I need vendors for a commercial renovation project.',
+      postalCode: '23223',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    await assert.rejects(
+      () =>
+        OnboardingDraftService.updateRecommendations(tokenUuid, {
+          recommendedVendorListingUuids: [active.uuid, active.uuid],
+        }),
+      (error: unknown) =>
+        error instanceof OnboardingDraftError &&
+        error.message === 'Vendor listing IDs must be unique'
+    )
+    await assert.rejects(
+      () =>
+        OnboardingDraftService.updateRecommendations(tokenUuid, {
+          recommendedVendorListingUuids: [inactive.uuid],
+        }),
+      (error: unknown) =>
+        error instanceof OnboardingDraftError &&
+        error.message === 'One or more vendor listings are unavailable'
+    )
   })
 
   test('cleanup marks expired active drafts and leaves fresh drafts active', async () => {

@@ -5,7 +5,6 @@ import testUtils from '@adonisjs/core/services/test_utils'
 import AnonymousOnboardingDraft from '#models/anonymous_onboarding_draft'
 import VendorListing from '#models/vendor_listing'
 import OnboardingVendorDiscoveryService, {
-  NO_EMAIL_READY_VENDORS,
   VendorDiscoveryDependencyError,
   normalizeFoursquarePlace,
   normalizeVendorName,
@@ -110,7 +109,7 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
     )
 
     assert.ok(candidate)
-    assert.equal(candidate.candidateId, 'search:fsq-1')
+    assert.equal(candidate.fsqPlaceId, 'fsq-1')
     assert.equal(candidate.email, 'hello@example.com')
     assert.deepEqual(candidate.categories, ['Commercial Contractor', 'Construction'])
     assert.equal(candidate.dateRefreshed, '2026-05-20')
@@ -124,6 +123,7 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
       name: 'Existing Electric',
       email: existingEmail,
       originator: 'VENDOR',
+      claimStatus: 'CLAIMED',
       fsqPlaceId: existingFsqPlaceId,
       phoneNumber: '+18045550222',
       location: { postcode: '23220' },
@@ -230,22 +230,46 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
     )
     assert.deepEqual(calls[1].fsqCategoryIds, ['electrician-category-id', 'lighting-category-id'])
     assert.deepEqual(calls[0].fsqCategoryIds, [])
+    assert.equal(response.vendors.length, 4)
     assert.deepEqual(
-      response.vendors.map((vendor) => vendor.email),
-      ['shared@example.com', existingEmail, 'hvac@example.com']
+      response.vendors.map((vendor) => vendor.hasEmail),
+      [true, true, true, false]
     )
     assert.equal(response.vendors[0].name, 'Shared Co Updated')
+    assert.equal(response.vendors[3].name, 'No Email Vendor')
+    assert.equal('email' in response.vendors[0], false)
     assert.equal('sourcePayload' in response.vendors[0], false)
-    assert.equal(response.vendors[1].vendorListingUuid !== null, true)
-    assert.equal(response.vendors[1].onboardedToEnvoy, true)
+    const existingRecommendation = response.vendors.find(
+      (vendor) => vendor.vendorListingUuid === existingFsqPlaceId
+    )
+    assert.equal(existingRecommendation, undefined)
+    assert.equal(
+      response.vendors.find((vendor) => vendor.name === 'Existing Electric')?.onboardedToEnvoy,
+      true
+    )
+
+    const noEmailListing = await VendorListing.findByOrFail('fsqPlaceId', 'no-email')
+    assert.equal(noEmailListing.email, null)
+    assert.equal(noEmailListing.ownerUserUuid, null)
+    assert.equal(noEmailListing.originator, 'SEARCH')
+    assert.deepEqual(noEmailListing.sourcePayload, {
+      fsq_place_id: 'no-email',
+      name: 'No Email Vendor',
+      date_refreshed: '2026-09-01',
+      categories: [{ name: 'Ignored' }],
+      location: { postcode: '23220' },
+    })
 
     const draft = await AnonymousOnboardingDraft.findByOrFail('tokenUuid', response.onboardingToken)
     assert.equal(draft.vendorSearches.length, 4)
-    assert.equal(draft.recommendedVendors.length, 3)
-    assert.equal('sourcePayload' in (draft.recommendedVendors[0] as Record<string, unknown>), true)
+    assert.equal(draft.recommendedVendorListingUuids.length, 4)
+    assert.deepEqual(
+      draft.recommendedVendorListingUuids,
+      response.vendors.map((vendor) => vendor.vendorListingUuid)
+    )
   })
 
-  test('returns empty-state reason when Foursquare has no email-ready vendors', async () => {
+  test('returns no-email Foursquare results instead of an empty state', async () => {
     stubReasoning({
       vendorSearches: [{ classification: 'Painter', query: 'commercial painter' }],
     })
@@ -263,8 +287,43 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
       anonymousSessionUuid: uuidv4(),
     })
 
-    assert.deepEqual(response.vendors, [])
-    assert.equal(response.emptyStateReason, NO_EMAIL_READY_VENDORS)
+    assert.equal(response.vendors.length, 1)
+    assert.equal(response.vendors[0].name, 'No Email Vendor')
+    assert.equal(response.vendors[0].hasEmail, false)
+    assert.equal(response.emptyStateReason, undefined)
+  })
+
+  test('persists all normalized listings while limiting recommendations to eight', async () => {
+    stubReasoning({
+      vendorSearches: [{ classification: 'Contractor', query: 'commercial contractor' }],
+    })
+    stubFoursquare(() =>
+      Array.from({ length: 10 }, (_, index) => ({
+        fsq_place_id: `cap-${index}`,
+        name: `Vendor ${index}`,
+        email: index < 5 ? `vendor-${index}@example.com` : undefined,
+        date_refreshed: `2026-06-${String(index + 1).padStart(2, '0')}`,
+      }))
+    )
+
+    const response = await OnboardingVendorDiscoveryService.search({
+      projectDescription: 'I need several contractors for a commercial development project.',
+      postalCode: '23220',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    assert.equal(response.vendors.length, 8)
+    assert.deepEqual(
+      response.vendors.slice(0, 5).map((vendor) => vendor.hasEmail),
+      [true, true, true, true, true]
+    )
+    assert.equal(
+      await VendorListing.query()
+        .whereLike('fsq_place_id', 'cap-%')
+        .count('* as total')
+        .then((rows) => Number(rows[0].$extras.total)),
+      10
+    )
   })
 
   test('wraps reasoning and Foursquare failures as retryable dependency errors', async () => {

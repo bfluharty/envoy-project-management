@@ -7,6 +7,13 @@ export const getVendorsValidator = vine.compile(
   })
 )
 
+export const trustedVendorMatchesValidator = vine.compile(
+  vine.object({
+    name: vine.string().trim().minLength(1).optional(),
+    email: vine.string().email().trim().optional(),
+  })
+)
+
 export const requestParamsValidator = vine.compile(
   vine.object({
     uuid: vine.string().uuid(),

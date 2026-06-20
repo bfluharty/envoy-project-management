@@ -1,16 +1,65 @@
 import logger from '@adonisjs/core/services/logger'
 import type { HttpContext } from '@adonisjs/core/http'
-import VendorService from '#services/vendor_service'
+import VendorService, { VendorAuthorizationError } from '#services/vendor_service'
 import { VendorRequest } from '../../../types/request.js'
 import {
   createVendorValidator,
   requestParamsValidator,
   updateVendorValidator,
+  trustedVendorMatchesValidator,
 } from '#validators/vendors_validator'
 import { getVendorsValidator } from '#validators/vendors_validator'
 import { isOnlyActivatingRecord, validateUser } from '../../utils/controller_utils.js'
 
 export default class VendorsAPIController {
+  async getAvailable({ request, response }: HttpContext) {
+    const userId = request.header('x-user-id') || ''
+    if (!(await validateUser(userId))) {
+      return response.status(403).json({ error: 'User is not authorized' })
+    }
+
+    const { limit, offset } = await request.validateUsing(getVendorsValidator)
+    const listings = await VendorService.getAvailableVendorListings(limit, offset)
+    return response.status(200).json({
+      vendors: listings.map((listing) => VendorService.toPublicRecommendation(listing)),
+      count: listings.length,
+      limit,
+      offset,
+    })
+  }
+
+  async getTrustedMatches({ request, response }: HttpContext) {
+    const userId = request.header('x-user-id') || ''
+    if (!(await validateUser(userId))) {
+      return response.status(403).json({ error: 'User is not authorized' })
+    }
+
+    const input = await request.validateUsing(trustedVendorMatchesValidator)
+    const listings = await VendorService.findTrustedExistingListings(input)
+    return response.status(200).json({
+      vendors: listings.map((listing) => VendorService.toPublicRecommendation(listing)),
+    })
+  }
+
+  async selectAvailable({ request, response }: HttpContext) {
+    const userId = request.header('x-user-id') || ''
+    if (!(await validateUser(userId))) {
+      return response.status(403).json({ error: 'User is not authorized' })
+    }
+
+    const { uuid: vendorListingUuid } = await requestParamsValidator.validate(request.params())
+    const mapping = await VendorService.ensureUserVendorMapping(userId, vendorListingUuid)
+    if (!mapping) {
+      return response.status(404).json({ error: 'Vendor listing is unavailable' })
+    }
+
+    const listing = await VendorService.getAvailableVendorListingByUuid(vendorListingUuid)
+    return response.status(200).json({
+      vendorUuid: mapping.uuid,
+      listing: listing ? VendorService.toPublicRecommendation(listing) : null,
+    })
+  }
+
   /**
    * Display all vendors
    */
@@ -161,6 +210,9 @@ export default class VendorsAPIController {
 
       return response.status(201).json(vendor)
     } catch (error) {
+      if (error instanceof VendorAuthorizationError) {
+        return response.status(error.statusCode).json({ error: error.message })
+      }
       logger.error('Error updating vendor:')
       logger.error(error)
       return response

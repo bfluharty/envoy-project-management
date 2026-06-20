@@ -2,29 +2,7 @@ import { BaseSeeder } from '@adonisjs/lucid/seeders'
 import { DateTime } from 'luxon'
 import AnonymousOnboardingDraft from '#models/anonymous_onboarding_draft'
 
-const recommendedVendors = [
-  {
-    candidateId: 'search:seed-build-co',
-    source: 'SEARCH',
-    vendorListingUuid: null,
-    fsqPlaceId: 'seed-build-co',
-    name: 'Seed Build Co.',
-    email: 'hello@seedbuild.example',
-    categories: ['Commercial Contractor', 'Construction'],
-    phoneNumber: '+18045550199',
-    website: 'https://seedbuild.example',
-    dateRefreshed: '2026-06-01',
-    location: {
-      address: '456 Broad St',
-      locality: 'Richmond',
-      region: 'VA',
-      postcode: '23220',
-      country: 'US',
-      formatted_address: '456 Broad St, Richmond, VA 23220',
-    },
-    onboardedToEnvoy: false,
-  },
-]
+const seedVendorListingUuid = 'e5f6a7b8-c9d0-4e1f-8a2b-3c4d5e6f7a81'
 
 export default class extends BaseSeeder {
   async run() {
@@ -41,8 +19,8 @@ export default class extends BaseSeeder {
             rationale: 'The project requires buildout coordination and construction execution.',
           },
         ],
-        recommendedVendors,
-        selectedVendors: recommendedVendors,
+        recommendedVendorListingUuids: [seedVendorListingUuid],
+        selectedVendorListingUuids: [seedVendorListingUuid],
         status: 'ACTIVE',
         anonymousSessionUuid: '9b200000-0000-4000-8002-000000000001',
         registeredUserUuid: null,
@@ -62,8 +40,8 @@ export default class extends BaseSeeder {
             rationale: 'The project needs workspace buildout and finish coordination.',
           },
         ],
-        recommendedVendors,
-        selectedVendors: recommendedVendors,
+        recommendedVendorListingUuids: [seedVendorListingUuid],
+        selectedVendorListingUuids: [seedVendorListingUuid],
         status: 'CONSUMED',
         anonymousSessionUuid: '9b200000-0000-4000-8002-000000000002',
         registeredUserUuid: 'c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b41',

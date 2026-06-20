@@ -172,6 +172,12 @@ router
       .group(() => {
         router.get('/', [VendorsAPIController, 'getAll'])
 
+        router.get('/available', [VendorsAPIController, 'getAvailable'])
+
+        router.get('/trusted-matches', [VendorsAPIController, 'getTrustedMatches'])
+
+        router.post('/:uuid/select', [VendorsAPIController, 'selectAvailable'])
+
         router.get('/:uuid', [VendorsAPIController, 'getByUuid'])
 
         router.post('/', [VendorsAPIController, 'create'])

@@ -1,6 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
-import VendorService from '#services/vendor_service'
+import VendorService, { VendorAuthorizationError } from '#services/vendor_service'
 import { VendorRequest } from '../../../types/request.js'
 import {
   createVendorValidator,
@@ -67,6 +67,9 @@ export default class ContactsController {
         contact: { uuid: listing.uuid, name: listing.name, email: listing.email },
       })
     } catch (error) {
+      if (error instanceof VendorAuthorizationError) {
+        return response.status(error.statusCode).json({ error: error.message })
+      }
       logger.error('Error updating contact:')
       logger.error(error)
       return response.status(500).json({ error: 'Failed to update contact' })

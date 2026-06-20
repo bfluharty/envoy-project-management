@@ -3,15 +3,10 @@ import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
 import { validate as validateUuid, version as uuidVersion, v4 as uuidv4 } from 'uuid'
 import AnonymousOnboardingDraft from '#models/anonymous_onboarding_draft'
+import VendorListing from '#models/vendor_listing'
 
 export const ANONYMOUS_ONBOARDING_SESSION_KEY = 'onboarding.anonymous_session_uuid'
 export const ONBOARDING_TOKEN_SESSION_KEY = 'onboarding.token'
-
-export type OnboardingDraftCandidate = {
-  candidateId?: unknown
-  email?: unknown
-  [key: string]: unknown
-}
 
 export class OnboardingDraftError extends Error {
   constructor(
@@ -27,34 +22,13 @@ export type CreateDraftInput = {
   postalCode: string
   anonymousSessionUuid: string
   vendorSearches?: unknown[]
-  recommendedVendors?: unknown[]
+  recommendedVendorListingUuids?: string[]
   expiresAt?: DateTime
 }
 
 export type RecommendationUpdateInput = {
   vendorSearches?: unknown[]
-  recommendedVendors?: unknown[]
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0
-}
-
-function getCandidateId(candidate: unknown): string | null {
-  if (!candidate || typeof candidate !== 'object') {
-    return null
-  }
-
-  const candidateId = (candidate as OnboardingDraftCandidate).candidateId
-  return isNonEmptyString(candidateId) ? candidateId.trim() : null
-}
-
-function hasEmail(candidate: unknown) {
-  if (!candidate || typeof candidate !== 'object') {
-    return false
-  }
-
-  return isNonEmptyString((candidate as OnboardingDraftCandidate).email)
+  recommendedVendorListingUuids?: string[]
 }
 
 export function isUuidV4(value: unknown): value is string {
@@ -87,8 +61,8 @@ export default class OnboardingDraftService {
       projectDescription: input.projectDescription,
       postalCode: input.postalCode,
       vendorSearches: input.vendorSearches ?? [],
-      recommendedVendors: input.recommendedVendors ?? [],
-      selectedVendors: [],
+      recommendedVendorListingUuids: input.recommendedVendorListingUuids ?? [],
+      selectedVendorListingUuids: [],
       status: 'ACTIVE',
       anonymousSessionUuid: input.anonymousSessionUuid,
       registeredUserUuid: null,
@@ -150,71 +124,58 @@ export default class OnboardingDraftService {
 
   public static async updateRecommendations(token: string, data: RecommendationUpdateInput) {
     const draft = await this.getActiveDraftOrFail(token)
+    const recommendedVendorListingUuids =
+      data.recommendedVendorListingUuids ?? draft.recommendedVendorListingUuids ?? []
+    await this.assertAvailableListingUuids(recommendedVendorListingUuids)
+
     draft.vendorSearches = data.vendorSearches ?? draft.vendorSearches ?? []
-    draft.recommendedVendors = data.recommendedVendors ?? draft.recommendedVendors ?? []
+    draft.recommendedVendorListingUuids = recommendedVendorListingUuids
     await draft.save()
     logger.info(
       {
         draftUuid: draft.uuid,
         vendorSearchCount: draft.vendorSearches.length,
-        recommendedVendorCount: draft.recommendedVendors.length,
+        recommendedVendorCount: draft.recommendedVendorListingUuids.length,
       },
       'Updated onboarding draft recommendations'
     )
     return draft
   }
 
-  public static async updateSelection(token: string, selectedCandidateIds: string[]) {
-    if (selectedCandidateIds.length < 1 || selectedCandidateIds.length > 8) {
+  public static async updateSelection(token: string, selectedVendorListingUuids: string[]) {
+    if (selectedVendorListingUuids.length < 1 || selectedVendorListingUuids.length > 8) {
       logger.warn(
-        { selectedCandidateCount: selectedCandidateIds.length },
+        { selectedVendorCount: selectedVendorListingUuids.length },
         'Rejected onboarding vendor selection count'
       )
       throw new OnboardingDraftError('Select between 1 and 8 vendors')
     }
 
-    const uniqueCandidateIds = new Set(selectedCandidateIds)
-    if (uniqueCandidateIds.size !== selectedCandidateIds.length) {
+    if (!selectedVendorListingUuids.every(isUuidV4)) {
+      throw new OnboardingDraftError('Selected vendor IDs must be UUID v4 values')
+    }
+
+    const uniqueVendorListingUuids = new Set(selectedVendorListingUuids)
+    if (uniqueVendorListingUuids.size !== selectedVendorListingUuids.length) {
       logger.warn(
-        { selectedCandidateCount: selectedCandidateIds.length },
+        { selectedVendorCount: selectedVendorListingUuids.length },
         'Rejected duplicate onboarding vendor selections'
       )
       throw new OnboardingDraftError('Selected vendor IDs must be unique')
     }
 
     const draft = await this.getActiveDraftOrFail(token)
-    const recommendedVendors = Array.isArray(draft.recommendedVendors)
-      ? draft.recommendedVendors
-      : []
-    const candidatesById = new Map<string, unknown>()
-
-    for (const candidate of recommendedVendors) {
-      const candidateId = getCandidateId(candidate)
-      if (candidateId) {
-        candidatesById.set(candidateId, candidate)
-      }
+    const recommendedSet = new Set(draft.recommendedVendorListingUuids ?? [])
+    if (selectedVendorListingUuids.some((uuid) => !recommendedSet.has(uuid))) {
+      logger.warn({ draftUuid: draft.uuid }, 'Rejected unknown onboarding vendor selection')
+      throw new OnboardingDraftError('Selected vendor does not exist in this draft')
     }
 
-    const selectedVendors = selectedCandidateIds.map((candidateId) => {
-      const candidate = candidatesById.get(candidateId)
-
-      if (!candidate) {
-        logger.warn({ draftUuid: draft.uuid }, 'Rejected unknown onboarding vendor selection')
-        throw new OnboardingDraftError('Selected vendor does not exist in this draft')
-      }
-
-      if (!hasEmail(candidate)) {
-        logger.warn({ draftUuid: draft.uuid }, 'Rejected onboarding vendor selection without email')
-        throw new OnboardingDraftError('Selected vendors must have email addresses')
-      }
-
-      return candidate
-    })
-
-    draft.selectedVendors = selectedVendors
+    await this.assertAvailableListingUuids(selectedVendorListingUuids)
+    draft.selectedVendorListingUuids = selectedVendorListingUuids
     await draft.save()
     logger.info(
-      { draftUuid: draft.uuid, selectedVendorCount: draft.selectedVendors.length },
+      { draftUuid: draft.uuid, selectedVendorCount: draft.selectedVendorListingUuids.length },
       'Updated onboarding draft vendor selection'
     )
     return draft
@@ -344,6 +305,28 @@ export default class OnboardingDraftService {
   private static assertUuidV4(value: string, message: string) {
     if (!isUuidV4(value)) {
       throw new OnboardingDraftError(message)
+    }
+  }
+
+  private static async assertAvailableListingUuids(vendorListingUuids: string[]) {
+    if (vendorListingUuids.length === 0) return
+    if (!vendorListingUuids.every(isUuidV4)) {
+      throw new OnboardingDraftError('Vendor listing IDs must be UUID v4 values')
+    }
+
+    const uniqueUuids = [...new Set(vendorListingUuids)]
+    if (uniqueUuids.length !== vendorListingUuids.length) {
+      throw new OnboardingDraftError('Vendor listing IDs must be unique')
+    }
+
+    const availableCount = await VendorListing.query()
+      .whereIn('uuid', uniqueUuids)
+      .where('is_active', true)
+      .whereNull('superseded_by_vendor_listing_uuid')
+      .count('* as total')
+
+    if (Number(availableCount[0]?.$extras.total ?? 0) !== uniqueUuids.length) {
+      throw new OnboardingDraftError('One or more vendor listings are unavailable')
     }
   }
 

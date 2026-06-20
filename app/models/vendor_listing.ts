@@ -39,7 +39,7 @@ export default class VendorListing extends BaseModel {
   declare name: string
 
   @column()
-  declare email: string
+  declare email: string | null
 
   @column()
   declare originator: VendorListingOriginator
@@ -65,6 +65,9 @@ export default class VendorListing extends BaseModel {
   @column({ columnName: 'source_payload' })
   declare sourcePayload: unknown | null
 
+  @column({ columnName: 'owner_user_uuid' })
+  declare ownerUserUuid: string | null
+
   @column({ columnName: 'claimed_by_user_uuid' })
   declare claimedByUserUuid: string | null
 
@@ -73,6 +76,9 @@ export default class VendorListing extends BaseModel {
 
   @column({ columnName: 'claim_status' })
   declare claimStatus: VendorListingClaimStatus
+
+  @column({ columnName: 'superseded_by_vendor_listing_uuid' })
+  declare supersededByVendorListingUuid: string | null
 
   @column({ columnName: 'is_active' })
   declare isActive: boolean

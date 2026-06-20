@@ -11,7 +11,10 @@ export const restoreOnboardingDraftValidator = vine.compile(
 export const vendorSelectionValidator = vine.compile(
   vine.object({
     onboardingToken: onboardingToken(),
-    selectedCandidateIds: vine.array(vine.string().trim().minLength(1)).minLength(1).maxLength(8),
+    selectedVendorListingUuids: vine
+      .array(vine.string().uuid({ version: [4] }))
+      .minLength(1)
+      .maxLength(8),
   })
 )
 

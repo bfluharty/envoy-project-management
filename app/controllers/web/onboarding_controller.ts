@@ -6,8 +6,8 @@ import OnboardingDraftService, {
 } from '#services/onboarding_draft_service'
 import OnboardingVendorDiscoveryService, {
   VendorDiscoveryDependencyError,
-  stripVendorSourcePayloads,
 } from '#services/onboarding_vendor_discovery_service'
+import VendorService from '#services/vendor_service'
 import UserRoleService from '#services/user_role_service'
 import {
   registrationHandoffValidator,
@@ -16,51 +16,44 @@ import {
   vendorSelectionValidator,
 } from '#validators/onboarding_validator'
 
-function getCandidateId(candidate: unknown): string | null {
-  if (!candidate || typeof candidate !== 'object') {
-    return null
-  }
-
-  const candidateId = (candidate as { candidateId?: unknown }).candidateId
-  return typeof candidateId === 'string' && candidateId.trim() ? candidateId.trim() : null
-}
-
-function getSelectedCandidateIds(selectedVendors: unknown[]) {
-  return selectedVendors.map((vendor) => getCandidateId(vendor)).filter((id): id is string => !!id)
-}
-
-function getDraftStep(draft: { recommendedVendors: unknown[]; selectedVendors: unknown[] }) {
-  if (draft.selectedVendors.length > 0) {
+function getDraftStep(draft: {
+  recommendedVendorListingUuids: string[]
+  selectedVendorListingUuids: string[]
+}) {
+  if (draft.selectedVendorListingUuids.length > 0) {
     return 'selection'
   }
 
-  if (draft.recommendedVendors.length > 0) {
+  if (draft.recommendedVendorListingUuids.length > 0) {
     return 'recommendations'
   }
 
   return 'intake'
 }
 
-function serializeDraft(draft: {
+async function serializeDraft(draft: {
   uuid: string
   projectDescription: string
   postalCode: string
   vendorSearches: unknown[]
-  recommendedVendors: unknown[]
-  selectedVendors: unknown[]
+  recommendedVendorListingUuids: string[]
+  selectedVendorListingUuids: string[]
   expiresAt: { toISO(): string | null }
 }) {
-  const selectedVendors = Array.isArray(draft.selectedVendors) ? draft.selectedVendors : []
-  const recommendedVendors = Array.isArray(draft.recommendedVendors) ? draft.recommendedVendors : []
+  const recommendedVendorListingUuids = draft.recommendedVendorListingUuids ?? []
+  const selectedVendorListingUuids = draft.selectedVendorListingUuids ?? []
+  const recommendedListings = await VendorService.getListingsByUuidsPreservingOrder(
+    recommendedVendorListingUuids
+  )
 
   return {
     draftUuid: draft.uuid,
     projectDescription: draft.projectDescription,
     postalCode: draft.postalCode,
     vendorSearches: Array.isArray(draft.vendorSearches) ? draft.vendorSearches : [],
-    vendors: stripVendorSourcePayloads(recommendedVendors),
-    selectedCandidateIds: getSelectedCandidateIds(selectedVendors),
-    step: getDraftStep({ recommendedVendors, selectedVendors }),
+    vendors: recommendedListings.map((listing) => VendorService.toPublicRecommendation(listing)),
+    selectedVendorListingUuids,
+    step: getDraftStep({ recommendedVendorListingUuids, selectedVendorListingUuids }),
     expiresAt: draft.expiresAt.toISO(),
   }
 }
@@ -93,13 +86,13 @@ export default class OnboardingController {
       return response.notFound({ error: 'Onboarding draft not found' })
     }
 
-    const serializedDraft = serializeDraft(draft)
+    const serializedDraft = await serializeDraft(draft)
     logger.info(
       {
         draftUuid: serializedDraft.draftUuid,
         step: serializedDraft.step,
         vendorCount: serializedDraft.vendors.length,
-        selectedVendorCount: serializedDraft.selectedCandidateIds.length,
+        selectedVendorCount: serializedDraft.selectedVendorListingUuids.length,
       },
       'Restored onboarding draft'
     )
@@ -154,22 +147,22 @@ export default class OnboardingController {
   }
 
   async updateSelection({ request, response }: HttpContext) {
-    const { onboardingToken, selectedCandidateIds } =
+    const { onboardingToken, selectedVendorListingUuids } =
       await request.validateUsing(vendorSelectionValidator)
 
     try {
       const draft = await OnboardingDraftService.updateSelection(
         onboardingToken,
-        selectedCandidateIds
+        selectedVendorListingUuids
       )
 
       logger.info(
-        { selectedVendorCount: draft.selectedVendors.length },
+        { selectedVendorCount: draft.selectedVendorListingUuids.length },
         'Updated onboarding vendor selection'
       )
 
       return response.ok({
-        selectedCount: draft.selectedVendors.length,
+        selectedCount: draft.selectedVendorListingUuids.length,
         expiresAt: draft.expiresAt.toISO(),
       })
     } catch (error) {
