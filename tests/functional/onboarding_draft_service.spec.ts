@@ -178,6 +178,7 @@ test.group('OnboardingDraftService', (group) => {
   })
 
   test('cleanup marks expired active drafts and leaves fresh drafts active', async () => {
+    await OnboardingDraftService.markExpiredDrafts()
     const expired = await OnboardingDraftService.createDraft({
       projectDescription: 'I need a roofer for a leak.',
       postalCode: '23224',

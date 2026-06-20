@@ -14,6 +14,13 @@ export const trustedVendorMatchesValidator = vine.compile(
   })
 )
 
+export const authenticatedVendorSearchValidator = vine.compile(
+  vine.object({
+    projectDescription: vine.string().trim().minLength(20).maxLength(2000),
+    postalCode: vine.string().trim().minLength(1).maxLength(64),
+  })
+)
+
 export const requestParamsValidator = vine.compile(
   vine.object({
     uuid: vine.string().uuid(),

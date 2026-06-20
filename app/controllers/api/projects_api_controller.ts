@@ -4,6 +4,7 @@ import ProjectService from '#services/project_service'
 import { ProjectRequest, ReasoningRequest } from '../../../types/request.js'
 import {
   chatProjectValidator,
+  attachVendorListingsValidator,
   createProjectValidator,
   getUserProjectsValidator,
   requestParamsValidator,
@@ -13,8 +14,44 @@ import ReasoningEngineService from '#services/reasoning_engine_service'
 import ReasoningRequestContextService from '#services/reasoning_request_context_service'
 import { isOnlyActivatingRecord, validateUser } from '../../utils/controller_utils.js'
 import ProjectVendor from '#models/project_vendor'
+import ProjectVendorAttachmentService, {
+  ProjectVendorAttachmentError,
+} from '#services/project_vendor_attachment_service'
+import UserRoleService from '#services/user_role_service'
 
 export default class ProjectsAPIController {
+  async attachVendors({ request, response }: HttpContext) {
+    const userId = request.header('x-user-id') || ''
+    try {
+      const user = await validateUser(userId)
+      if (!user || !(await UserRoleService.isConsumer(user))) {
+        return response.status(403).json({ error: 'User is not authorized' })
+      }
+    } catch (error) {
+      return response.status(401).json({ error: error.message })
+    }
+
+    const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
+    const { vendorListingUuids } = await request.validateUsing(attachVendorListingsValidator)
+
+    try {
+      const result = await ProjectVendorAttachmentService.attachListings(
+        userId,
+        projectUuid,
+        vendorListingUuids
+      )
+      return response.status(200).json(result)
+    } catch (error) {
+      if (error instanceof ProjectVendorAttachmentError) {
+        return response.status(error.statusCode).json({
+          error: error.message,
+          unavailableVendorListingUuids: error.unavailableVendorListingUuids,
+        })
+      }
+      throw error
+    }
+  }
+
   /**
    * Display all user projects
    */

@@ -1,4 +1,5 @@
 import { DateTime } from 'luxon'
+import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import VendorListing, { type VendorListingLocation } from '#models/vendor_listing'
 import Vendor from '#models/vendor'
 import { VendorRequest } from '../../types/request.js'
@@ -30,6 +31,11 @@ export type PublicVendorRecommendation = {
   onboardedToEnvoy: boolean
   consumerOwned: boolean
   ownershipWarning: string | null
+}
+
+export type AuthenticatedVendorRecommendation = PublicVendorRecommendation & {
+  inContacts: boolean
+  vendorUuid: string | null
 }
 
 export class VendorAuthorizationError extends Error {
@@ -111,6 +117,17 @@ export default class VendorService {
     }
   }
 
+  public static toAuthenticatedRecommendation(
+    listing: VendorListing,
+    mapping?: Vendor | null
+  ): AuthenticatedVendorRecommendation {
+    return {
+      ...this.toPublicRecommendation(listing),
+      inContacts: !!mapping?.isActive,
+      vendorUuid: mapping?.isActive ? mapping.uuid : null,
+    }
+  }
+
   /** Listings in the user's contact library. A mapping does not imply edit authority. */
   public static async getUserVendors(userUuid: string, limit?: number, offset?: number) {
     return VendorListing.query()
@@ -133,6 +150,20 @@ export default class VendorService {
       .first()
   }
 
+  public static async getUserVendorMappingsByListingUuids(
+    userUuid: string,
+    vendorListingUuids: string[]
+  ) {
+    if (vendorListingUuids.length === 0) return new Map<string, Vendor>()
+
+    const mappings = await Vendor.query()
+      .where('user_uuid', userUuid)
+      .where('is_active', true)
+      .whereIn('vendor_listing_uuid', [...new Set(vendorListingUuids)])
+
+    return new Map(mappings.map((mapping) => [mapping.vendorListingUuid, mapping]))
+  }
+
   public static async getAvailableVendorListings(limit?: number, offset?: number) {
     return VendorListing.query()
       .where('is_active', true)
@@ -143,12 +174,16 @@ export default class VendorService {
       .offset(offset ?? this.DEFAULT_VENDOR_OFFSET)
   }
 
-  public static async getAvailableVendorListingByUuid(vendorListingUuid: string) {
-    return VendorListing.query()
+  public static async getAvailableVendorListingByUuid(
+    vendorListingUuid: string,
+    trx?: TransactionClientContract
+  ) {
+    const query = VendorListing.query()
       .where('uuid', vendorListingUuid)
       .where('is_active', true)
       .whereNull('superseded_by_vendor_listing_uuid')
-      .first()
+    if (trx) query.useTransaction(trx)
+    return query.first()
   }
 
   public static async getListingsByUuidsPreservingOrder(vendorListingUuids: string[]) {
@@ -258,17 +293,23 @@ export default class VendorService {
     return listing
   }
 
-  public static async ensureUserVendorMapping(userUuid: string, vendorListingUuid: string) {
-    const listing = await this.getAvailableVendorListingByUuid(vendorListingUuid)
+  public static async ensureUserVendorMapping(
+    userUuid: string,
+    vendorListingUuid: string,
+    trx?: TransactionClientContract
+  ) {
+    const listing = await this.getAvailableVendorListingByUuid(vendorListingUuid, trx)
     if (!listing) return null
 
-    const existing = await Vendor.query()
+    const existingQuery = Vendor.query()
       .where('user_uuid', userUuid)
       .where('vendor_listing_uuid', vendorListingUuid)
-      .first()
+    if (trx) existingQuery.useTransaction(trx)
+    const existing = await existingQuery.first()
 
     if (existing) {
       if (!existing.isActive) {
+        if (trx) existing.useTransaction(trx)
         existing.isActive = true
         existing.modifiedBy = userUuid
         await existing.save()
@@ -276,12 +317,15 @@ export default class VendorService {
       return existing
     }
 
-    return Vendor.create({
-      userUuid,
-      vendorListingUuid,
-      isActive: true,
-      modifiedBy: userUuid,
-    })
+    return Vendor.create(
+      {
+        userUuid,
+        vendorListingUuid,
+        isActive: true,
+        modifiedBy: userUuid,
+      },
+      trx ? { client: trx } : undefined
+    )
   }
 
   public static async insertOrReuseSearchListing(candidate: SearchVendorCandidate) {
@@ -317,9 +361,10 @@ export default class VendorService {
 
   public static async adoptOwnerlessNoEmailSearchListing(
     userUuid: string,
-    vendorListingUuid: string
+    vendorListingUuid: string,
+    trx?: TransactionClientContract
   ) {
-    await VendorListing.query()
+    const updateQuery = VendorListing.query()
       .where('uuid', vendorListingUuid)
       .where('originator', 'SEARCH')
       .where('is_active', true)
@@ -327,18 +372,29 @@ export default class VendorService {
       .whereNull('owner_user_uuid')
       .whereNull('superseded_by_vendor_listing_uuid')
       .whereNot('claim_status', 'CLAIMED')
-      .update({ ownerUserUuid: userUuid, modifiedBy: userUuid })
+    if (trx) updateQuery.useTransaction(trx)
+    await updateQuery.update({ ownerUserUuid: userUuid, modifiedBy: userUuid })
 
-    return this.resolveCanonicalListing(vendorListingUuid)
+    return this.resolveCanonicalListing(vendorListingUuid, trx)
   }
 
-  public static async resolveCanonicalListing(vendorListingUuid: string) {
+  public static async resolveCanonicalListing(
+    vendorListingUuid: string,
+    trx?: TransactionClientContract,
+    lockForUpdate = false
+  ) {
     let currentUuid: string | null = vendorListingUuid
     const visited = new Set<string>()
 
     while (currentUuid && !visited.has(currentUuid)) {
       visited.add(currentUuid)
-      const listing: VendorListing | null = await VendorListing.findBy('uuid', currentUuid)
+      const query: ReturnType<typeof VendorListing.query> = VendorListing.query().where(
+        'uuid',
+        currentUuid
+      )
+      if (trx) query.useTransaction(trx)
+      if (lockForUpdate) query.forUpdate()
+      const listing = (await query.first()) as VendorListing | null
       if (!listing) return null
       if (!listing.supersededByVendorListingUuid) return listing
       currentUuid = listing.supersededByVendorListingUuid

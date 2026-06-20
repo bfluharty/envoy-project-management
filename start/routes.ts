@@ -159,6 +159,8 @@ router
 
         router.patch('/:uuid', [ProjectsAPIController, 'update'])
 
+        router.post('/:uuid/vendors', [ProjectsAPIController, 'attachVendors'])
+
         router.post('/:uuid/chat', [ProjectsAPIController, 'chat'])
       })
       .prefix('/projects')
@@ -175,6 +177,8 @@ router
         router.get('/available', [VendorsAPIController, 'getAvailable'])
 
         router.get('/trusted-matches', [VendorsAPIController, 'getTrustedMatches'])
+
+        router.post('/search', [VendorsAPIController, 'search'])
 
         router.post('/:uuid/select', [VendorsAPIController, 'selectAvailable'])
 

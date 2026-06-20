@@ -14,6 +14,15 @@ export const requestParamsValidator = vine.compile(
   })
 )
 
+export const attachVendorListingsValidator = vine.compile(
+  vine.object({
+    vendorListingUuids: vine
+      .array(vine.string().uuid({ version: [4] }))
+      .minLength(1)
+      .maxLength(8),
+  })
+)
+
 export const createProjectValidator = vine.compile(
   vine.object({
     title: vine.string().trim().minLength(1),

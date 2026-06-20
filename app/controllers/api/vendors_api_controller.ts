@@ -1,17 +1,59 @@
 import logger from '@adonisjs/core/services/logger'
 import type { HttpContext } from '@adonisjs/core/http'
 import VendorService, { VendorAuthorizationError } from '#services/vendor_service'
+import VendorDiscoveryService, {
+  VendorDiscoveryDependencyError,
+} from '#services/vendor_discovery_service'
 import { VendorRequest } from '../../../types/request.js'
 import {
   createVendorValidator,
   requestParamsValidator,
   updateVendorValidator,
   trustedVendorMatchesValidator,
+  authenticatedVendorSearchValidator,
 } from '#validators/vendors_validator'
 import { getVendorsValidator } from '#validators/vendors_validator'
 import { isOnlyActivatingRecord, validateUser } from '../../utils/controller_utils.js'
+import UserRoleService from '#services/user_role_service'
 
 export default class VendorsAPIController {
+  async search({ request, response }: HttpContext) {
+    const userId = request.header('x-user-id') || ''
+    try {
+      const user = await validateUser(userId)
+      if (!user || !(await UserRoleService.isConsumer(user))) {
+        return response.status(403).json({ error: 'User is not authorized' })
+      }
+    } catch (error) {
+      return response.status(401).json({ error: error.message })
+    }
+
+    const input = await request.validateUsing(authenticatedVendorSearchValidator)
+    try {
+      const discovery = await VendorDiscoveryService.discover(input, {
+        userUuid: userId,
+        discoveryContext: 'authenticated-consumer',
+      })
+      const mappings = await VendorService.getUserVendorMappingsByListingUuids(
+        userId,
+        discovery.listings.map((listing) => listing.uuid)
+      )
+
+      return response.status(200).json({
+        vendorSearches: discovery.vendorSearches,
+        vendors: discovery.listings.map((listing) =>
+          VendorService.toAuthenticatedRecommendation(listing, mappings.get(listing.uuid))
+        ),
+        emptyStateReason: discovery.emptyStateReason,
+      })
+    } catch (error) {
+      if (error instanceof VendorDiscoveryDependencyError) {
+        return response.status(502).json({ error: error.message, retryable: true })
+      }
+      throw error
+    }
+  }
+
   async getAvailable({ request, response }: HttpContext) {
     const userId = request.header('x-user-id') || ''
     if (!(await validateUser(userId))) {
@@ -48,15 +90,20 @@ export default class VendorsAPIController {
     }
 
     const { uuid: vendorListingUuid } = await requestParamsValidator.validate(request.params())
-    const mapping = await VendorService.ensureUserVendorMapping(userId, vendorListingUuid)
+    const listing = await VendorService.resolveCanonicalListing(vendorListingUuid)
+    if (!listing?.isActive) {
+      return response.status(404).json({ error: 'Vendor listing is unavailable' })
+    }
+
+    const mapping = await VendorService.ensureUserVendorMapping(userId, listing.uuid)
     if (!mapping) {
       return response.status(404).json({ error: 'Vendor listing is unavailable' })
     }
 
-    const listing = await VendorService.getAvailableVendorListingByUuid(vendorListingUuid)
     return response.status(200).json({
       vendorUuid: mapping.uuid,
-      listing: listing ? VendorService.toPublicRecommendation(listing) : null,
+      savedToContacts: true,
+      listing: VendorService.toAuthenticatedRecommendation(listing, mapping),
     })
   }
 

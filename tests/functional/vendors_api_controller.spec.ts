@@ -64,12 +64,28 @@ test.group('vendor availability API', (group) => {
       .post(`/api/vendors/${listing.uuid}/select`)
       .header('x-user-id', consumer.uuid)
     selectResponse.assertStatus(200)
+    assert.equal(selectResponse.body().savedToContacts, true)
+    assert.equal(selectResponse.body().listing.inContacts, true)
     assert.equal(selectResponse.body().listing.vendorListingUuid, listing.uuid)
     assert.ok(
       await Vendor.query()
         .where('user_uuid', consumer.uuid)
         .where('vendor_listing_uuid', listing.uuid)
         .first()
+    )
+
+    const repeatedSelectResponse = await client
+      .post(`/api/vendors/${listing.uuid}/select`)
+      .header('x-user-id', consumer.uuid)
+    repeatedSelectResponse.assertStatus(200)
+    assert.equal(repeatedSelectResponse.body().vendorUuid, selectResponse.body().vendorUuid)
+    assert.equal(
+      await Vendor.query()
+        .where('user_uuid', consumer.uuid)
+        .where('vendor_listing_uuid', listing.uuid)
+        .count('* as total')
+        .then((rows) => Number(rows[0].$extras.total)),
+      1
     )
 
     const editResponse = await client
