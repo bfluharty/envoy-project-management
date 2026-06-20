@@ -14,6 +14,10 @@ type FoursquarePlacesClient = {
   ): Promise<{ data: PlaceSearchResponse200 | { results?: unknown[] } | unknown[] }>
 }
 
+type VendorPlaceSearchMetadata = PlaceSearchMetadataParam & {
+  fsq_category_ids?: string
+}
+
 export default class VendorSearchService {
   private static client: FoursquarePlacesClient | null = null
 
@@ -47,7 +51,11 @@ export default class VendorSearchService {
     return this.client
   }
 
-  public static async searchPlaces(query: string, postalCode: string) {
+  public static async searchPlaces(
+    query: string,
+    postalCode: string,
+    fsqCategoryIds: string[] = []
+  ) {
     const client = await this.getClient()
     const apiKey = env.get('FOURSQUARE_PLACES_API_KEY', '')
     if (!apiKey) {
@@ -55,21 +63,27 @@ export default class VendorSearchService {
     }
 
     logger.info(
-      { query, postalCode, limit: DEFAULT_LIMIT },
+      { query, postalCode, limit: DEFAULT_LIMIT, fsqCategoryIdCount: fsqCategoryIds.length },
       'Searching Foursquare Places for vendor candidates'
     )
     client.auth(apiKey)
 
     let response
     try {
-      response = await client.placeSearch({
+      const metadata: VendorPlaceSearchMetadata = {
         query,
         'near': postalCode,
         'tel_format': TEL_FORMAT,
         'sort': SORT,
         'limit': DEFAULT_LIMIT,
         'X-Places-Api-Version': FOURSQUARE_API_VERSION,
-      })
+      }
+
+      if (fsqCategoryIds.length > 0) {
+        metadata.fsq_category_ids = fsqCategoryIds.join(',')
+      }
+
+      response = await client.placeSearch(metadata)
     } catch (error) {
       logger.error({ err: error, query, postalCode }, 'Foursquare Place Search request failed')
       throw error

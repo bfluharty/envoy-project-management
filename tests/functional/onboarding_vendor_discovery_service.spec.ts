@@ -37,23 +37,34 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
   }
 
   function stubFoursquare(
-    handler: (query: string, postalCode: string, limit: number) => Promise<unknown[]> | unknown[]
+    handler: (
+      query: string,
+      postalCode: string,
+      fsqCategoryIds: string[]
+    ) => Promise<unknown[]> | unknown[]
   ) {
     const original = VendorSearchService.searchPlaces
     restores.push(() => {
       VendorSearchService.searchPlaces = original
     })
 
-    VendorSearchService.searchPlaces = (async (query: string, postalCode: string, limit = 50) =>
-      handler(query, postalCode, limit)) as typeof VendorSearchService.searchPlaces
+    VendorSearchService.searchPlaces = (async (
+      query: string,
+      postalCode: string,
+      fsqCategoryIds: string[] = []
+    ) => handler(query, postalCode, fsqCategoryIds)) as typeof VendorSearchService.searchPlaces
   }
 
   test('validates reasoning searches by dropping duplicates and capping at four', () => {
     const searches = validateVendorSearches({
       vendorSearches: [
         { classification: 'Painter', query: 'commercial painter' },
+        {
+          classification: 'Electrician',
+          query: 'commercial electrician',
+          fsqCategoryIds: ['electrician-category-id', 'lighting-category-id'],
+        },
         { classification: 'Painter duplicate', query: 'Commercial, painter!' },
-        { classification: 'Electrician', query: 'commercial electrician' },
         { classification: '', query: 'ignored' },
         { classification: 'Plumber', query: 'commercial plumber' },
         { classification: 'HVAC', query: 'commercial hvac' },
@@ -65,6 +76,10 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
       searches.map((search) => search.query),
       ['commercial painter', 'commercial electrician', 'commercial plumber', 'commercial hvac']
     )
+    assert.deepEqual(searches[1].fsqCategoryIds, [
+      'electrician-category-id',
+      'lighting-category-id',
+    ])
   })
 
   test('normalizes names for weak matching', () => {
@@ -116,19 +131,23 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
       modifiedBy: 'test',
     })
 
-    const calls: Array<{ query: string; postalCode: string; limit: number }> = []
+    const calls: Array<{ query: string; postalCode: string; fsqCategoryIds: string[] }> = []
     stubReasoning({
       vendorSearches: [
         { classification: 'Painter', query: 'commercial painter' },
         { classification: 'Painter duplicate', query: 'commercial painter!' },
-        { classification: 'Electrician', query: 'commercial electrician' },
+        {
+          classification: 'Electrician',
+          query: 'commercial electrician',
+          fsqCategoryIds: ['electrician-category-id', 'lighting-category-id'],
+        },
         { classification: 'Plumber', query: 'commercial plumber' },
         { classification: 'HVAC', query: 'commercial hvac' },
         { classification: 'Extra', query: 'commercial extra' },
       ],
     })
-    stubFoursquare((query, postalCode, limit) => {
-      calls.push({ query, postalCode, limit })
+    stubFoursquare((query, postalCode, fsqCategoryIds) => {
+      calls.push({ query, postalCode, fsqCategoryIds })
 
       if (query === 'commercial painter') {
         return [
@@ -206,9 +225,11 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
       ['commercial painter', 'commercial electrician', 'commercial plumber', 'commercial hvac']
     )
     assert.equal(
-      calls.every((call) => call.postalCode === '23220' && call.limit === 50),
+      calls.every((call) => call.postalCode === '23220'),
       true
     )
+    assert.deepEqual(calls[1].fsqCategoryIds, ['electrician-category-id', 'lighting-category-id'])
+    assert.deepEqual(calls[0].fsqCategoryIds, [])
     assert.deepEqual(
       response.vendors.map((vendor) => vendor.email),
       ['shared@example.com', existingEmail, 'hvac@example.com']

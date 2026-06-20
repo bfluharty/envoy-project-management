@@ -14,6 +14,7 @@ export const NO_EMAIL_READY_VENDORS = 'NO_EMAIL_READY_VENDORS'
 export type VendorDiscoverySearch = {
   classification: string
   query: string
+  fsqCategoryIds?: string[]
   rationale?: string
 }
 
@@ -80,6 +81,18 @@ function normalizePhone(value: unknown) {
 
 function normalizeEmail(value: unknown) {
   return firstString(value)?.toLowerCase() ?? null
+}
+
+function normalizeCategoryIds(value: unknown) {
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+
+  const categoryIds = value
+    .map((item) => firstString(item))
+    .filter((item): item is string => !!item)
+
+  return categoryIds.length > 0 ? [...new Set(categoryIds)] : undefined
 }
 
 function normalizeDate(value: unknown) {
@@ -212,10 +225,12 @@ export function validateVendorSearches(reasoningOutput: unknown): VendorDiscover
       continue
     }
 
+    const fsqCategoryIds = normalizeCategoryIds(record.fsqCategoryIds)
     seenQueries.add(normalizedQuery)
     searches.push({
       classification,
       query,
+      ...(fsqCategoryIds ? { fsqCategoryIds } : {}),
       rationale: firstString(record.rationale) ?? undefined,
     })
 
@@ -436,6 +451,7 @@ export default class OnboardingVendorDiscoveryService {
           vendorSearches: vendorSearches.map((vendorSearch) => ({
             classification: vendorSearch.classification,
             query: vendorSearch.query,
+            fsqCategoryIdCount: vendorSearch.fsqCategoryIds?.length ?? 0,
           })),
         },
         'Reasoning vendor search details'
@@ -467,10 +483,15 @@ export default class OnboardingVendorDiscoveryService {
             draftUuid: draft.uuid,
             classification: vendorSearch.classification,
             query: vendorSearch.query,
+            fsqCategoryIdCount: vendorSearch.fsqCategoryIds?.length ?? 0,
           },
           'Searching Foursquare for vendor classification'
         )
-        const places = await VendorSearchService.searchPlaces(vendorSearch.query, input.postalCode)
+        const places = await VendorSearchService.searchPlaces(
+          vendorSearch.query,
+          input.postalCode,
+          vendorSearch.fsqCategoryIds
+        )
         completedSearchCount += 1
         rawPlaceCount += places.length
         let searchEligibleCandidateCount = 0
