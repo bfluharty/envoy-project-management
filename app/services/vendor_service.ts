@@ -6,6 +6,7 @@ import { VendorRequest } from '../../types/request.js'
 import {
   normalizeVendorListingEmail,
   normalizeVendorListingName,
+  normalizeUsPostalCode,
 } from '#utils/vendor_listing_utils'
 
 const SEARCH_MODIFIED_BY = 'system:vendor-search'
@@ -15,6 +16,7 @@ export type SearchVendorCandidate = {
   name: string
   email: string | null
   categories: string[]
+  fsqCategoryIds?: string[]
   phoneNumber: string | null
   website: string | null
   dateRefreshed: string | null
@@ -174,6 +176,49 @@ export default class VendorService {
       .offset(offset ?? this.DEFAULT_VENDOR_OFFSET)
   }
 
+  public static async getRelevantVendorListings(
+    postalCodes: string[],
+    fsqCategoryIds: string[],
+    limit = 8
+  ) {
+    if (postalCodes.length === 0 || fsqCategoryIds.length === 0 || limit <= 0) return []
+
+    const nearbyPostalCodes = new Set(postalCodes)
+    const postalCodeRank = new Map(postalCodes.map((postalCode, index) => [postalCode, index]))
+    const requestedCategoryIds = new Set(fsqCategoryIds)
+    const listings = await VendorListing.query()
+      .where('is_active', true)
+      .whereNull('superseded_by_vendor_listing_uuid')
+      .whereRaw('fsq_category_ids && ?::text[]', [fsqCategoryIds])
+      .whereRaw("LEFT(TRIM(location->>'postcode'), 5) = ANY(?::text[])", [postalCodes])
+
+    return listings
+      .filter((listing) => {
+        const postcode = normalizeUsPostalCode(listing.location?.postcode)
+        return !!postcode && nearbyPostalCodes.has(postcode)
+      })
+      .sort((left, right) => {
+        const claimDelta =
+          Number(right.claimStatus === 'CLAIMED') - Number(left.claimStatus === 'CLAIMED')
+        if (claimDelta !== 0) return claimDelta
+
+        const categoryDelta =
+          right.fsqCategoryIds.filter((categoryId) => requestedCategoryIds.has(categoryId)).length -
+          left.fsqCategoryIds.filter((categoryId) => requestedCategoryIds.has(categoryId)).length
+        if (categoryDelta !== 0) return categoryDelta
+
+        const leftPostcode = normalizeUsPostalCode(left.location?.postcode)!
+        const rightPostcode = normalizeUsPostalCode(right.location?.postcode)!
+        const distanceDelta =
+          (postalCodeRank.get(leftPostcode) ?? Number.MAX_SAFE_INTEGER) -
+          (postalCodeRank.get(rightPostcode) ?? Number.MAX_SAFE_INTEGER)
+        if (distanceDelta !== 0) return distanceDelta
+
+        return left.name.localeCompare(right.name)
+      })
+      .slice(0, limit)
+  }
+
   public static async getAvailableVendorListingByUuid(
     vendorListingUuid: string,
     trx?: TransactionClientContract
@@ -330,7 +375,16 @@ export default class VendorService {
 
   public static async insertOrReuseSearchListing(candidate: SearchVendorCandidate) {
     const existing = await this.findExistingSearchListing(candidate)
-    if (existing) return existing
+    if (existing) {
+      const mergedCategoryIds = [
+        ...new Set([...(existing.fsqCategoryIds ?? []), ...(candidate.fsqCategoryIds ?? [])]),
+      ]
+      if (mergedCategoryIds.length !== (existing.fsqCategoryIds?.length ?? 0)) {
+        existing.fsqCategoryIds = mergedCategoryIds
+        await existing.save()
+      }
+      return existing
+    }
 
     try {
       return await VendorListing.create({
@@ -339,6 +393,7 @@ export default class VendorService {
         originator: 'SEARCH',
         fsqPlaceId: candidate.fsqPlaceId,
         categories: candidate.categories,
+        fsqCategoryIds: candidate.fsqCategoryIds ?? [],
         phoneNumber: candidate.phoneNumber,
         website: candidate.website,
         dateRefreshed: candidate.dateRefreshed ? DateTime.fromISO(candidate.dateRefreshed) : null,

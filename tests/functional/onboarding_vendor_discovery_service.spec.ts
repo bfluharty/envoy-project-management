@@ -86,7 +86,7 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
     assert.equal(normalizeVendorName('Acme Incorporated'), 'acme')
   })
 
-  test('normalizes Foursquare places and filters category labels to human-readable values', () => {
+  test('normalizes Foursquare category labels and IDs', () => {
     const candidate = normalizeFoursquarePlace(
       {
         fsq_place_id: 'fsq-1',
@@ -95,7 +95,11 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
         tel: '+18045550199',
         website: 'https://richmondbuild.example',
         date_refreshed: '2026-05-20T00:00:00Z',
-        categories: [{ name: 'Commercial Contractor' }, { short_name: 'Construction' }],
+        categories: [
+          { fsq_category_id: 'contractor-id', name: 'Commercial Contractor' },
+          { fsq_category_id: 'construction-id', short_name: 'Construction' },
+          { fsq_category_id: 'construction-id', name: 'Duplicate Construction' },
+        ],
         location: {
           address: '456 Broad St',
           locality: 'Richmond',
@@ -111,13 +115,19 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
     assert.ok(candidate)
     assert.equal(candidate.fsqPlaceId, 'fsq-1')
     assert.equal(candidate.email, 'hello@example.com')
-    assert.deepEqual(candidate.categories, ['Commercial Contractor', 'Construction'])
+    assert.deepEqual(candidate.categories, [
+      'Commercial Contractor',
+      'Construction',
+      'Duplicate Construction',
+    ])
+    assert.deepEqual(candidate.fsqCategoryIds, ['contractor-id', 'construction-id'])
     assert.equal(candidate.dateRefreshed, '2026-05-20')
   })
 
   test('creates draft, searches Foursquare, dedupes, ranks, matches listings, and persists recommendations', async () => {
     const existingFsqPlaceId = `existing-fsq-${uuidv4()}`
     const existingEmail = `existing-${uuidv4()}@example.com`
+    const noEmailFsqPlaceId = `no-email-${uuidv4()}`
 
     await VendorListing.create({
       name: 'Existing Electric',
@@ -161,10 +171,10 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
             location: { postcode: '23220' },
           },
           {
-            fsq_place_id: 'no-email',
+            fsq_place_id: noEmailFsqPlaceId,
             name: 'No Email Vendor',
             date_refreshed: '2026-09-01',
-            categories: [{ name: 'Ignored' }],
+            categories: [{ fsq_category_id: 'ignored-category-id', name: 'Ignored' }],
             location: { postcode: '23220' },
           },
         ]
@@ -235,7 +245,7 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
       response.vendors.map((vendor) => vendor.hasEmail),
       [true, true, true, false]
     )
-    assert.equal(response.vendors[0].name, 'Shared Co Updated')
+    assert.equal(response.vendors[0].name, 'Existing Electric')
     assert.equal(response.vendors[3].name, 'No Email Vendor')
     assert.equal('email' in response.vendors[0], false)
     assert.equal('sourcePayload' in response.vendors[0], false)
@@ -248,15 +258,16 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
       true
     )
 
-    const noEmailListing = await VendorListing.findByOrFail('fsqPlaceId', 'no-email')
+    const noEmailListing = await VendorListing.findByOrFail('fsqPlaceId', noEmailFsqPlaceId)
     assert.equal(noEmailListing.email, null)
     assert.equal(noEmailListing.ownerUserUuid, null)
     assert.equal(noEmailListing.originator, 'SEARCH')
+    assert.deepEqual(noEmailListing.fsqCategoryIds, ['ignored-category-id'])
     assert.deepEqual(noEmailListing.sourcePayload, {
-      fsq_place_id: 'no-email',
+      fsq_place_id: noEmailFsqPlaceId,
       name: 'No Email Vendor',
       date_refreshed: '2026-09-01',
-      categories: [{ name: 'Ignored' }],
+      categories: [{ fsq_category_id: 'ignored-category-id', name: 'Ignored' }],
       location: { postcode: '23220' },
     })
 
@@ -323,6 +334,130 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
         .count('* as total')
         .then((rows) => Number(rows[0].$extras.total)),
       10
+    )
+  })
+
+  test('uses five relevant nearby listings without calling Foursquare', async () => {
+    const categoryId = `internal-category-${uuidv4()}`
+    await VendorListing.createMany([
+      ...['23220', '23173', '23219', '23221', '23222'].map((postcode, index) => ({
+        name: `Internal Vendor ${index}`,
+        email: `internal-${index}@example.com`,
+        originator: (index === 4 ? 'VENDOR' : 'SEARCH') as 'VENDOR' | 'SEARCH',
+        categories: ['Internal Category'],
+        fsqCategoryIds: [categoryId],
+        location: { postcode },
+        claimStatus: (index === 4 ? 'CLAIMED' : 'UNCLAIMED') as 'CLAIMED' | 'UNCLAIMED',
+        isActive: true,
+      })),
+      {
+        name: 'Distant Internal Vendor',
+        email: 'distant@example.com',
+        originator: 'SEARCH' as const,
+        categories: ['Internal Category'],
+        fsqCategoryIds: [categoryId],
+        location: { postcode: '90210' },
+        claimStatus: 'UNCLAIMED' as const,
+        isActive: true,
+      },
+      {
+        name: 'Wrong Category Vendor',
+        email: 'wrong-category@example.com',
+        originator: 'SEARCH' as const,
+        categories: ['Wrong Category'],
+        fsqCategoryIds: [`wrong-${categoryId}`],
+        location: { postcode: '23220' },
+        claimStatus: 'UNCLAIMED' as const,
+        isActive: true,
+      },
+    ])
+
+    stubReasoning({
+      vendorSearches: [
+        {
+          classification: 'Internal Category',
+          query: 'internal category',
+          fsqCategoryIds: [categoryId],
+        },
+      ],
+    })
+    let foursquareCallCount = 0
+    stubFoursquare(() => {
+      foursquareCallCount += 1
+      return []
+    })
+
+    const response = await OnboardingVendorDiscoveryService.search({
+      projectDescription: 'I need an internal category vendor for this project.',
+      postalCode: '23220',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    assert.equal(foursquareCallCount, 0)
+    assert.equal(response.vendors.length, 5)
+    assert.equal(response.vendors[0].name, 'Internal Vendor 4')
+    assert.equal(response.vendors[0].onboardedToEnvoy, true)
+    assert.equal(
+      response.vendors.some((vendor) => vendor.name === 'Distant Internal Vendor'),
+      false
+    )
+    assert.equal(
+      response.vendors.some((vendor) => vendor.name === 'Wrong Category Vendor'),
+      false
+    )
+  })
+
+  test('supplements fewer than five internal listings to eight with Foursquare', async () => {
+    const categoryId = `supplement-category-${uuidv4()}`
+    await VendorListing.createMany(
+      ['Claimed Internal', 'Unclaimed Internal A', 'Unclaimed Internal B'].map((name, index) => ({
+        name,
+        email: `supplement-internal-${index}@example.com`,
+        originator: (index === 0 ? 'VENDOR' : 'SEARCH') as 'VENDOR' | 'SEARCH',
+        categories: ['Supplement Category'],
+        fsqCategoryIds: [categoryId],
+        location: { postcode: '23220' },
+        claimStatus: (index === 0 ? 'CLAIMED' : 'UNCLAIMED') as 'CLAIMED' | 'UNCLAIMED',
+        isActive: true,
+      }))
+    )
+
+    stubReasoning({
+      vendorSearches: [
+        {
+          classification: 'Supplement Category',
+          query: 'supplement category',
+          fsqCategoryIds: [categoryId],
+        },
+      ],
+    })
+    let foursquareCallCount = 0
+    stubFoursquare(() => {
+      foursquareCallCount += 1
+      return Array.from({ length: 8 }, (_, index) => ({
+        fsq_place_id: `supplement-external-${uuidv4()}`,
+        name: `External Vendor ${index}`,
+        email: `supplement-external-${index}@example.com`,
+        categories: [{ fsq_category_id: categoryId, name: 'Supplement Category' }],
+        location: { postcode: '23220' },
+      }))
+    })
+
+    const response = await OnboardingVendorDiscoveryService.search({
+      projectDescription: 'I need a supplement category vendor for this project.',
+      postalCode: '23220',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    assert.equal(foursquareCallCount, 1)
+    assert.equal(response.vendors.length, 8)
+    assert.deepEqual(
+      response.vendors.slice(0, 3).map((vendor) => vendor.name),
+      ['Claimed Internal', 'Unclaimed Internal A', 'Unclaimed Internal B']
+    )
+    assert.equal(
+      response.vendors.slice(3).every((vendor) => vendor.name.startsWith('External Vendor')),
+      true
     )
   })
 

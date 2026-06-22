@@ -77,6 +77,7 @@ export default class extends BaseSeeder {
         originator: 'SEARCH' as const,
         fsqPlaceId: 'seed-build-co',
         categories: ['Commercial Contractor', 'Construction'],
+        fsqCategoryIds: ['63be6904847c3692a84b9b36'],
         phoneNumber: '+18045550199',
         website: 'https://seedbuild.example',
         location: {

@@ -220,13 +220,14 @@ test.group('VendorService ownership and availability', (group) => {
     assert.equal('sourcePayload' in recommendation, false)
   })
 
-  test('reused search listings are not refreshed or overwritten', async () => {
+  test('reused search listings merge category IDs without refreshing other details', async () => {
     const fsqPlaceId = `no-refresh-${uuidv4()}`
     const original = await VendorService.insertOrReuseSearchListing({
       fsqPlaceId,
       name: 'Original Search Name',
       email: 'original@example.com',
       categories: ['Original Category'],
+      fsqCategoryIds: ['original-category-id'],
       phoneNumber: null,
       website: null,
       dateRefreshed: '2026-01-01',
@@ -238,6 +239,7 @@ test.group('VendorService ownership and availability', (group) => {
       name: 'Refreshed Search Name',
       email: 'original@example.com',
       categories: ['Changed Category'],
+      fsqCategoryIds: ['original-category-id', 'new-category-id'],
       phoneNumber: null,
       website: 'https://changed.example',
       dateRefreshed: '2026-06-20',
@@ -249,6 +251,7 @@ test.group('VendorService ownership and availability', (group) => {
     assert.equal(reused.name, 'Original Search Name')
     assert.equal(reused.email, 'original@example.com')
     assert.deepEqual(reused.categories, ['Original Category'])
+    assert.deepEqual(reused.fsqCategoryIds, ['original-category-id', 'new-category-id'])
     assert.deepEqual(reused.sourcePayload, { version: 1 })
   })
 })

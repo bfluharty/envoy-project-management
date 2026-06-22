@@ -50,6 +50,9 @@ export default class VendorListing extends BaseModel {
   @column()
   declare categories: string[]
 
+  @column({ columnName: 'fsq_category_ids' })
+  declare fsqCategoryIds: string[]
+
   @column({ columnName: 'phone_number' })
   declare phoneNumber: string | null
 

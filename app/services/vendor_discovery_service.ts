@@ -4,10 +4,11 @@ import VendorListing, { type VendorListingLocation } from '#models/vendor_listin
 import ReasoningEngineService from '#services/reasoning_engine_service'
 import VendorSearchService from '#services/vendor_search_service'
 import VendorService, { type SearchVendorCandidate } from '#services/vendor_service'
-import { normalizeVendorListingName } from '#utils/vendor_listing_utils'
+import { getPostalCodesWithinRadius, normalizeVendorListingName } from '#utils/vendor_listing_utils'
 
 const MAX_VENDOR_SEARCHES = 4
-const MAX_RECOMMENDATIONS = 8
+const MIN_INTERNAL_RECOMMENDATIONS = 5
+const MAX_RECOMMENDATIONS_PER_CATEGORY = 8
 
 export const NO_VENDOR_RESULTS = 'NO_VENDOR_RESULTS'
 
@@ -25,6 +26,7 @@ export type RankedVendorCandidate = SearchVendorCandidate & {
 type PersistedRankedListing = {
   listing: VendorListing
   relevanceRank: number
+  sourcePriority: number
 }
 
 export type VendorDiscoveryResult = {
@@ -109,6 +111,20 @@ function normalizeCategories(value: unknown) {
   ]
 }
 
+function normalizeFoursquareCategoryIds(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return [
+    ...new Set(
+      value
+        .map((category) => {
+          if (!category || typeof category !== 'object') return null
+          return firstString((category as Record<string, unknown>).fsq_category_id)
+        })
+        .filter((categoryId): categoryId is string => !!categoryId)
+    ),
+  ]
+}
+
 export function normalizeFoursquarePlace(
   place: unknown,
   relevanceRank: number
@@ -124,6 +140,7 @@ export function normalizeFoursquarePlace(
     name,
     email: firstString(record.email)?.toLowerCase() ?? null,
     categories: normalizeCategories(record.categories),
+    fsqCategoryIds: normalizeFoursquareCategoryIds(record.categories),
     phoneNumber: firstString(record.tel),
     website: firstString(record.website),
     dateRefreshed: normalizeDate(record.date_refreshed),
@@ -220,7 +237,16 @@ export function dedupeCandidates(candidates: RankedVendorCandidate[]) {
   for (const candidate of candidates) {
     const existingIndex = deduped.findIndex((existing) => sameCandidate(existing, candidate))
     if (existingIndex === -1) deduped.push(candidate)
-    else deduped[existingIndex] = preferCandidate(deduped[existingIndex], candidate)
+    else {
+      const existing = deduped[existingIndex]
+      const preferred = preferCandidate(existing, candidate)
+      deduped[existingIndex] = {
+        ...preferred,
+        fsqCategoryIds: [
+          ...new Set([...(existing.fsqCategoryIds ?? []), ...(candidate.fsqCategoryIds ?? [])]),
+        ],
+      }
+    }
   }
   return deduped
 }
@@ -229,12 +255,26 @@ export function rankPersistedListings(candidates: PersistedRankedListing[]) {
   const byUuid = new Map<string, PersistedRankedListing>()
   for (const candidate of candidates) {
     const existing = byUuid.get(candidate.listing.uuid)
-    if (!existing || candidate.relevanceRank < existing.relevanceRank) {
+    if (
+      !existing ||
+      candidate.sourcePriority < existing.sourcePriority ||
+      (candidate.sourcePriority === existing.sourcePriority &&
+        candidate.relevanceRank < existing.relevanceRank)
+    ) {
       byUuid.set(candidate.listing.uuid, candidate)
     }
   }
 
   return [...byUuid.values()].sort((left, right) => {
+    const claimDelta =
+      Number(right.listing.claimStatus === 'CLAIMED') -
+      Number(left.listing.claimStatus === 'CLAIMED')
+    if (claimDelta !== 0) return claimDelta
+
+    if (left.sourcePriority !== right.sourcePriority) {
+      return left.sourcePriority - right.sourcePriority
+    }
+
     const emailDelta = Number(!!right.listing.email) - Number(!!left.listing.email)
     if (emailDelta !== 0) return emailDelta
 
@@ -254,7 +294,7 @@ async function persistCandidates(candidates: RankedVendorCandidate[]) {
   const persisted: PersistedRankedListing[] = []
   for (const candidate of dedupeCandidates(candidates)) {
     const listing = await VendorService.insertOrReuseSearchListing(candidate)
-    persisted.push({ listing, relevanceRank: candidate.relevanceRank })
+    persisted.push({ listing, relevanceRank: candidate.relevanceRank, sourcePriority: 1 })
   }
   return persisted
 }
@@ -277,41 +317,74 @@ export default class VendorDiscoveryService {
       throw new VendorDiscoveryDependencyError('Reasoning engine vendor discovery failed')
     }
 
+    const nearbyPostalCodes = getPostalCodesWithinRadius(input.postalCode)
     let relevanceRank = 0
-    const normalizedCandidates: RankedVendorCandidate[] = []
+    const recommendationCandidates: PersistedRankedListing[] = []
     let rawPlaceCount = 0
     let invalidPlaceCount = 0
     let noEmailPlaceCount = 0
+    let internalListingCount = 0
+    let foursquareSearchCount = 0
+    let persistedListingCount = 0
 
-    try {
-      for (const vendorSearch of vendorSearches) {
-        const places = await VendorSearchService.searchPlaces(
+    for (const vendorSearch of vendorSearches) {
+      const internalListings = await VendorService.getRelevantVendorListings(
+        nearbyPostalCodes,
+        vendorSearch.fsqCategoryIds ?? [],
+        MAX_RECOMMENDATIONS_PER_CATEGORY
+      )
+      internalListingCount += internalListings.length
+      const internalCandidates = internalListings.map((listing, index) => ({
+        listing,
+        relevanceRank: index,
+        sourcePriority: 0,
+      }))
+
+      if (internalListings.length >= MIN_INTERNAL_RECOMMENDATIONS) {
+        recommendationCandidates.push(...internalCandidates)
+        continue
+      }
+
+      foursquareSearchCount += 1
+      let places: unknown[]
+      try {
+        places = await VendorSearchService.searchPlaces(
           vendorSearch.query,
           input.postalCode,
           vendorSearch.fsqCategoryIds
         )
-        rawPlaceCount += places.length
-
-        for (const place of places) {
-          const candidate = normalizeFoursquarePlace(place, relevanceRank++)
-          if (!candidate) {
-            invalidPlaceCount += 1
-            continue
-          }
-          if (!candidate.email) noEmailPlaceCount += 1
-          normalizedCandidates.push(candidate)
-        }
+      } catch (error) {
+        logger.error(
+          { err: error, rawPlaceCount, ...logContext },
+          'Foursquare vendor discovery failed'
+        )
+        throw new VendorDiscoveryDependencyError('Foursquare vendor search failed')
       }
-    } catch (error) {
-      logger.error(
-        { err: error, rawPlaceCount, ...logContext },
-        'Foursquare vendor discovery failed'
+
+      rawPlaceCount += places.length
+      const normalizedCandidates: RankedVendorCandidate[] = []
+
+      for (const place of places) {
+        const candidate = normalizeFoursquarePlace(place, relevanceRank++)
+        if (!candidate) {
+          invalidPlaceCount += 1
+          continue
+        }
+        if (!candidate.email) noEmailPlaceCount += 1
+        normalizedCandidates.push(candidate)
+      }
+
+      const persistedCandidates = await persistCandidates(normalizedCandidates)
+      persistedListingCount += persistedCandidates.length
+      recommendationCandidates.push(
+        ...rankPersistedListings([...internalCandidates, ...persistedCandidates]).slice(
+          0,
+          MAX_RECOMMENDATIONS_PER_CATEGORY
+        )
       )
-      throw new VendorDiscoveryDependencyError('Foursquare vendor search failed')
     }
 
-    const persistedCandidates = await persistCandidates(normalizedCandidates)
-    const recommendations = rankPersistedListings(persistedCandidates).slice(0, MAX_RECOMMENDATIONS)
+    const recommendations = rankPersistedListings(recommendationCandidates)
     const listings = recommendations.map(({ listing }) => listing)
 
     logger.info(
@@ -322,7 +395,9 @@ export default class VendorDiscoveryService {
         rawPlaceCount,
         invalidPlaceCount,
         noEmailPlaceCount,
-        persistedListingCount: persistedCandidates.length,
+        internalListingCount,
+        foursquareSearchCount,
+        persistedListingCount,
         recommendationCount: listings.length,
         ...logContext,
       },
