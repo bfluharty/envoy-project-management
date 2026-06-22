@@ -54,7 +54,7 @@ test.group('onboarding draft routes', (group) => {
     try {
       const invalidResponse = await client
         .post('/onboarding/vendor-search')
-        .json({ projectDescription: 'too short', postalCode: '23220' })
+        .json({ projectDescription: 'no', postalCode: '23220' })
 
       invalidResponse.assertStatus(422)
 
