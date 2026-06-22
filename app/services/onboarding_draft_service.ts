@@ -122,6 +122,30 @@ export default class OnboardingDraftService {
       .first()
   }
 
+  public static async getLatestConsumedDraftByUserUuid(userUuid: string) {
+    if (!isUuidV4(userUuid)) {
+      return null
+    }
+
+    return AnonymousOnboardingDraft.query()
+      .where('registered_user_uuid', userUuid)
+      .where('status', 'CONSUMED')
+      .orderBy('updated_timestamp', 'desc')
+      .first()
+  }
+
+  public static async getExpiredDraftByUserUuid(userUuid: string) {
+    if (!isUuidV4(userUuid)) {
+      return null
+    }
+
+    return AnonymousOnboardingDraft.query()
+      .where('registered_user_uuid', userUuid)
+      .where('status', 'EXPIRED')
+      .orderBy('updated_timestamp', 'desc')
+      .first()
+  }
+
   public static async updateRecommendations(token: string, data: RecommendationUpdateInput) {
     const draft = await this.getActiveDraftOrFail(token)
     const recommendedVendorListingUuids =

@@ -23,8 +23,8 @@ export const attachVendorListingsValidator = vine.compile(
   })
 )
 
-export const createProjectValidator = vine.compile(
-  vine.object({
+function projectFields() {
+  return {
     title: vine.string().trim().minLength(1),
     description: vine.string().optional(),
     location: vine.object({}).allowUnknownProperties().optional(),
@@ -52,10 +52,18 @@ export const createProjectValidator = vine.compile(
     budgetAmount: vine.number().min(0).optional(),
     budgetCurrency: vine.string().optional(),
     goals: vine.string().optional(),
+  }
+}
+
+export const createProjectValidator = vine.compile(
+  vine.object({
+    ...projectFields(),
     isActive: vine.boolean().optional(),
     vendors: vine.array(vine.string().uuid()).optional(),
   })
 )
+
+export const completeOnboardingProjectValidator = vine.compile(vine.object(projectFields()))
 
 export const updateProjectValidator = vine.compile(
   vine.object({

@@ -23,6 +23,7 @@ const DashboardController = () => import('#controllers/web/dashboard_controller'
 const InboxController = () => import('#controllers/web/inbox_controller')
 const AccountController = () => import('#controllers/web/account_controller')
 const OnboardingController = () => import('#controllers/web/onboarding_controller')
+const OnboardingProjectController = () => import('#controllers/web/onboarding_project_controller')
 const VendorOnboardingController = () => import('#controllers/web/vendor_onboarding_controller')
 
 // Public landing page (no auth required)
@@ -53,6 +54,14 @@ router.post('/onboarding/draft/restore', [OnboardingController, 'restoreDraft'])
 router.post('/onboarding/vendor-search', [OnboardingController, 'searchVendors'])
 router.patch('/onboarding/vendor-selection', [OnboardingController, 'updateSelection'])
 router.post('/onboarding/registration-handoff', [OnboardingController, 'registrationHandoff'])
+router
+  .get('/onboarding/project', [OnboardingProjectController, 'show'])
+  .as('onboarding.project.show')
+  .middleware(middleware.auth())
+router
+  .post('/onboarding/project', [OnboardingProjectController, 'store'])
+  .as('onboarding.project.store')
+  .middleware(middleware.auth())
 
 // Auth routes (guest only)
 router

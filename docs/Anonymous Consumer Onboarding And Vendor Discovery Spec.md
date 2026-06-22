@@ -237,11 +237,13 @@ Project-management creates anonymous onboarding draft
   |
   v
 Project-management calls reasoning-engine
+  - send the project blurb only
   - infer up to four vendor search classifications
   - produce Foursquare search queries
   |
   v
 Project-management calls Foursquare through vendor_search_service
+  - use the intake ZIP code as the Foursquare `near` value
   |
   v
 Project-management inserts or reuses vendor_listings for every normalized result
@@ -341,7 +343,7 @@ Selection behavior:
 
 Reasoning-engine:
 
-- Receives project blurb and ZIP code.
+- Receives the project blurb only. ZIP/postal code is intentionally excluded from the reasoning contract.
 - Infers up to four vendor search classifications.
 - Produces Foursquare search queries for those classifications.
 - Returns structured JSON only.
@@ -350,7 +352,7 @@ Project-management:
 
 - Owns anonymous draft persistence.
 - Calls reasoning-engine for classification/query generation.
-- Calls Foursquare through `vendor_search_service`.
+- Calls Foursquare through `vendor_search_service`, using the intake ZIP/postal code as location context.
 - Normalizes Foursquare results into vendor candidates.
 - Inserts or reuses `vendor_listings` for every normalized search result.
 - Stores recommended and selected vendor listing UUIDs on the draft instead of vendor payloads.
