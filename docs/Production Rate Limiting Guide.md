@@ -52,6 +52,8 @@ The current API admin/testing model stays intact. Routes that use `x-user-id` st
 
 For stronger IP attribution, configure CloudFront to forward the generated `CloudFront-Viewer-Address` header to the origin. The application already prefers that header when present.
 
+The prod ALB security group allows origin HTTPS traffic from AWS's managed `com.amazonaws.global.cloudfront.origin-facing` prefix list. Direct public ALB access is intentionally blocked; requests should enter through CloudFront and the attached WAF.
+
 ## Tuning Guidance
 
 Keep the WAF limits higher than the application limits. WAF is a coarse abuse shield keyed by IP; the application quotas understand users, projects, anonymous sessions, and daily windows.
@@ -60,7 +62,7 @@ Increase limits if legitimate customers hit `429` during normal workflows. Decre
 
 The Postgres table stores one row per bucket and fixed window. Add a scheduled cleanup job if table growth becomes visible, for example deleting rows with `updated_timestamp < NOW() - INTERVAL '7 days'`.
 
-The current ALB security group still allows direct internet ingress. For the next infrastructure hardening pass, restrict the ALB origin to CloudFront origin-facing traffic, or require a CloudFront-only origin verification header at the ALB listener. That prevents attackers from bypassing the CloudFront WAF by calling the ALB DNS name directly.
+If future stacks add additional ALB origins, apply the same CloudFront-origin restriction there before relying on WAF enforcement.
 
 ## Not Included Yet
 
