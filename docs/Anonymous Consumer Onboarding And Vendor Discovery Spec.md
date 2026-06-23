@@ -4,7 +4,7 @@
 
 Envoy currently routes public visitors to a simple landing page with login and registration calls to action. After registration or login, users land on the dashboard and can create a project through the existing project creation flow.
 
-This feature changes the first-time consumer experience into a guided project intake and vendor discovery flow. Anonymous consumers describe their project, provide a ZIP code, review recommended vendors returned from Foursquare, select vendors they like, register, complete the first project details, and then review automatically drafted vendor outreach messages.
+This feature changes the first-time consumer experience into a guided project intake and vendor discovery flow. Anonymous consumers describe their project, provide a ZIP code, review recommended vendors returned from Foursquare, select vendors they like, register, complete the first project details, and then continue into the project's default Convo experience.
 
 The same public entry point also gives vendors a clear "For pros" path into registration. Vendor onboarding and business verification are intentionally split into a later phase, but the data model should be prepared for future claimed listings.
 
@@ -72,15 +72,15 @@ Relevant current behavior:
 2. Let anonymous consumers describe a project and enter a ZIP code.
 3. Use the reasoning-engine to infer up to four relevant vendor search classifications and Foursquare search queries.
 4. Use project-management to call Foursquare through the existing vendor search service.
-5. Show top Foursquare vendor results with email addresses, prioritized by data freshness.
-6. Persist the anonymous project blurb, ZIP code, inferred vendor searches, Foursquare results, and selected vendors for 24 hours.
+5. Show up to eight Foursquare vendor results, prioritizing vendors with email while retaining high-ranking vendors without email when needed to fill the result set.
+6. Persist every normalized Foursquare result as a global `vendor_listing`, then store recommended and selected listing UUIDs on the anonymous draft for 24 hours.
 7. Let consumers register and auto-login.
 8. After registration, send onboarding users directly to a first-project completion screen with project details prefilled.
 9. Create the project only after the user finishes the details form.
-10. Convert selected Foursquare search results into `vendor_listings` with `originator = 'SEARCH'`.
-11. Attach selected vendors to the project.
-12. Automatically create initial outreach drafts for selected vendors.
-13. Send the user to a review surface for those drafts immediately after project creation.
+10. Preserve listing origin and enforce claim-aware, single-owner edit authorization.
+11. Attach selected vendors to the project, assigning consumer ownership only when an ownerless search listing without email is first added to a project.
+12. Route the user to the created project's default Convo page.
+13. Let the established project conversation gather more project context before any later outreach drafting workflow.
 14. Add a vendor registration path, role, and placeholder verification status without building full vendor verification in MVP.
 
 ---
@@ -98,6 +98,8 @@ The MVP does not include:
 - Long-lived anonymous accounts.
 - Creating project records before registration is complete.
 - Storing vendor-discovery data as project insights.
+- Automatically refreshing Foursquare-originated listing data after its initial insertion.
+- Automatically creating outreach drafts immediately after onboarding project creation.
 - Anonymous rate limiting inside the application beyond existing WAF controls.
 
 ---
@@ -191,29 +193,32 @@ When the anonymous user clicks the registration CTA, the frontend may submit the
 
 Before any third-party OAuth/social sign-up redirect, the frontend must call the same server-side handoff endpoint to bind the onboarding token to the anonymous/auth session. OAuth callbacks must read the token from the server session and associate the draft to the authenticated user before redirecting.
 
-### 5.6 Search-Originated Listings And Future Claims
+### 5.6 Vendor Listing Availability, Ownership, And Claims
 
-Foursquare-sourced vendors should become `vendor_listings` with:
+Every normalized Foursquare result is inserted or matched to a global `vendor_listing` during discovery, before the user selects vendors. Listing `originator` is immutable provenance and remains one of `CONSUMER`, `SEARCH`, or `VENDOR`.
 
-```text
-originator = 'SEARCH'
-```
+All active, non-superseded listings are available for any consumer to add to a project. Availability does not grant edit permission.
 
-when selected vendors are used to create the first project.
+Edit authority is:
 
-`vendor_listings` should be prepared for future vendor claims by storing:
+- A listing is "onboarded to Envoy" only when `claim_status = 'CLAIMED'`.
+- A claimed listing is controlled exclusively by its claiming vendor.
+- An unclaimed `CONSUMER` listing is controlled exclusively by the consumer recorded as its owner.
+- An unclaimed `SEARCH` listing with email is ownerless and cannot be edited by consumers.
+- An unclaimed `SEARCH` listing without email starts ownerless. The first consumer who adds it to a project becomes its owner and may edit it until a vendor claims it. Its `originator` remains `SEARCH`.
+- No automatic Foursquare refresh overwrites listing data after insertion.
 
-- `fsq_place_id`
-- `claimed_by_user_uuid`
-- `claimed_at`
-- `claim_status` constrained to `UNCLAIMED`, `PENDING_CLAIM`, `CLAIMED`, or `CONFLICT`
+Consumer-owned listings must display a clear risk indicator in recommendation and selection UI because the business has not been verified by the vendor.
+
+Manual consumer vendor creation does not force deduplication. When a likely existing listing is vendor-originated or `CLAIMED`, Envoy should offer it as an alternative; the consumer may select it or proceed with creating a separate consumer-owned listing.
 
 Future claiming flow:
 
 1. Vendor verifies business ownership.
-2. Envoy matches by `fsq_place_id` first.
-3. Envoy falls back to email, domain, or phone if needed.
-4. Conflicts are blocked for manual resolution later.
+2. Envoy matches by `fsq_place_id` first, then email, domain, or phone.
+3. The claimed listing becomes canonical and exclusively vendor-controlled.
+4. Matching consumer-controlled duplicates are marked superseded by the canonical claimed listing while existing project references remain valid or are migrated transactionally.
+5. Conflicts are blocked for manual resolution later.
 
 ---
 
@@ -232,25 +237,32 @@ Project-management creates anonymous onboarding draft
   |
   v
 Project-management calls reasoning-engine
+  - send the project blurb only
   - infer up to four vendor search classifications
   - produce Foursquare search queries
   |
   v
 Project-management calls Foursquare through vendor_search_service
+  - use the intake ZIP code as the Foursquare `near` value
+  |
+  v
+Project-management inserts or reuses vendor_listings for every normalized result
+  - draft stores recommended vendor listing UUIDs only
   |
   v
 Top recommendation list
-  - Foursquare results without email are excluded
-  - remaining Foursquare results sorted by date_refreshed desc, then Foursquare relevance
-  - existing Envoy listings matched/deduped where possible
-  - if no email-ready results remain, show a no-vendors-found state with guidance to revise the project description or ZIP code
+  - up to eight results
+  - results with email first, then results without email
+  - each email group sorted by date_refreshed desc, then Foursquare relevance
+  - "Onboarded to Envoy" only when claim_status = CLAIMED
+  - consumer-owned listings show an unverified ownership warning
   |
   v
 Consumer selects vendors
   - max 8 vendors
   |
   v
-Draft is updated with selected vendors
+Draft is updated with selected vendor listing UUIDs
   |
   v
 Consumer registers and is auto-logged in
@@ -269,13 +281,12 @@ Consumer submits final project details
   v
 Project-management:
   - creates project
-  - creates or reuses vendor_listings
   - creates user vendor mappings
   - creates project_vendor rows
-  - creates outreach drafts for selected vendors
+  - assigns ownership when an ownerless, email-less SEARCH listing is first added
   |
   v
-Project page Outreach review
+Project page default Convo experience
 ```
 
 ---
@@ -310,7 +321,8 @@ Results state should show:
 
 - Vendor name
 - Location/address
-- Onboarded to Envoy flag when an existing Envoy listing is matched
+- Onboarded to Envoy flag only when `claim_status = 'CLAIMED'`
+- Consumer-owned/unverified warning when an unclaimed listing has a consumer owner
 - Categories returned by Foursquare
 
 The UI should not display email, phone number, website, `date_refreshed`, or raw Foursquare/source metadata in the recommendation list. Those fields should still be stored when available for dedupe, project creation, and outreach.
@@ -318,10 +330,10 @@ The UI should not display email, phone number, website, `date_refreshed`, or raw
 Selection behavior:
 
 - Consumer can select one to eight vendors.
-- Selected vendors persist to the anonymous onboarding draft.
+- Selected vendor listing UUIDs persist to the anonymous onboarding draft.
 - Continue action sends the user to registration.
 - Continue action must not put the onboarding token in the registration URL.
-- Results without email are excluded from the recommendation list for MVP.
+- Results without email remain selectable and appear after results with email.
 
 ---
 
@@ -331,7 +343,7 @@ Selection behavior:
 
 Reasoning-engine:
 
-- Receives project blurb and ZIP code.
+- Receives the project blurb only. ZIP/postal code is intentionally excluded from the reasoning contract.
 - Infers up to four vendor search classifications.
 - Produces Foursquare search queries for those classifications.
 - Returns structured JSON only.
@@ -340,11 +352,12 @@ Project-management:
 
 - Owns anonymous draft persistence.
 - Calls reasoning-engine for classification/query generation.
-- Calls Foursquare through `vendor_search_service`.
+- Calls Foursquare through `vendor_search_service`, using the intake ZIP/postal code as location context.
 - Normalizes Foursquare results into vendor candidates.
-- Merges and dedupes against existing `vendor_listings` where possible.
-- Persists selected vendor candidates to the draft.
-- Creates project, vendor listings, vendor mappings, project-vendor mappings, and outreach drafts after registration.
+- Inserts or reuses `vendor_listings` for every normalized search result.
+- Stores recommended and selected vendor listing UUIDs on the draft instead of vendor payloads.
+- Creates the project, user vendor mappings, and project-vendor mappings after registration.
+- Routes the completed project to its default Convo experience.
 
 ### 8.2 Why Project-Management Calls Foursquare
 
@@ -359,11 +372,14 @@ Project-management should call Foursquare directly because:
 
 ## 9. Vendor Result Priority And Deduplication
 
-Within Foursquare results, eligibility and priority should be:
+Return at most eight recommendations. Priority should be:
 
-1. Exclude results without email.
-2. `date_refreshed` descending.
+1. Results with email before results without email.
+2. Within each email-presence group, `date_refreshed` descending.
 3. Foursquare relevance order.
+4. Name ascending for stable ordering.
+
+For example, if five eligible results have email and five do not, return all five with email followed by the top three without email.
 
 Deduplication:
 
@@ -373,15 +389,17 @@ Deduplication:
 
 `normalized_name` should lowercase, trim, collapse whitespace, remove punctuation, remove leading `the`, and remove common legal suffixes: `llc`, `inc`, `incorporated`, `co`, `company`, `corp`, `ltd`.
 
-Name plus postcode matching is a weak fallback. Use it only when `fsq_place_id`, email, and phone are unavailable. Since email is required for Foursquare candidates, most dedupe should happen by `fsq_place_id`, email, then phone.
+Name plus postcode matching is a weak fallback. Use it only when `fsq_place_id`, email, and phone are unavailable.
 
-If a Foursquare result matches an existing Envoy listing, reuse the existing listing and show the Envoy/onboarded distinction. If multiple candidates refer to the same business, prefer the record with the most complete contact fields and newest `date_refreshed`.
+If a Foursquare result matches an existing Envoy listing, reuse the existing listing without overwriting it. `onboardedToEnvoy` is true only when the reused listing has `claim_status = 'CLAIMED'`. If multiple search candidates refer to the same business before persistence, prefer the record with the most complete contact fields and newest `date_refreshed`.
+
+These dedupe rules apply to search ingestion. Manual consumer-created vendors are not forcibly deduplicated. The manual creation UI may suggest only vendor-originated or claimed listings as trusted alternatives while still allowing a separate consumer-owned listing.
 
 ---
 
 ## 10. Vendor Listing Data Model Direction
 
-`vendor_listings` should store Foursquare search data directly enough that selected search results can become project vendors without a second enrichment provider.
+`vendor_listings` stores every normalized Foursquare result during discovery so recommendations and selections can reference canonical listing UUIDs.
 
 Required additions:
 
@@ -392,6 +410,8 @@ Required additions:
 - `website` as a string
 - `date_refreshed` as a date
 - `location` as a JSON object
+- `owner_user_uuid` for exclusive consumer edit authority while unclaimed
+- `superseded_by_vendor_listing_uuid` for claim-time canonicalization
 
 Location JSON shape:
 
@@ -408,6 +428,8 @@ Location JSON shape:
 
 Foursquare categories are stored as human-readable listing data. No separate vendor type storage strategy is needed for MVP.
 
+`email` must be nullable because search results without email are retained. Search ingestion does not refresh or overwrite an existing listing. Ownership and edit authorization are derived from `claim_status`, `claimed_by_user_uuid`, and `owner_user_uuid`; `originator` remains source provenance.
+
 ---
 
 ## 11. Project Creation Handoff
@@ -420,47 +442,29 @@ The screen should prefill:
 
 - Description from the project blurb.
 - ZIP/location from intake.
-- Selected vendors from recommendations.
+- Selected vendors resolved from the draft's selected vendor listing UUIDs.
 
 The user completes any remaining required project fields according to the current project model and validators.
 
 The project record should be created only after final submission.
 
-Project creation must be idempotent. The draft status transition to `CONSUMED`, project creation, vendor listing creation/reuse, user vendor mappings, and project-vendor mappings must happen in one database transaction. The transaction should lock the active draft row and update it from `ACTIVE` to `CONSUMED` only once.
+Project creation must be idempotent. The draft status transition to `CONSUMED`, project creation, ownership adoption where applicable, user vendor mappings, and project-vendor mappings must happen in one database transaction. The transaction should lock the active draft row and update it from `ACTIVE` to `CONSUMED` only once.
 
-`OnboardingProjectController.store` must have an explicit consumed-draft recovery path. It should first load the active draft by authenticated user UUID. If no active draft is returned, it must query for a `CONSUMED` draft with `registered_user_uuid = auth.user.uuid` and a populated `consumed_project_uuid`. If found, route the user to the outreach-preparing page for that project instead of treating the request as missing or expired. This covers retries and double-submits that arrive after the original transaction has already committed. A double-submit against the same draft must return the already-created project path or a clear already-consumed response; it must not create a second project.
+`OnboardingProjectController.store` must have an explicit consumed-draft recovery path. It should first load the active draft by authenticated user UUID. If no active draft is returned, it must query for a `CONSUMED` draft with `registered_user_uuid = auth.user.uuid` and a populated `consumed_project_uuid`. If found, route the user to the existing project page for that project instead of treating the request as missing or expired. This covers retries and double-submits that arrive after the original transaction has already committed. A double-submit against the same draft must return the already-created project path or a clear already-consumed response; it must not create a second project.
 
 ---
 
-## 12. Outreach Draft Creation
+## 12. Post-Creation Conversation Handoff
 
 After the user submits the first-project completion form:
 
 1. Selected vendors are linked to the project inside the project creation transaction.
-2. The transaction commits the project, vendor links, and consumed draft state.
-3. Envoy routes the user to an authenticated outreach-preparing page for the created project.
-4. The preparing page calls a dedicated outreach preparation endpoint and shows a loading/preparing state while that endpoint runs.
-5. The preparation endpoint creates initial outreach drafts synchronously before responding.
-6. Envoy creates drafts for selected vendors, capped at eight drafts from the selected vendor limit.
-7. Draft creation should use existing outreach infrastructure.
-8. Drafts should not be sent automatically.
-9. After draft preparation completes, Envoy redirects to `/projects/:projectUuid?tab=outreach`.
-10. The user should review, edit, approve, or send drafts from the existing project Outreach experience.
+2. Any selected, ownerless `SEARCH` listing without email is atomically assigned to the creating consumer if it is still ownerless.
+3. The transaction commits the project, vendor links, ownership changes, and consumed draft state.
+4. Envoy routes the user directly to `/projects/:projectUuid`.
+5. The project page opens its established default Convo experience.
 
-Initial onboarding outreach draft creation must be idempotent per project, vendor, and purpose. Retrying project completion, refreshing after timeout, or re-running draft generation must not create duplicate outreach drafts.
-
-Outreach-preparing UI states:
-
-- Preparing outreach drafts...
-- Drafts ready for review.
-- Some drafts could not be generated.
-- No vendors were linked, so no outreach drafts were generated.
-
-If automatic draft generation fails for one vendor:
-
-- Project creation should still succeed.
-- The loading state should finish and route the user to the Outreach tab with the failed draft surfaced as an error or missing draft.
-- Errors should be logged.
+No outreach-preparing page or initial outreach preparation endpoint is part of onboarding. No outreach drafts are automatically created at project completion. The existing project conversation should gather additional project context before a later user- or agent-initiated outreach workflow. Having the agent gather missing vendor contact details is explicitly out of scope for this phase.
 
 ---
 
@@ -491,7 +495,7 @@ Vendor listing management page
 
 Vendor users are blocked until approval.
 
-Once approved, vendors can update most listing fields. Search-originated fields are treated as initial data, not immutable truth.
+Once approved and the listing has `claim_status = 'CLAIMED'`, the claiming vendor exclusively controls the canonical listing. Claiming supersedes consumer edit authority.
 
 ---
 
@@ -504,8 +508,8 @@ Project-management owns:
 - User vendor mappings.
 - Project vendor mappings.
 - Projects.
-- Outreach drafts.
 - Vendor claim fields.
+- Vendor listing ownership and edit authorization.
 - Account roles.
 - Foursquare integration through `vendor_search_service`.
 
@@ -534,7 +538,7 @@ Recommended events:
 - Registration started from onboarding.
 - Registration completed from onboarding.
 - First project created from onboarding.
-- Outreach drafts created from onboarding.
+- Ownerless search listing adopted by a consumer project.
 
 Logs should avoid storing secrets, auth tokens, API keys, or unnecessary browser identifiers.
 
@@ -562,23 +566,21 @@ Draft expiry should be enforced lazily on every draft lookup by requiring `statu
 
 If an authenticated user's associated onboarding draft expires before project completion, do not send the user back to the anonymous intake. Show an authenticated expired-draft state with actions to start a new project from the dashboard or start a fresh vendor search.
 
-### 16.4 No Email-Ready Vendors Found
+### 16.4 No Vendors Found
 
-If Foursquare returns results but all are filtered out because they lack email, show the same no-vendors-found state as an empty search result:
+Vendors without email are valid recommendations and must not trigger an empty state. Show the no-vendors-found state only when no usable Foursquare results or existing listings can be returned:
 
-- Explain that Envoy could not find email-ready vendors for the current description and ZIP code.
+- Explain that Envoy could not find vendors for the current description and ZIP code.
 - Let the user edit the project description or ZIP code and retry.
 - Do not proceed to registration from an empty recommendation list.
 
 ### 16.5 Selected Vendor Becomes Invalid
 
-Skip invalid vendor candidates at project creation and show a partial-success warning.
+Resolve selected listing UUIDs at project creation. Skip missing, inactive, or superseded listings only when they cannot be safely remapped to a canonical listing, and show a partial-success warning. Missing email is not invalid.
 
-### 16.6 Outreach Draft Creation Fails
+### 16.6 Project Conversation Navigation Fails
 
-Keep the project and vendor links.
-
-Finish the loading state and route the user to the Outreach tab with missing or errored draft state.
+Keep the committed project and vendor links. Return the canonical `/projects/:projectUuid` destination so the client can retry navigation without repeating project creation.
 
 ---
 
@@ -608,25 +610,30 @@ Finish the loading state and route the user to the Outreach tab with missing or 
 - Use existing `vendor_search_service` for Foursquare calls.
 - Limit inferred vendor types/classifications to 4.
 - Normalize Foursquare results.
-- Exclude Foursquare results without email.
-- Rank by `date_refreshed`.
-- Merge, rank, and dedupe recommendations.
+- Insert or reuse a `vendor_listing` for every normalized result.
+- Rank email-bearing results first, then results without email.
+- Return at most eight recommendations while retaining no-email results when needed.
+- Store recommended and selected vendor listing UUID arrays on the onboarding draft.
+- Merge, rank, and dedupe search-originated recommendations without forcing dedupe on manual consumer listings.
 
 ### Phase 4: First Project Completion
 
 - Add onboarding project completion screen.
 - Prefill from anonymous draft.
 - Create project after final submit.
-- Create vendor listings and mappings.
+- Create user vendor mappings from selected listing UUIDs.
 - Attach vendors to project.
+- Atomically assign consumer ownership when an ownerless, email-less search listing is first added to a project.
+- Redirect to the project page's default Convo experience.
 
-### Phase 5: Outreach Draft Automation
+### Phase 5: Listing Ownership And Availability
 
-- Route to an authenticated outreach-preparing page after project creation.
-- Have the preparing page call a dedicated synchronous outreach preparation endpoint.
-- Generate outreach drafts idempotently for selected vendors outside the project creation request.
-- Redirect to the Outreach tab after draft preparation finishes.
-- Add tests and partial-failure handling.
+- Make active, non-superseded listings available for any consumer to add to a project.
+- Enforce exclusive consumer-owner edits for unclaimed consumer-controlled listings.
+- Enforce exclusive vendor edits for claimed listings.
+- Keep email-bearing search listings consumer-immutable until claimed.
+- Add consumer-owned/unverified risk indicators.
+- Suggest trusted existing listings during manual consumer creation without forcing deduplication.
 
 ### Phase 6: Vendor Onboarding
 
@@ -648,8 +655,10 @@ The first shippable MVP should include:
 - Anonymous draft persistence for 24 hours.
 - Registration auto-login.
 - First-project completion from draft.
-- Vendor listing creation from selected Foursquare results with `originator = 'SEARCH'`.
+- Vendor listing creation for every normalized Foursquare result with `originator = 'SEARCH'`.
+- UUID-only recommendation and selection references in the onboarding draft.
 - Project-vendor attachment.
-- Automatic outreach drafts for selected vendors.
+- Claim-aware ownership and edit authorization.
+- Default project Convo handoff after project creation.
 
 Vendor onboarding should be prepared in the data model and registration role selection, but full verification and claim management should ship after the consumer path is stable.

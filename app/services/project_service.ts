@@ -6,6 +6,7 @@ import ConversationTurn from '#models/conversation_turn'
 import ProjectVendor from '#models/project_vendor'
 import Vendor from '#models/vendor'
 import Currency from '#models/currency'
+import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
 export default class ProjectService {
   private static readonly DEFAULT_PROJECT_LIMIT = 10
@@ -57,6 +58,15 @@ export default class ProjectService {
     combinedProject.vendors = projectVendors.map((pv) => pv.vendor.toJSON())
 
     return { combinedProject, errors }
+  }
+
+  public static async createProjectInTransaction(
+    userUuid: string,
+    request: ProjectRequest,
+    trx: TransactionClientContract
+  ) {
+    const mappedRequest = await this.mapRequest(request, userUuid, trx)
+    return Project.create(mappedRequest, { client: trx })
   }
 
   public static async updateProject(
@@ -143,10 +153,14 @@ export default class ProjectService {
     })
   }
 
-  private static async mapRequest(request: Partial<ProjectRequest>, userUuid?: string) {
+  private static async mapRequest(
+    request: Partial<ProjectRequest>,
+    userUuid?: string,
+    trx?: TransactionClientContract
+  ) {
     let budgetCurrencyId: number | undefined
     if (request.budgetCurrency) {
-      budgetCurrencyId = await this.resolveCurrencyId(request.budgetCurrency)
+      budgetCurrencyId = await this.resolveCurrencyId(request.budgetCurrency, trx)
     }
 
     return {
@@ -224,11 +238,13 @@ export default class ProjectService {
 
     return []
   }
-  private static async resolveCurrencyId(currencyCode: string): Promise<number> {
-    const currency = await Currency.query()
-      .where('code', currencyCode)
-      .andWhere('is_active', true)
-      .first()
+  private static async resolveCurrencyId(
+    currencyCode: string,
+    trx?: TransactionClientContract
+  ): Promise<number> {
+    const query = Currency.query().where('code', currencyCode).andWhere('is_active', true)
+    if (trx) query.useTransaction(trx)
+    const currency = await query.first()
 
     if (!currency) {
       throw new Error(

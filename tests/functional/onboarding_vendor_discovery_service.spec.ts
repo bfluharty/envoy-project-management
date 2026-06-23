@@ -1,0 +1,500 @@
+import { test } from '@japa/runner'
+import { strict as assert } from 'node:assert'
+import { validate as validateUuid, version as uuidVersion, v4 as uuidv4 } from 'uuid'
+import testUtils from '@adonisjs/core/services/test_utils'
+import AnonymousOnboardingDraft from '#models/anonymous_onboarding_draft'
+import VendorListing from '#models/vendor_listing'
+import OnboardingVendorDiscoveryService, {
+  VendorDiscoveryDependencyError,
+  normalizeFoursquarePlace,
+  normalizeVendorName,
+  validateVendorSearches,
+} from '#services/onboarding_vendor_discovery_service'
+import ReasoningEngineService from '#services/reasoning_engine_service'
+import VendorSearchService from '#services/vendor_search_service'
+
+test.group('OnboardingVendorDiscoveryService', (group) => {
+  const restores: Array<() => void> = []
+
+  group.setup(() => testUtils.db().truncate())
+  group.each.teardown(() => {
+    while (restores.length) {
+      restores.pop()?.()
+    }
+  })
+
+  function stubReasoning(output: unknown | (() => unknown | Promise<unknown>)) {
+    const original = ReasoningEngineService.requestVendorDiscovery
+    restores.push(() => {
+      ReasoningEngineService.requestVendorDiscovery = original
+    })
+
+    ReasoningEngineService.requestVendorDiscovery = (async () =>
+      typeof output === 'function'
+        ? await output()
+        : output) as typeof ReasoningEngineService.requestVendorDiscovery
+  }
+
+  function stubFoursquare(
+    handler: (
+      query: string,
+      postalCode: string,
+      fsqCategoryIds: string[]
+    ) => Promise<unknown[]> | unknown[]
+  ) {
+    const original = VendorSearchService.searchPlaces
+    restores.push(() => {
+      VendorSearchService.searchPlaces = original
+    })
+
+    VendorSearchService.searchPlaces = (async (
+      query: string,
+      postalCode: string,
+      fsqCategoryIds: string[] = []
+    ) => handler(query, postalCode, fsqCategoryIds)) as typeof VendorSearchService.searchPlaces
+  }
+
+  test('validates reasoning searches by dropping duplicates and capping at four', () => {
+    const searches = validateVendorSearches({
+      vendorSearches: [
+        { classification: 'Painter', query: 'commercial painter' },
+        {
+          classification: 'Electrician',
+          query: 'commercial electrician',
+          fsqCategoryIds: ['electrician-category-id', 'lighting-category-id'],
+        },
+        { classification: 'Painter duplicate', query: 'Commercial, painter!' },
+        { classification: '', query: 'ignored' },
+        { classification: 'Plumber', query: 'commercial plumber' },
+        { classification: 'HVAC', query: 'commercial hvac' },
+        { classification: 'Extra', query: 'commercial extra' },
+      ],
+    })
+
+    assert.deepEqual(
+      searches.map((search) => search.query),
+      ['commercial painter', 'commercial electrician', 'commercial plumber', 'commercial hvac']
+    )
+    assert.deepEqual(searches[1].fsqCategoryIds, [
+      'electrician-category-id',
+      'lighting-category-id',
+    ])
+  })
+
+  test('normalizes names for weak matching', () => {
+    assert.equal(normalizeVendorName('The Smith & Sons, LLC'), 'smith sons')
+    assert.equal(normalizeVendorName('Acme Incorporated'), 'acme')
+  })
+
+  test('normalizes Foursquare category labels and IDs', () => {
+    const candidate = normalizeFoursquarePlace(
+      {
+        fsq_place_id: 'fsq-1',
+        name: 'Richmond Build Co.',
+        email: 'HELLO@example.com',
+        tel: '+18045550199',
+        website: 'https://richmondbuild.example',
+        date_refreshed: '2026-05-20T00:00:00Z',
+        categories: [
+          { fsq_category_id: 'contractor-id', name: 'Commercial Contractor' },
+          { fsq_category_id: 'construction-id', short_name: 'Construction' },
+          { fsq_category_id: 'construction-id', name: 'Duplicate Construction' },
+        ],
+        location: {
+          address: '456 Broad St',
+          locality: 'Richmond',
+          region: 'VA',
+          postcode: '23220',
+          country: 'US',
+          formatted_address: '456 Broad St, Richmond, VA 23220',
+        },
+      },
+      3
+    )
+
+    assert.ok(candidate)
+    assert.equal(candidate.fsqPlaceId, 'fsq-1')
+    assert.equal(candidate.email, 'hello@example.com')
+    assert.deepEqual(candidate.categories, [
+      'Commercial Contractor',
+      'Construction',
+      'Duplicate Construction',
+    ])
+    assert.deepEqual(candidate.fsqCategoryIds, ['contractor-id', 'construction-id'])
+    assert.equal(candidate.dateRefreshed, '2026-05-20')
+  })
+
+  test('creates draft, searches Foursquare, dedupes, ranks, matches listings, and persists recommendations', async () => {
+    const existingFsqPlaceId = `existing-fsq-${uuidv4()}`
+    const existingEmail = `existing-${uuidv4()}@example.com`
+    const noEmailFsqPlaceId = `no-email-${uuidv4()}`
+
+    await VendorListing.create({
+      name: 'Existing Electric',
+      email: existingEmail,
+      originator: 'VENDOR',
+      claimStatus: 'CLAIMED',
+      fsqPlaceId: existingFsqPlaceId,
+      phoneNumber: '+18045550222',
+      location: { postcode: '23220' },
+      isActive: true,
+      modifiedBy: 'test',
+    })
+
+    const calls: Array<{ query: string; postalCode: string; fsqCategoryIds: string[] }> = []
+    stubReasoning({
+      vendorSearches: [
+        { classification: 'Painter', query: 'commercial painter' },
+        { classification: 'Painter duplicate', query: 'commercial painter!' },
+        {
+          classification: 'Electrician',
+          query: 'commercial electrician',
+          fsqCategoryIds: ['electrician-category-id', 'lighting-category-id'],
+        },
+        { classification: 'Plumber', query: 'commercial plumber' },
+        { classification: 'HVAC', query: 'commercial hvac' },
+        { classification: 'Extra', query: 'commercial extra' },
+      ],
+    })
+    stubFoursquare((query, postalCode, fsqCategoryIds) => {
+      calls.push({ query, postalCode, fsqCategoryIds })
+
+      if (query === 'commercial painter') {
+        return [
+          {
+            fsq_place_id: 'old-shared',
+            name: 'Shared Co',
+            email: 'shared@example.com',
+            tel: '+18045550111',
+            date_refreshed: '2026-01-01',
+            categories: [{ name: 'Painter' }],
+            location: { postcode: '23220' },
+          },
+          {
+            fsq_place_id: noEmailFsqPlaceId,
+            name: 'No Email Vendor',
+            date_refreshed: '2026-09-01',
+            categories: [{ fsq_category_id: 'ignored-category-id', name: 'Ignored' }],
+            location: { postcode: '23220' },
+          },
+        ]
+      }
+
+      if (query === 'commercial electrician') {
+        return [
+          {
+            fsq_place_id: existingFsqPlaceId,
+            name: 'Existing Electric',
+            email: existingEmail,
+            tel: '+18045550222',
+            date_refreshed: '2026-06-01',
+            categories: [{ name: 'Electrician' }],
+            location: { postcode: '23220' },
+          },
+        ]
+      }
+
+      if (query === 'commercial plumber') {
+        return [
+          {
+            fsq_place_id: 'new-shared',
+            name: 'Shared Co Updated',
+            email: 'shared@example.com',
+            tel: '+18045550333',
+            website: 'https://shared.example',
+            date_refreshed: '2026-07-01',
+            categories: [{ name: 'Plumber' }],
+            location: { postcode: '23220' },
+          },
+        ]
+      }
+
+      return [
+        {
+          fsq_place_id: 'hvac-1',
+          name: 'HVAC One',
+          email: 'hvac@example.com',
+          date_refreshed: '2026-05-01',
+          categories: [{ name: 'HVAC' }],
+          location: { postcode: '23220' },
+        },
+      ]
+    })
+
+    const response = await OnboardingVendorDiscoveryService.search({
+      projectDescription: 'I need a commercial renovation with painting, electrical, and HVAC.',
+      postalCode: '23220',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    assert.equal(validateUuid(response.onboardingToken), true)
+    assert.equal(uuidVersion(response.onboardingToken), 4)
+    assert.equal(response.vendorSearches.length, 4)
+    assert.deepEqual(
+      calls.map((call) => call.query),
+      ['commercial painter', 'commercial electrician', 'commercial plumber', 'commercial hvac']
+    )
+    assert.equal(
+      calls.every((call) => call.postalCode === '23220'),
+      true
+    )
+    assert.deepEqual(calls[1].fsqCategoryIds, ['electrician-category-id', 'lighting-category-id'])
+    assert.deepEqual(calls[0].fsqCategoryIds, [])
+    assert.equal(response.vendors.length, 4)
+    assert.deepEqual(
+      response.vendors.map((vendor) => vendor.hasEmail),
+      [true, true, true, false]
+    )
+    assert.equal(response.vendors[0].name, 'Existing Electric')
+    assert.equal(response.vendors[3].name, 'No Email Vendor')
+    assert.equal('email' in response.vendors[0], false)
+    assert.equal('sourcePayload' in response.vendors[0], false)
+    const existingRecommendation = response.vendors.find(
+      (vendor) => vendor.vendorListingUuid === existingFsqPlaceId
+    )
+    assert.equal(existingRecommendation, undefined)
+    assert.equal(
+      response.vendors.find((vendor) => vendor.name === 'Existing Electric')?.onboardedToEnvoy,
+      true
+    )
+
+    const noEmailListing = await VendorListing.findByOrFail('fsqPlaceId', noEmailFsqPlaceId)
+    assert.equal(noEmailListing.email, null)
+    assert.equal(noEmailListing.ownerUserUuid, null)
+    assert.equal(noEmailListing.originator, 'SEARCH')
+    assert.deepEqual(noEmailListing.fsqCategoryIds, ['ignored-category-id'])
+    assert.deepEqual(noEmailListing.sourcePayload, {
+      fsq_place_id: noEmailFsqPlaceId,
+      name: 'No Email Vendor',
+      date_refreshed: '2026-09-01',
+      categories: [{ fsq_category_id: 'ignored-category-id', name: 'Ignored' }],
+      location: { postcode: '23220' },
+    })
+
+    const draft = await AnonymousOnboardingDraft.findByOrFail('tokenUuid', response.onboardingToken)
+    assert.equal(draft.vendorSearches.length, 4)
+    assert.equal(draft.recommendedVendorListingUuids.length, 4)
+    assert.deepEqual(
+      draft.recommendedVendorListingUuids,
+      response.vendors.map((vendor) => vendor.vendorListingUuid)
+    )
+  })
+
+  test('returns no-email Foursquare results instead of an empty state', async () => {
+    stubReasoning({
+      vendorSearches: [{ classification: 'Painter', query: 'commercial painter' }],
+    })
+    stubFoursquare(() => [
+      {
+        fsq_place_id: 'no-email',
+        name: 'No Email Vendor',
+        date_refreshed: '2026-09-01',
+      },
+    ])
+
+    const response = await OnboardingVendorDiscoveryService.search({
+      projectDescription: 'I need a painter for a commercial office refresh.',
+      postalCode: '23220',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    assert.equal(response.vendors.length, 1)
+    assert.equal(response.vendors[0].name, 'No Email Vendor')
+    assert.equal(response.vendors[0].hasEmail, false)
+    assert.equal(response.emptyStateReason, undefined)
+  })
+
+  test('persists all normalized listings while limiting recommendations to eight', async () => {
+    stubReasoning({
+      vendorSearches: [{ classification: 'Contractor', query: 'commercial contractor' }],
+    })
+    stubFoursquare(() =>
+      Array.from({ length: 10 }, (_, index) => ({
+        fsq_place_id: `cap-${index}`,
+        name: `Vendor ${index}`,
+        email: index < 5 ? `vendor-${index}@example.com` : undefined,
+        date_refreshed: `2026-06-${String(index + 1).padStart(2, '0')}`,
+      }))
+    )
+
+    const response = await OnboardingVendorDiscoveryService.search({
+      projectDescription: 'I need several contractors for a commercial development project.',
+      postalCode: '23220',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    assert.equal(response.vendors.length, 8)
+    assert.deepEqual(
+      response.vendors.slice(0, 5).map((vendor) => vendor.hasEmail),
+      [true, true, true, true, true]
+    )
+    assert.equal(
+      await VendorListing.query()
+        .whereLike('fsq_place_id', 'cap-%')
+        .count('* as total')
+        .then((rows) => Number(rows[0].$extras.total)),
+      10
+    )
+  })
+
+  test('uses five relevant nearby listings without calling Foursquare', async () => {
+    const categoryId = `internal-category-${uuidv4()}`
+    await VendorListing.createMany([
+      ...['23220', '23173', '23219', '23221', '23222'].map((postcode, index) => ({
+        name: `Internal Vendor ${index}`,
+        email: `internal-${index}@example.com`,
+        originator: (index === 4 ? 'VENDOR' : 'SEARCH') as 'VENDOR' | 'SEARCH',
+        categories: ['Internal Category'],
+        fsqCategoryIds: [categoryId],
+        location: { postcode },
+        claimStatus: (index === 4 ? 'CLAIMED' : 'UNCLAIMED') as 'CLAIMED' | 'UNCLAIMED',
+        isActive: true,
+      })),
+      {
+        name: 'Distant Internal Vendor',
+        email: 'distant@example.com',
+        originator: 'SEARCH' as const,
+        categories: ['Internal Category'],
+        fsqCategoryIds: [categoryId],
+        location: { postcode: '90210' },
+        claimStatus: 'UNCLAIMED' as const,
+        isActive: true,
+      },
+      {
+        name: 'Wrong Category Vendor',
+        email: 'wrong-category@example.com',
+        originator: 'SEARCH' as const,
+        categories: ['Wrong Category'],
+        fsqCategoryIds: [`wrong-${categoryId}`],
+        location: { postcode: '23220' },
+        claimStatus: 'UNCLAIMED' as const,
+        isActive: true,
+      },
+    ])
+
+    stubReasoning({
+      vendorSearches: [
+        {
+          classification: 'Internal Category',
+          query: 'internal category',
+          fsqCategoryIds: [categoryId],
+        },
+      ],
+    })
+    let foursquareCallCount = 0
+    stubFoursquare(() => {
+      foursquareCallCount += 1
+      return []
+    })
+
+    const response = await OnboardingVendorDiscoveryService.search({
+      projectDescription: 'I need an internal category vendor for this project.',
+      postalCode: '23220',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    assert.equal(foursquareCallCount, 0)
+    assert.equal(response.vendors.length, 5)
+    assert.equal(response.vendors[0].name, 'Internal Vendor 4')
+    assert.equal(response.vendors[0].onboardedToEnvoy, true)
+    assert.equal(
+      response.vendors.some((vendor) => vendor.name === 'Distant Internal Vendor'),
+      false
+    )
+    assert.equal(
+      response.vendors.some((vendor) => vendor.name === 'Wrong Category Vendor'),
+      false
+    )
+  })
+
+  test('supplements fewer than five internal listings to eight with Foursquare', async () => {
+    const categoryId = `supplement-category-${uuidv4()}`
+    await VendorListing.createMany(
+      ['Claimed Internal', 'Unclaimed Internal A', 'Unclaimed Internal B'].map((name, index) => ({
+        name,
+        email: `supplement-internal-${index}@example.com`,
+        originator: (index === 0 ? 'VENDOR' : 'SEARCH') as 'VENDOR' | 'SEARCH',
+        categories: ['Supplement Category'],
+        fsqCategoryIds: [categoryId],
+        location: { postcode: '23220' },
+        claimStatus: (index === 0 ? 'CLAIMED' : 'UNCLAIMED') as 'CLAIMED' | 'UNCLAIMED',
+        isActive: true,
+      }))
+    )
+
+    stubReasoning({
+      vendorSearches: [
+        {
+          classification: 'Supplement Category',
+          query: 'supplement category',
+          fsqCategoryIds: [categoryId],
+        },
+      ],
+    })
+    let foursquareCallCount = 0
+    stubFoursquare(() => {
+      foursquareCallCount += 1
+      return Array.from({ length: 8 }, (_, index) => ({
+        fsq_place_id: `supplement-external-${uuidv4()}`,
+        name: `External Vendor ${index}`,
+        email: `supplement-external-${index}@example.com`,
+        categories: [{ fsq_category_id: categoryId, name: 'Supplement Category' }],
+        location: { postcode: '23220' },
+      }))
+    })
+
+    const response = await OnboardingVendorDiscoveryService.search({
+      projectDescription: 'I need a supplement category vendor for this project.',
+      postalCode: '23220',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    assert.equal(foursquareCallCount, 1)
+    assert.equal(response.vendors.length, 8)
+    assert.deepEqual(
+      response.vendors.slice(0, 3).map((vendor) => vendor.name),
+      ['Claimed Internal', 'Unclaimed Internal A', 'Unclaimed Internal B']
+    )
+    assert.equal(
+      response.vendors.slice(3).every((vendor) => vendor.name.startsWith('External Vendor')),
+      true
+    )
+  })
+
+  test('wraps reasoning and Foursquare failures as retryable dependency errors', async () => {
+    stubReasoning(() => {
+      throw new Error('reasoning unavailable')
+    })
+
+    await assert.rejects(
+      () =>
+        OnboardingVendorDiscoveryService.search({
+          projectDescription: 'I need a plumber for a commercial kitchen.',
+          postalCode: '23220',
+          anonymousSessionUuid: uuidv4(),
+        }),
+      (error: unknown) =>
+        error instanceof VendorDiscoveryDependencyError &&
+        error.message === 'Reasoning engine vendor discovery failed'
+    )
+
+    stubReasoning({
+      vendorSearches: [{ classification: 'Painter', query: 'commercial painter' }],
+    })
+    stubFoursquare(() => {
+      throw new Error('foursquare unavailable')
+    })
+
+    await assert.rejects(
+      () =>
+        OnboardingVendorDiscoveryService.search({
+          projectDescription: 'I need a painter for a commercial office refresh.',
+          postalCode: '23220',
+          anonymousSessionUuid: uuidv4(),
+        }),
+      (error: unknown) =>
+        error instanceof VendorDiscoveryDependencyError &&
+        error.message === 'Foursquare vendor search failed'
+    )
+  })
+})

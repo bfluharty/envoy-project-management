@@ -15,6 +15,11 @@ import { getGoogleAuthUrl, getGoogleUser } from '#services/google_auth_service'
 import { sendPasswordResetLink } from '#services/password_reset_service'
 import UserInboxConnection from '#models/user_inbox_connection'
 import EntitlementService from '#services/entitlement_service'
+import OnboardingDraftService, {
+  ONBOARDING_TOKEN_SESSION_KEY,
+  OnboardingDraftError,
+  isUuidV4,
+} from '#services/onboarding_draft_service'
 
 export function resolvePostLoginRedirect(intendedUrl: unknown): string | null {
   if (typeof intendedUrl !== 'string' || intendedUrl.length === 0) {
@@ -35,6 +40,31 @@ export default class AuthController {
     session.forget('auth.intended_url')
 
     return resolvePostLoginRedirect(intendedUrl)
+  }
+
+  private getSessionOnboardingToken(session: HttpContext['session']) {
+    const sessionToken = session.get(ONBOARDING_TOKEN_SESSION_KEY)
+    return isUuidV4(sessionToken) ? sessionToken : null
+  }
+
+  private async associateOnboardingDraftForUser(
+    token: string,
+    userUuid: string,
+    session: HttpContext['session']
+  ) {
+    try {
+      await OnboardingDraftService.associateDraftToUser(token, userUuid)
+      session.forget(ONBOARDING_TOKEN_SESSION_KEY)
+      return true
+    } catch (error) {
+      session.forget(ONBOARDING_TOKEN_SESSION_KEY)
+
+      if (!(error instanceof OnboardingDraftError && error.statusCode === 404)) {
+        logger.warn(error, 'Failed to associate onboarding draft during registration')
+      }
+
+      return false
+    }
   }
 
   /**
@@ -79,7 +109,7 @@ export default class AuthController {
   /**
    * Show the registration form
    */
-  async showRegister({ inertia, session }: HttpContext) {
+  async showRegister({ inertia, request, session }: HttpContext) {
     const successMsg = session.flashMessages.get('success')
     const errorMsg = session.flashMessages.get('error')
     const flashMessage = successMsg
@@ -87,8 +117,10 @@ export default class AuthController {
       : errorMsg
         ? { type: 'error' as const, message: errorMsg }
         : null
+    const requestedAccountType = request.input('accountType')
     return inertia.render('auth/register', {
       flashMessage,
+      accountType: requestedAccountType === 'vendor' ? 'vendor' : 'consumer',
       googleAuthAvailable: Boolean(env.get('GOOGLE_CLIENT_ID') && env.get('GOOGLE_CLIENT_SECRET')),
     })
   }
@@ -96,26 +128,55 @@ export default class AuthController {
   /**
    * Handle registration request
    */
-  async register({ request, response, session, inertia }: HttpContext) {
-    const data = await request.validateUsing(registerValidator)
+  async register({ auth, request, response, session, inertia }: HttpContext) {
+    const body = request.body()
+
+    if (body.onboardingToken !== undefined && !isUuidV4(body.onboardingToken)) {
+      return response.status(422).send({
+        errors: {
+          onboardingToken: ['The onboarding token must be a UUID v4.'],
+        },
+      })
+    }
+
+    const data = await registerValidator.validate(body)
 
     const googleAuthAvailable = Boolean(
       env.get('GOOGLE_CLIENT_ID') && env.get('GOOGLE_CLIENT_SECRET')
     )
 
     try {
-      const consumerEntitlementId = await EntitlementService.getIdByCanonicalName('CONSUMER')
+      const accountType = data.accountType ?? 'consumer'
+      const entitlementId = await EntitlementService.getIdByCanonicalName(
+        accountType === 'vendor' ? 'VENDOR' : 'CONSUMER'
+      )
 
-      await User.create({
+      const user = await User.create({
         fullName: data.fullName,
         email: data.email,
         password: data.password,
-        entitlementId: consumerEntitlementId,
+        entitlementId,
+        vendorApprovalStatus: accountType === 'vendor' ? 'PENDING' : null,
         isActive: true,
       })
 
-      session.flash('success', 'Account created successfully! Please log in.')
-      return response.redirect().toRoute('auth.login')
+      await auth.use('web').login(user)
+      session.put('auth.login_method', 'password')
+      session.flash('success', 'Welcome!')
+
+      if (accountType === 'vendor') {
+        return response.redirect('/vendor/pending')
+      }
+
+      const onboardingToken = data.onboardingToken ?? this.getSessionOnboardingToken(session)
+      if (
+        onboardingToken &&
+        (await this.associateOnboardingDraftForUser(onboardingToken, user.uuid, session))
+      ) {
+        return response.redirect('/onboarding/project')
+      }
+
+      return response.redirect().toRoute('dashboard')
     } catch (error: unknown) {
       logger.error(error, 'Registration failed')
       if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
@@ -216,6 +277,14 @@ export default class AuthController {
       await auth.use('web').login(user)
       session.put('auth.login_method', 'google')
       session.flash('success', 'Welcome!')
+
+      const onboardingToken = this.getSessionOnboardingToken(session)
+      if (
+        onboardingToken &&
+        (await this.associateOnboardingDraftForUser(onboardingToken, user.uuid, session))
+      ) {
+        return response.redirect('/onboarding/project')
+      }
 
       const intendedUrl = this.consumePostLoginRedirect(session)
       if (intendedUrl) {

@@ -35,17 +35,11 @@ export default class AnonymousOnboardingDraft extends BaseModel {
   })
   declare vendorSearches: unknown[]
 
-  @column({
-    columnName: 'recommended_vendors',
-    prepare: (value: unknown[]) => JSON.stringify(value ?? []),
-  })
-  declare recommendedVendors: unknown[]
+  @column({ columnName: 'recommended_vendor_listing_uuids' })
+  declare recommendedVendorListingUuids: string[]
 
-  @column({
-    columnName: 'selected_vendors',
-    prepare: (value: unknown[]) => JSON.stringify(value ?? []),
-  })
-  declare selectedVendors: unknown[]
+  @column({ columnName: 'selected_vendor_listing_uuids' })
+  declare selectedVendorListingUuids: string[]
 
   @column()
   declare status: AnonymousOnboardingDraftStatus

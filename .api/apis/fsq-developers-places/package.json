@@ -1,7 +1,7 @@
 {
   "name": "@api/fsq-developers-places",
   "version": "20250617.0.0",
-  "main": "./index.ts",
+  "main": "./index.js",
   "types": "./index.d.ts",
   "dependencies": {
     "api": "^6.1.3",
