@@ -34,24 +34,28 @@ function parseCloudFrontViewerAddress(value?: string) {
   return trimmed
 }
 
+function getHeader(request: Request, name: string) {
+  return (request as unknown as { header?: (key: string) => string | undefined }).header?.(name)
+}
+
 export function getClientIp(request: Request) {
-  const forwardedFor = request.header('x-forwarded-for')?.split(',', 1)[0]?.trim()
+  const forwardedFor = getHeader(request, 'x-forwarded-for')?.split(',', 1)[0]?.trim()
   const cloudFrontViewerAddress = parseCloudFrontViewerAddress(
-    request.header('cloudfront-viewer-address')
+    getHeader(request, 'cloudfront-viewer-address')
   )
   const candidate =
     cloudFrontViewerAddress ??
-    request.header('cf-connecting-ip') ??
-    request.header('true-client-ip') ??
+    getHeader(request, 'cf-connecting-ip') ??
+    getHeader(request, 'true-client-ip') ??
     forwardedFor ??
-    request.header('x-real-ip') ??
+    getHeader(request, 'x-real-ip') ??
     (request as unknown as { ip?: () => string }).ip?.()
 
   return candidate?.trim() || 'unknown'
 }
 
 function shouldForceRateLimitForTest(request: Request) {
-  return env.get('NODE_ENV') === 'test' && request.header('x-envoy-test-rate-limits') === 'true'
+  return env.get('NODE_ENV') === 'test' && getHeader(request, 'x-envoy-test-rate-limits') === 'true'
 }
 
 export function anonymousVendorSearchRateLimitRules(input: {
