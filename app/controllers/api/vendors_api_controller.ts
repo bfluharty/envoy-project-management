@@ -15,6 +15,11 @@ import {
 import { getVendorsValidator } from '#validators/vendors_validator'
 import { isOnlyActivatingRecord, validateUser } from '../../utils/controller_utils.js'
 import UserRoleService from '#services/user_role_service'
+import {
+  adminVendorSearchRateLimitRules,
+  getClientIp,
+  rejectWhenRateLimited,
+} from '#utils/rate_limit_utils'
 
 export default class VendorsAPIController {
   async search({ request, response }: HttpContext) {
@@ -29,6 +34,13 @@ export default class VendorsAPIController {
     }
 
     const input = await request.validateUsing(authenticatedVendorSearchValidator)
+    const rateLimitResponse = await rejectWhenRateLimited(
+      request,
+      response,
+      adminVendorSearchRateLimitRules({ userUuid: userId, ip: getClientIp(request) })
+    )
+    if (rateLimitResponse) return rateLimitResponse
+
     try {
       const discovery = await VendorDiscoveryService.discover(input, {
         userUuid: userId,

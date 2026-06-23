@@ -19,6 +19,11 @@ import {
   reviseOutreachDraftValidator,
   sendOutreachDraftValidator,
 } from '#validators/outreach_validator'
+import {
+  getClientIp,
+  outreachAiRevisionRateLimitRules,
+  rejectWhenRateLimited,
+} from '#utils/rate_limit_utils'
 
 export default class ProjectOutreachApiController {
   async cancelDraft({ auth, request, response }: HttpContext) {
@@ -114,6 +119,16 @@ export default class ProjectOutreachApiController {
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
     const { draftUuid } = await outreachDraftParamsValidator.validate(request.params())
     const payload = await request.validateUsing(reviseOutreachDraftValidator)
+    const rateLimitResponse = await rejectWhenRateLimited(
+      request,
+      response,
+      outreachAiRevisionRateLimitRules({
+        userUuid: user.uuid,
+        projectUuid,
+        ip: getClientIp(request),
+      })
+    )
+    if (rateLimitResponse) return rateLimitResponse
 
     try {
       return response.ok(
@@ -155,6 +170,16 @@ export default class ProjectOutreachApiController {
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
     const { threadUuid } = await outreachThreadParamsValidator.validate(request.params())
     const payload = await request.validateUsing(reviseReplyToThreadValidator)
+    const rateLimitResponse = await rejectWhenRateLimited(
+      request,
+      response,
+      outreachAiRevisionRateLimitRules({
+        userUuid: user.uuid,
+        projectUuid,
+        ip: getClientIp(request),
+      })
+    )
+    if (rateLimitResponse) return rateLimitResponse
 
     try {
       return response.ok(

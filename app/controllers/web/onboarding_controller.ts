@@ -15,6 +15,11 @@ import {
   vendorSearchValidator,
   vendorSelectionValidator,
 } from '#validators/onboarding_validator'
+import {
+  anonymousVendorSearchRateLimitRules,
+  getClientIp,
+  rejectWhenRateLimited,
+} from '#utils/rate_limit_utils'
 
 function getDraftStep(draft: {
   recommendedVendorListingUuids: string[]
@@ -103,6 +108,15 @@ export default class OnboardingController {
   async searchVendors({ request, response, session }: HttpContext) {
     const payload = await request.validateUsing(vendorSearchValidator)
     const anonymousSessionUuid = OnboardingDraftService.getOrCreateAnonymousSessionUuid(session)
+    const rateLimitResponse = await rejectWhenRateLimited(
+      request,
+      response,
+      anonymousVendorSearchRateLimitRules({
+        anonymousSessionUuid,
+        ip: getClientIp(request),
+      })
+    )
+    if (rateLimitResponse) return rateLimitResponse
 
     logger.info(
       {

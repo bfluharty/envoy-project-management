@@ -18,6 +18,11 @@ import ProjectVendorAttachmentService, {
   ProjectVendorAttachmentError,
 } from '#services/project_vendor_attachment_service'
 import UserRoleService from '#services/user_role_service'
+import {
+  getClientIp,
+  projectChatRateLimitRules,
+  rejectWhenRateLimited,
+} from '#utils/rate_limit_utils'
 
 export default class ProjectsAPIController {
   async attachVendors({ request, response }: HttpContext) {
@@ -248,6 +253,12 @@ export default class ProjectsAPIController {
     // Validate request
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
     const { prompt, variables } = await request.validateUsing(chatProjectValidator)
+    const rateLimitResponse = await rejectWhenRateLimited(
+      request,
+      response,
+      projectChatRateLimitRules({ userUuid: userId, projectUuid, ip: getClientIp(request) })
+    )
+    if (rateLimitResponse) return rateLimitResponse
 
     // Build reasoning request
     const agentId = 'envoy-reasoning-agent-001' // Placeholder agent ID
