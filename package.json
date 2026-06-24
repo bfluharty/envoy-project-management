@@ -20,6 +20,7 @@
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "prepare": "husky",
+    "dev:docker": "sh run-docker.sh",
     "dev:local": "sh run-docker.sh --local"
   },
   "lint-staged": {

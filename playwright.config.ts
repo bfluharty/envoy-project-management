@@ -1,14 +1,26 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080'
+
 export default defineConfig({
   testDir: './tests/ui',
   globalSetup: './tests/ui/global_setup.ts',
   fullyParallel: false,
   retries: 1,
   use: {
-    baseURL: 'http://localhost:8080',
+    baseURL,
     // screenshot: 'only-on-failure',
   },
+  webServer: process.env.CI
+    ? {
+        command: 'cd build && node bin/server.js',
+        url: baseURL,
+        timeout: 120_000,
+        reuseExistingServer: false,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      }
+    : undefined,
   projects: [
     {
       name: 'chromium',
