@@ -975,6 +975,20 @@ export async function syncProjectOutreach(user: User, projectUuid: string) {
         referencesHeader: detail.references ?? null,
         providerThreadId: summary.threadId ?? null,
       })
+
+      // When a vendor replies, automatically draft a response for the user to review.
+      // Fire-and-forget — a drafting failure must never interrupt inbox sync.
+      if (direction === 'inbound') {
+        draftReplyForInboundMessage(projectUuid, conversation, {
+          subject: detail.subject,
+          body: detail.body || summary.snippet || '',
+        }).catch((err) => {
+          logger.warn(
+            { err, projectUuid, conversationUuid: conversation.uuid },
+            'Inbox sync: auto-reply draft failed'
+          )
+        })
+      }
     }
   }
 
@@ -1277,6 +1291,118 @@ export async function reviseThreadReply(
     revisedThreadUuid: threadUuid,
     revisedReplyBody: revisedBody,
   }
+}
+
+/**
+ * Called after a new inbound message is recorded during inbox sync.
+ * Guards against creating duplicate drafts, then asks the reasoning engine
+ * (HANDLE_VENDOR_RESPONSE) to draft a reply and saves it to the existing
+ * conversation thread so the user can review and send it from the Outreach tab.
+ *
+ * This is intentionally fire-and-forget — callers should .catch() errors so
+ * a drafting failure never breaks the inbox sync.
+ */
+async function draftReplyForInboundMessage(
+  projectUuid: string,
+  conversation: VendorConversation,
+  inboundMessage: { subject: string; body: string }
+): Promise<void> {
+  // Skip if a draft already exists for this thread — avoid duplicate pending drafts.
+  const existingDraft = await OutreachDraft.query()
+    .where('vendor_conversation_uuid', conversation.uuid)
+    .where('status', 'draft')
+    .first()
+  if (existingDraft) {
+    return
+  }
+
+  // Only draft if we have previously sent something on this thread.
+  // An inbound message with no prior outbound is an unsolicited email, not a reply.
+  const priorOutbound = await Message.query()
+    .where('vendor_conversation_uuid', conversation.uuid)
+    .where('direction', 'outbound')
+    .first()
+  if (!priorOutbound) {
+    return
+  }
+
+  // Load the project and all its active vendors to build the projectContext
+  // the reasoning engine needs for DRAFT_OUTREACH_EMAILS.
+  const project = await Project.query().where('uuid', projectUuid).where('is_active', true).first()
+  if (!project) {
+    return
+  }
+
+  const allProjectVendors = await ProjectVendor.query()
+    .where('project_uuid', projectUuid)
+    .where('is_active', true)
+    .preload('vendor', (q) => q.preload('vendorListing'))
+
+  const projectContext = {
+    uuid: project.uuid,
+    name: project.title,
+    description: project.description ?? null,
+    goals: project.goals ?? null,
+    vendors: allProjectVendors.map((pv) => ({
+      name: pv.vendor.vendorListing.name,
+      email: pv.vendor.vendorListing.email ?? null,
+    })),
+  }
+
+  logger.info(
+    { projectUuid, conversationUuid: conversation.uuid },
+    'Inbox sync: auto-drafting reply for inbound message'
+  )
+
+  const reasoningResponse = await axios.post(env.get('REASONING_ENGINE_URL', ''), {
+    agentId: 'envoy-reasoning-agent-001',
+    prompt: inboundMessage.body || inboundMessage.subject,
+    variables: { context: 'HANDLE_VENDOR_RESPONSE' },
+    projectUuid,
+    projectContext,
+  })
+
+  const turn = reasoningResponse.data as Turn
+
+  // Extract drafts from DRAFT_OUTREACH_EMAILS action executions and save them
+  // to the *existing* conversation so the reply appears inline with the thread.
+  for (const ae of turn.actionExecutions ?? []) {
+    if (ae.action?.toUpperCase() !== 'DRAFT_OUTREACH_EMAILS' || !ae.success) {
+      continue
+    }
+
+    const drafts: Array<{ vendorEmail?: string; subject?: string; body?: string }> =
+      ae.data?.drafts ?? []
+
+    for (const draft of drafts) {
+      if (!draft.subject?.trim() || !draft.body?.trim()) {
+        continue
+      }
+
+      await OutreachDraft.create({
+        projectVendorUuid: conversation.projectVendorUuid!,
+        vendorConversationUuid: conversation.uuid,
+        subject: draft.subject.trim(),
+        body: draft.body.trim(),
+        status: 'draft',
+        sentTimestamp: null,
+        sentMessageUuid: null,
+        lastError: null,
+      })
+
+      logger.info(
+        { projectUuid, conversationUuid: conversation.uuid },
+        'Inbox sync: auto-reply draft saved'
+      )
+      // One draft per inbound message is enough.
+      return
+    }
+  }
+
+  logger.info(
+    { projectUuid, conversationUuid: conversation.uuid },
+    'Inbox sync: reasoning engine did not produce a draft (may need more context)'
+  )
 }
 
 export async function applyOutreachActions(
