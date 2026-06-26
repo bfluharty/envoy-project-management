@@ -48,6 +48,12 @@ export default class User extends compose(BaseModel, AuthFinder) {
   @column({ columnName: 'uploaded_avatar_path' })
   declare uploadedAvatarPath: string | null
 
+  @column({ columnName: 'vendor_approval_status' })
+  declare vendorApprovalStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | null
+
+  @column.dateTime({ columnName: 'vendor_approved_at' })
+  declare vendorApprovedAt: DateTime | null
+
   @column.dateTime({ columnName: 'created_timestamp', autoCreate: true })
   declare createdTimestamp: DateTime
 

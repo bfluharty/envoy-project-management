@@ -510,6 +510,7 @@ test.group('ProjectInsightService.applyExtractedChanges', (group) => {
 
   test('uses a duplicate active replacement when superseding an insight', async () => {
     const calls: Call[] = []
+    const savedInsights: string[] = []
     const existingInsight = {
       uuid: 'existing-insight',
       statusId: 11,
@@ -519,6 +520,10 @@ test.group('ProjectInsightService.applyExtractedChanges', (group) => {
     const duplicateReplacement = {
       uuid: 'duplicate-replacement',
       insightText: 'Budget is now $40,000.',
+      supersedesInsightUuid: null,
+      async save() {
+        savedInsights.push(this.uuid)
+      },
     }
     restores.push(
       stubReferenceLookup(
@@ -563,6 +568,58 @@ test.group('ProjectInsightService.applyExtractedChanges', (group) => {
     })
     assert.equal(existingInsight.statusId, 12)
     assert.equal(existingInsight.supersededByInsightUuid, 'duplicate-replacement')
+    assert.equal(duplicateReplacement.supersedesInsightUuid, 'existing-insight')
+    assert.deepEqual(savedInsights, ['duplicate-replacement'])
+    assert.equal(calls.filter((call) => call.method === 'create').length, 0)
+  })
+
+  test('rejects superseding an insight with itself as the replacement', async () => {
+    const calls: Call[] = []
+    const existingInsight = {
+      uuid: 'existing-insight',
+      statusId: 11,
+      insightText: 'Budget is now $40,000.',
+      supersededByInsightUuid: null,
+      async save() {},
+    }
+    restores.push(
+      stubReferenceLookup(
+        ProjectInsightType,
+        { PROJECT_CONSTRAINT: { id: 22, code: 'PROJECT_CONSTRAINT' } },
+        calls
+      )
+    )
+    restores.push(
+      stubReferenceLookup(
+        ProjectInsightStatus,
+        {
+          ACTIVE: { id: 11, code: 'ACTIVE' },
+          SUPERSEDED: { id: 12, code: 'SUPERSEDED' },
+        },
+        calls
+      )
+    )
+    stubInsightQueries([{ firstResult: existingInsight }, { thenResult: [existingInsight] }], calls)
+    stubInsightCreate(calls)
+
+    await assert.rejects(
+      () =>
+        ProjectInsightService.applyExtractedChanges('project-1', {
+          updates: [
+            {
+              existingInsightUuid: 'existing-insight',
+              operation: ProjectInsightStatusCode.Superseded,
+              replacementInsight: {
+                insightType: 'project_constraint',
+                insightText: '  budget   is now $40,000.  ',
+              },
+            },
+          ],
+        }),
+      /Superseding replacement insight must differ from existing insight: existing-insight/
+    )
+    assert.equal(existingInsight.statusId, 11)
+    assert.equal(existingInsight.supersededByInsightUuid, null)
     assert.equal(calls.filter((call) => call.method === 'create').length, 0)
   })
 })

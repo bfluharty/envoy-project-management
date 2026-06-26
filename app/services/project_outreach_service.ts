@@ -13,6 +13,7 @@ import UserInboxConnection from '#models/user_inbox_connection'
 import VendorConversation from '#models/vendor_conversation'
 import ProjectService from '#services/project_service'
 import ReasoningRequestContextService from '#services/reasoning_request_context_service'
+import { getReasoningChatUrl } from '#utils/reasoning_engine_urls'
 import type { ActionExecution, Turn } from '../../types/turn.js'
 import { getOrCreateEmailCommunicationForProjectVendor } from './email_communication_context.js'
 import {
@@ -178,6 +179,15 @@ function normalizeEmailForMatching(email: string): string {
   }
 
   return `${local}@${domain}`
+}
+
+function getVendorEmailOrFail(projectVendor: ProjectVendor): string {
+  const email = projectVendor.vendor.vendorListing.email?.trim()
+  if (!email) {
+    throw new Error('Vendor email is required before outreach can be sent')
+  }
+
+  return email
 }
 
 function getMessageDirectionForConnection(
@@ -372,7 +382,7 @@ async function sendViaEnvoySystemMailbox(
   subject: string,
   body: string
 ) {
-  await mail.send(new OutreachMail(projectVendor.vendor.vendorListing.email, subject, body))
+  await mail.send(new OutreachMail(getVendorEmailOrFail(projectVendor), subject, body))
 
   return {
     from: env.get('MAIL_FROM_ADDRESS') ?? 'onboarding@resend.dev',
@@ -555,15 +565,15 @@ async function resolveConversationForEmail(
 
   const exactMatches = candidateProjectVendors.filter(
     (projectVendor) =>
-      projectVendor.vendor.vendorListing.email.toLowerCase() ===
+      projectVendor.vendor.vendorListing.email?.toLowerCase() ===
       params.counterpartyEmail.toLowerCase()
   )
 
   const normalizedCounterparty = normalizeEmailForMatching(params.counterpartyEmail)
-  const normalizedMatches = candidateProjectVendors.filter(
-    (projectVendor) =>
-      normalizeEmailForMatching(projectVendor.vendor.vendorListing.email) === normalizedCounterparty
-  )
+  const normalizedMatches = candidateProjectVendors.filter((projectVendor) => {
+    const email = projectVendor.vendor.vendorListing.email
+    return email ? normalizeEmailForMatching(email) === normalizedCounterparty : false
+  })
 
   const selectedCandidates = exactMatches.length > 0 ? exactMatches : normalizedMatches
 
@@ -703,7 +713,7 @@ export async function getProjectOutreach(userUuid: string, projectUuid: string) 
         vendor: {
           uuid: projectVendor.vendor.uuid,
           name: projectVendor.vendor.vendorListing.name,
-          email: projectVendor.vendor.vendorListing.email,
+          email: projectVendor.vendor.vendorListing.email ?? '',
         },
         status,
         subject: isEditableDraft
@@ -1014,6 +1024,8 @@ export async function sendOutreachDraft(
     throw new Error('Draft subject and body are required')
   }
 
+  const vendorEmail = getVendorEmailOrFail(projectVendor)
+
   const threadConversation =
     conversation?.projectVendorUuid === projectVendor.uuid
       ? conversation
@@ -1027,14 +1039,14 @@ export async function sendOutreachDraft(
     let message: Message
     if (connection) {
       const providerMessageId = await sendOnBehalf(connection, {
-        to: projectVendor.vendor.vendorListing.email,
+        to: vendorEmail,
         subject,
         body,
       })
 
       message = await recordOutboundMessage(user, projectVendor, threadConversation, {
         from: connection.email,
-        to: projectVendor.vendor.vendorListing.email,
+        to: vendorEmail,
         subject,
         body,
         providerMessageId: providerMessageId ? `${connection.provider}:${providerMessageId}` : null,
@@ -1043,7 +1055,7 @@ export async function sendOutreachDraft(
       const fallback = await sendViaEnvoySystemMailbox(projectVendor, subject, body)
       message = await recordOutboundMessage(user, projectVendor, threadConversation, {
         from: fallback.from,
-        to: projectVendor.vendor.vendorListing.email,
+        to: vendorEmail,
         subject,
         body,
       })
@@ -1101,7 +1113,7 @@ export async function reviseOutreachDraft(
 
   let response: AxiosResponse
   try {
-    response = await axios.post(env.get('REASONING_ENGINE_URL', ''), {
+    response = await axios.post(getReasoningChatUrl(), {
       agentId: 'envoy-reasoning-agent-001',
       prompt,
       variables: { context: 'INITIAL_OUTREACH' },
@@ -1157,10 +1169,11 @@ export async function sendThreadReply(
     conversation.projectVendorUuid!
   )
   const connection = await getPreferredConnection(user.uuid)
+  const vendorEmail = getVendorEmailOrFail(projectVendor)
 
   if (connection) {
     const providerMessageId = await sendOnBehalf(connection, {
-      to: projectVendor.vendor.vendorListing.email,
+      to: vendorEmail,
       subject: payload.subject,
       body: payload.body,
       inReplyTo: payload.inReplyTo,
@@ -1170,7 +1183,7 @@ export async function sendThreadReply(
 
     await recordOutboundMessage(user, projectVendor, conversation, {
       from: connection.email,
-      to: projectVendor.vendor.vendorListing.email,
+      to: vendorEmail,
       subject: payload.subject,
       body: payload.body,
       providerMessageId: providerMessageId ? `${connection.provider}:${providerMessageId}` : null,
@@ -1180,7 +1193,7 @@ export async function sendThreadReply(
     const fallback = await sendViaEnvoySystemMailbox(projectVendor, payload.subject, payload.body)
     await recordOutboundMessage(user, projectVendor, conversation, {
       from: fallback.from,
-      to: projectVendor.vendor.vendorListing.email,
+      to: vendorEmail,
       subject: payload.subject,
       body: payload.body,
     })
@@ -1248,7 +1261,7 @@ export async function reviseThreadReply(
 
   let response: AxiosResponse
   try {
-    response = await axios.post(env.get('REASONING_ENGINE_URL', ''), {
+    response = await axios.post(getReasoningChatUrl(), {
       agentId: 'envoy-reasoning-agent-001',
       prompt,
       variables: { context: 'HANDLE_VENDOR_RESPONSE' },
@@ -1435,10 +1448,10 @@ export async function applyOutreachActions(
     projectVendors.map((projectVendor) => [projectVendor.vendorUuid, projectVendor])
   )
   const byVendorEmail = new Map(
-    projectVendors.map((projectVendor) => [
-      projectVendor.vendor.vendorListing.email.toLowerCase(),
-      projectVendor,
-    ])
+    projectVendors.flatMap((projectVendor) => {
+      const email = projectVendor.vendor.vendorListing.email
+      return email ? [[email.toLowerCase(), projectVendor] as const] : []
+    })
   )
 
   for (const action of actions) {

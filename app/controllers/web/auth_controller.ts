@@ -12,6 +12,12 @@ import {
 import { randomBytes } from 'node:crypto'
 import { DateTime } from 'luxon'
 import { sendPasswordResetLink } from '#services/password_reset_service'
+import EntitlementService from '#services/entitlement_service'
+import OnboardingDraftService, {
+  ONBOARDING_TOKEN_SESSION_KEY,
+  OnboardingDraftError,
+  isUuidV4,
+} from '#services/onboarding_draft_service'
 
 const SOCIAL_AUTH_PROVIDERS = ['google', 'microsoft'] as const
 type SocialAuthProvider = (typeof SOCIAL_AUTH_PROVIDERS)[number]
@@ -191,6 +197,31 @@ export default class AuthController {
     return user
   }
 
+  private getSessionOnboardingToken(session: HttpContext['session']) {
+    const sessionToken = session.get(ONBOARDING_TOKEN_SESSION_KEY)
+    return isUuidV4(sessionToken) ? sessionToken : null
+  }
+
+  private async associateOnboardingDraftForUser(
+    token: string,
+    userUuid: string,
+    session: HttpContext['session']
+  ) {
+    try {
+      await OnboardingDraftService.associateDraftToUser(token, userUuid)
+      session.forget(ONBOARDING_TOKEN_SESSION_KEY)
+      return true
+    } catch (error) {
+      session.forget(ONBOARDING_TOKEN_SESSION_KEY)
+
+      if (!(error instanceof OnboardingDraftError && error.statusCode === 404)) {
+        logger.warn(error, 'Failed to associate onboarding draft during registration')
+      }
+
+      return false
+    }
+  }
+
   /**
    * Show the login form
    */
@@ -240,36 +271,70 @@ export default class AuthController {
   /**
    * Show the registration form
    */
-  async showRegister({ inertia, session }: HttpContext) {
+  async showRegister({ inertia, request, session }: HttpContext) {
+    const requestedAccountType = request.input('accountType')
+
     return inertia.render('auth/register', {
       flashMessage: this.getFlashMessage(session),
       socialAuthProviders: this.getSocialAuthOptions(),
       passwordAuthEnabled: passwordAuthEnabled(),
+      accountType: requestedAccountType === 'vendor' ? 'vendor' : 'consumer',
     })
   }
 
   /**
    * Handle registration request
    */
-  async register({ request, response, session, inertia }: HttpContext) {
+  async register({ auth, request, response, session, inertia }: HttpContext) {
     if (!passwordAuthEnabled()) {
       session.flash('error', 'Email and password registration is not available right now.')
       return response.redirect().toRoute('auth.register')
     }
 
-    const data = await request.validateUsing(registerValidator)
+    const body = request.body()
+
+    if (body.onboardingToken !== undefined && !isUuidV4(body.onboardingToken)) {
+      return response.status(422).send({
+        errors: {
+          onboardingToken: ['The onboarding token must be a UUID v4.'],
+        },
+      })
+    }
+
+    const data = await registerValidator.validate(body)
 
     try {
-      await User.create({
+      const accountType = data.accountType ?? 'consumer'
+      const entitlementId = await EntitlementService.getIdByCanonicalName(
+        accountType === 'vendor' ? 'VENDOR' : 'CONSUMER'
+      )
+
+      const user = await User.create({
         fullName: data.fullName,
         email: data.email,
         password: data.password,
-        entitlementId: 1, // Default to user entitlement (ID 1)
+        entitlementId,
+        vendorApprovalStatus: accountType === 'vendor' ? 'PENDING' : null,
         isActive: true,
       })
 
-      session.flash('success', 'Account created successfully! Please log in.')
-      return response.redirect().toRoute('auth.login')
+      await auth.use('web').login(user)
+      session.put('auth.login_method', 'password')
+      session.flash('success', 'Welcome!')
+
+      if (accountType === 'vendor') {
+        return response.redirect('/vendor/pending')
+      }
+
+      const onboardingToken = data.onboardingToken ?? this.getSessionOnboardingToken(session)
+      if (
+        onboardingToken &&
+        (await this.associateOnboardingDraftForUser(onboardingToken, user.uuid, session))
+      ) {
+        return response.redirect('/onboarding/project')
+      }
+
+      return response.redirect().toRoute('dashboard')
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
         return inertia.render('auth/register', {
@@ -368,6 +433,14 @@ export default class AuthController {
       await auth.use('web').login(user)
       session.put('auth.login_method', provider)
       session.flash('success', 'Welcome!')
+
+      const onboardingToken = this.getSessionOnboardingToken(session)
+      if (
+        onboardingToken &&
+        (await this.associateOnboardingDraftForUser(onboardingToken, user.uuid, session))
+      ) {
+        return response.redirect('/onboarding/project')
+      }
 
       const intendedUrl = this.consumePostLoginRedirect(session)
       if (intendedUrl) {

@@ -22,14 +22,12 @@ const AuthController = () => import('#controllers/web/auth_controller')
 const DashboardController = () => import('#controllers/web/dashboard_controller')
 const InboxController = () => import('#controllers/web/inbox_controller')
 const AccountController = () => import('#controllers/web/account_controller')
+const OnboardingController = () => import('#controllers/web/onboarding_controller')
+const OnboardingProjectController = () => import('#controllers/web/onboarding_project_controller')
+const VendorOnboardingController = () => import('#controllers/web/vendor_onboarding_controller')
 
 // Public landing page (no auth required)
-router
-  .get('/', ({ inertia }) => {
-    return inertia.render('landing')
-  })
-  .as('landing')
-  .middleware(middleware.silentAuth())
+router.get('/', [OnboardingController, 'show']).as('landing').middleware(middleware.silentAuth())
 
 router
   .get('/privacy', ({ inertia }) => {
@@ -51,6 +49,19 @@ router
   })
   .as('contact')
   .middleware(middleware.silentAuth())
+
+router.post('/onboarding/draft/restore', [OnboardingController, 'restoreDraft'])
+router.post('/onboarding/vendor-search', [OnboardingController, 'searchVendors'])
+router.patch('/onboarding/vendor-selection', [OnboardingController, 'updateSelection'])
+router.post('/onboarding/registration-handoff', [OnboardingController, 'registrationHandoff'])
+router
+  .get('/onboarding/project', [OnboardingProjectController, 'show'])
+  .as('onboarding.project.show')
+  .middleware(middleware.auth())
+router
+  .post('/onboarding/project', [OnboardingProjectController, 'store'])
+  .as('onboarding.project.store')
+  .middleware(middleware.auth())
 
 // Auth routes (guest only)
 router
@@ -100,6 +111,9 @@ router
   .post('/account/password/setup-email', [AccountController, 'sendPasswordSetupEmail'])
   .middleware(middleware.auth())
 router.post('/logout', [AuthController, 'logout']).as('auth.logout').middleware(middleware.auth())
+
+router.get('/vendor/pending', [VendorOnboardingController, 'pending']).middleware(middleware.auth())
+router.get('/vendor/listing', [VendorOnboardingController, 'listing']).middleware(middleware.auth())
 
 // Inbox (connect customer inbox to listen and reply to vendors)
 router
@@ -154,6 +168,8 @@ router
 
         router.patch('/:uuid', [ProjectsAPIController, 'update'])
 
+        router.post('/:uuid/vendors', [ProjectsAPIController, 'attachVendors'])
+
         router.post('/:uuid/chat', [ProjectsAPIController, 'chat'])
       })
       .prefix('/projects')
@@ -166,6 +182,14 @@ router
     router
       .group(() => {
         router.get('/', [VendorsAPIController, 'getAll'])
+
+        router.get('/available', [VendorsAPIController, 'getAvailable'])
+
+        router.get('/trusted-matches', [VendorsAPIController, 'getTrustedMatches'])
+
+        router.post('/search', [VendorsAPIController, 'search'])
+
+        router.post('/:uuid/select', [VendorsAPIController, 'selectAvailable'])
 
         router.get('/:uuid', [VendorsAPIController, 'getByUuid'])
 

@@ -7,9 +7,9 @@ services:
     environment:
       - DB_HOST=postgres
       - HOST=0.0.0.0
-      - REASONING_ENGINE_URL_LOCAL=http://reasoning-engine:8081/reasoning/chat
-      - REASONING_ENGINE_URL_DEV=http://reasoning-engine:8081/reasoning/chat
-      - EMAIL_SERVICE_URL=http://email-service:3000
+      - REASONING_ENGINE_URL_LOCAL=http://reasoning-engine:8081
+      - REASONING_ENGINE_URL_DEV=http://reasoning-engine:8081
+      - EMAIL_SERVICE_URL=http://email-service:8083
       - CHOKIDAR_USEPOLLING=true
     ports:
       - '8080:8080'
@@ -28,7 +28,7 @@ services:
       dockerfile: Dockerfile.dev
     image: envoy-email-service:latest
     ports:
-      - '3000:3000'
+      - '8083:8083'
     environment:
       - EMAIL_SERVICE_API_KEY=${EMAIL_SERVICE_API_KEY}
 

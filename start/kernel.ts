@@ -10,6 +10,7 @@
 
 import router from '@adonisjs/core/services/router'
 import server from '@adonisjs/core/services/server'
+import env from '#start/env'
 
 /**
  * The error handler is used to convert an exception
@@ -27,7 +28,7 @@ server.use([
   () => import('#middleware/force_json_response_middleware'),
   () => import('@adonisjs/cors/cors_middleware'),
   () => import('@adonisjs/inertia/inertia_middleware'),
-  () => import('@adonisjs/vite/vite_middleware'),
+  ...(env.get('NODE_ENV') === 'test' ? [] : [() => import('@adonisjs/vite/vite_middleware')]),
   () => import('@adonisjs/static/static_middleware'),
 ])
 

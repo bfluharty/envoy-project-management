@@ -8,6 +8,11 @@ import ReasoningRequestContextService from '#services/reasoning_request_context_
 import ProjectVendor from '#models/project_vendor'
 import OutreachDraft from '#models/outreach_draft'
 import Project from '#models/project'
+import {
+  getClientIp,
+  projectChatRateLimitRules,
+  rejectWhenRateLimited,
+} from '#utils/rate_limit_utils'
 
 export default class ConvoController {
   private async buildProjectContext(project: Project, projectUuid: string) {
@@ -57,6 +62,12 @@ export default class ConvoController {
     const user = auth.getUserOrFail()
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
     const { prompt, variables } = await request.validateUsing(chatProjectValidator)
+    const rateLimitResponse = await rejectWhenRateLimited(
+      request,
+      response,
+      projectChatRateLimitRules({ userUuid: user.uuid, projectUuid, ip: getClientIp(request) })
+    )
+    if (rateLimitResponse) return rateLimitResponse
 
     try {
       const project = await ProjectService.getProjectWithConversations(user.uuid, projectUuid)
@@ -91,6 +102,12 @@ export default class ConvoController {
   async greeting({ request, response, auth }: HttpContext) {
     const user = auth.getUserOrFail()
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
+    const rateLimitResponse = await rejectWhenRateLimited(
+      request,
+      response,
+      projectChatRateLimitRules({ userUuid: user.uuid, projectUuid, ip: getClientIp(request) })
+    )
+    if (rateLimitResponse) return rateLimitResponse
 
     try {
       const project = await ProjectService.getProjectWithConversations(user.uuid, projectUuid)
