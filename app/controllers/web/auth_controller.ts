@@ -13,7 +13,6 @@ import { DateTime } from 'luxon'
 import { sendPasswordResetLink } from '#services/password_reset_service'
 import EntitlementService from '#services/entitlement_service'
 import {
-  buildEmailAuthorizationConsentText,
   buildEmailAuthorizationState,
   consumeEmailAuthorizationState,
   type EmailAuthorizationAccountType,
@@ -381,7 +380,6 @@ export default class AuthController {
       }),
       passwordAuthEnabled: passwordAuthEnabled(),
       accountType,
-      emailAuthorizationText: buildEmailAuthorizationConsentText(),
     })
   }
 

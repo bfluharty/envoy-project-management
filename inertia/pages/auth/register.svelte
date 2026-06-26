@@ -13,14 +13,12 @@
     socialAuthProviders = [],
     passwordAuthEnabled = false,
     accountType = 'consumer',
-    emailAuthorizationText = 'I authorize Envoy to view my email, prepare local drafts, and send approved messages from my connected account.',
     errors: propErrors = {},
   }: {
     flashMessage: { type?: string; message?: string } | null
     socialAuthProviders?: SocialAuthProvider[]
     passwordAuthEnabled?: boolean
     accountType?: 'consumer' | 'vendor'
-    emailAuthorizationText?: string
     errors?: Record<string, string>
   } = $props()
 
@@ -34,7 +32,6 @@
   let errorMessage = $state('')
   let flashType = $state<'error' | 'success' | null>(null)
   let flashText = $state('')
-  let emailAuthorizationAccepted = $state(false)
 
   function handleSubmit(event: Event) {
     event.preventDefault()
@@ -215,25 +212,11 @@
   {/if}
 
   {#if socialAuthProviders.length > 0}
-    <div class="space-y-4">
-      <label class="flex items-start gap-3 rounded border border-surface-200-800 p-3 text-sm">
-        <input
-          type="checkbox"
-          class="checkbox mt-0.5"
-          bind:checked={emailAuthorizationAccepted}
-          aria-describedby="email-authorization-help"
-        />
-        <span id="email-authorization-help">{emailAuthorizationText}</span>
-      </label>
-
-      <div class="space-y-3">
+    <div class="space-y-3">
       {#each socialAuthProviders as provider (provider.provider)}
         <a
-          href={emailAuthorizationAccepted ? provider.href : undefined}
+          href={provider.href}
           class="btn btn-outline w-full gap-2"
-          class:pointer-events-none={!emailAuthorizationAccepted}
-          class:opacity-50={!emailAuthorizationAccepted}
-          aria-disabled={!emailAuthorizationAccepted}
           data-account-type={accountType}
         >
           {#if provider.provider === 'google'}
@@ -266,7 +249,6 @@
           Continue with {provider.label}
         </a>
       {/each}
-      </div>
     </div>
   {:else}
     <p class="text-center text-sm text-surface-600-400">
