@@ -8,6 +8,10 @@ import {
   decodeState,
   type InboxProvider,
 } from '#services/inbox_connection_service'
+import {
+  encryptOauthToken,
+  OAUTH_TOKEN_ENCRYPTION_VERSION,
+} from '#services/oauth_token_encryption_service'
 import logger from '@adonisjs/core/services/logger'
 
 export default class InboxController {
@@ -17,12 +21,8 @@ export default class InboxController {
   async connect({ auth, request, response, session }: HttpContext) {
     const user = auth.getUserOrFail()
     const provider = request.input('provider') as string
-    if (provider === 'microsoft') {
-      session.flash('error', 'Outlook inbox connection is not available yet.')
-      return response.redirect().toPath('/account#email-accounts')
-    }
-    if (provider !== 'gmail') {
-      return response.badRequest('Invalid provider. Use gmail.')
+    if (provider !== 'gmail' && provider !== 'microsoft') {
+      return response.badRequest('Invalid provider. Use gmail or microsoft.')
     }
     try {
       const url = getAuthUrl(provider as InboxProvider, user.uuid)
@@ -60,33 +60,60 @@ export default class InboxController {
       session.flash('error', 'Invalid state. Please try connecting again.')
       return response.redirect().toPath('/account#email-accounts')
     }
-    if (decoded.provider !== 'gmail') {
-      session.flash('error', 'Outlook inbox connection is not available yet.')
-      return response.redirect().toPath('/account#email-accounts')
-    }
-
     try {
       const tokens = await exchangeCode(decoded.provider, code, state)
       const expiresAt = tokens.expiresAt !== null ? DateTime.fromJSDate(tokens.expiresAt) : null
-      await UserInboxConnection.updateOrCreate(
-        {
-          userUuid: user.uuid,
-          provider: decoded.provider,
-          email: tokens.email,
-        },
-        {
-          userUuid: user.uuid,
-          provider: decoded.provider,
-          email: tokens.email,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          accessTokenExpiresAt: expiresAt,
-          scopes: tokens.scopes,
-        }
-      )
+      const existing = await UserInboxConnection.query()
+        .where('user_uuid', user.uuid)
+        .where('provider', decoded.provider)
+        .where('email', tokens.email)
+        .first()
+
+      if (!tokens.refreshToken && !existing?.refreshToken) {
+        throw new Error(
+          'The email provider did not return offline access. Please try again and approve mailbox access.'
+        )
+      }
+
+      let otherPrimaryQuery = UserInboxConnection.query()
+        .where('user_uuid', user.uuid)
+        .where('is_primary', true)
+        .whereIn('status', ['active', 'reauth_required'])
+
+      if (existing) {
+        otherPrimaryQuery = otherPrimaryQuery.whereNot('id', existing.id)
+      }
+
+      await otherPrimaryQuery.update({
+        is_primary: false,
+        status: 'disconnected',
+        disconnected_at: DateTime.utc().toSQL(),
+      })
+
+      const connection = existing ?? new UserInboxConnection()
+      connection.merge({
+        userUuid: user.uuid,
+        provider: decoded.provider,
+        email: tokens.email,
+        accessToken: encryptOauthToken(tokens.accessToken),
+        refreshToken: tokens.refreshToken
+          ? encryptOauthToken(tokens.refreshToken)
+          : (existing?.refreshToken ?? null),
+        accessTokenExpiresAt: expiresAt,
+        scopes: tokens.scopes,
+        status: 'active',
+        isPrimary: true,
+        tokenEncryptionVersion: OAUTH_TOKEN_ENCRYPTION_VERSION,
+        reauthReason: null,
+        reauthRequiredAt: null,
+        disconnectedAt: null,
+      })
+      await connection.save()
+
+      const label = decoded.provider === 'gmail' ? 'Gmail' : 'Microsoft'
       session.flash(
         'success',
-        'Gmail connected. Envoy will use it for outreach and replies when available.'
+        `${label} connected. Envoy will use it for outreach and replies when available.`
       )
       return response.redirect().toPath('/account#email-accounts')
     } catch (err) {

@@ -55,6 +55,8 @@ export default await Env.create(new URL('../', import.meta.url), {
   /* Email service (inbox list/message, send-on-behalf) — base URL, no trailing slash */
   EMAIL_SERVICE_URL: Env.schema.string.optional(),
   EMAIL_SERVICE_API_KEY: Env.schema.string.optional(),
+  EMAIL_SYNC_QUEUE_URL: Env.schema.string.optional(),
+  EMAIL_TERMS_VERSION: Env.schema.string.optional(),
 
   /* Inbox OAuth (customer grants access; we listen and reply on their behalf) */
   GOOGLE_CLIENT_ID: Env.schema.string.optional(),

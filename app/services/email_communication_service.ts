@@ -4,6 +4,10 @@ import logger from '@adonisjs/core/services/logger'
 import { google, gmail_v1 } from 'googleapis'
 import { ensureValidToken } from './inbox_connection_service.js'
 import type UserInboxConnection from '#models/user_inbox_connection'
+import {
+  decryptConnectionAccessToken,
+  decryptConnectionRefreshToken,
+} from './oauth_token_encryption_service.js'
 
 const baseUrl = () => env.get('EMAIL_SERVICE_URL')
 const apiKey = () => env.get('EMAIL_SERVICE_API_KEY')
@@ -85,8 +89,8 @@ function extractPlainTextBody(part: gmail_v1.Schema$MessagePart | undefined | nu
 function buildGmailAuth(connection: UserInboxConnection) {
   const oauth2 = new google.auth.OAuth2()
   oauth2.setCredentials({
-    access_token: connection.accessToken,
-    refresh_token: connection.refreshToken ?? undefined,
+    access_token: decryptConnectionAccessToken(connection),
+    refresh_token: decryptConnectionRefreshToken(connection) ?? undefined,
   })
   return oauth2
 }
@@ -102,9 +106,10 @@ export async function listInboxMessages(
   if (!url) throw new Error('EMAIL_SERVICE_URL is not set')
 
   const conn = await ensureValidToken(connection)
+  const accessToken = decryptConnectionAccessToken(conn)
   const body: Record<string, unknown> = {
     provider: conn.provider,
-    accessToken: conn.accessToken,
+    accessToken,
     maxResults: options?.maxResults ?? 50,
   }
   if (options?.afterDate) {
@@ -145,9 +150,10 @@ export async function getInboxMessage(
   if (!url) throw new Error('EMAIL_SERVICE_URL is not set')
 
   const conn = await ensureValidToken(connection)
+  const accessToken = decryptConnectionAccessToken(conn)
   const { data } = await axios.post<{ message: InboxMessageDetail | null }>(
     `${url.replace(/\/$/, '')}/inbox/message`,
-    { provider: conn.provider, accessToken: conn.accessToken, messageId },
+    { provider: conn.provider, accessToken, messageId },
     { headers: { 'Content-Type': 'application/json', ...authHeaders() }, timeout: 15_000 }
   )
   const msg = data.message
@@ -285,9 +291,10 @@ export async function sendOnBehalf(
   if (!url) throw new Error('EMAIL_SERVICE_URL is not set')
 
   const conn = await ensureValidToken(connection)
+  const accessToken = decryptConnectionAccessToken(conn)
   const body: Record<string, unknown> = {
     provider: conn.provider,
-    accessToken: conn.accessToken,
+    accessToken,
     to: params.to,
     subject: params.subject,
     body: params.body,

@@ -9,10 +9,21 @@ import {
   registerValidator,
   resetPasswordValidator,
 } from '#validators/auth_validator'
-import { randomBytes } from 'node:crypto'
 import { DateTime } from 'luxon'
 import { sendPasswordResetLink } from '#services/password_reset_service'
 import EntitlementService from '#services/entitlement_service'
+import {
+  buildEmailAuthorizationConsentText,
+  buildEmailAuthorizationState,
+  consumeEmailAuthorizationState,
+  type EmailAuthorizationAccountType,
+  type EmailAuthorizationFlow,
+} from '#services/email_authorization_state_service'
+import {
+  completeEmailAuthorization,
+  EmailAuthorizationCompletionError,
+  type NormalizedEmailAuthorizationTokens,
+} from '#services/email_authorization_completion_service'
 import OnboardingDraftService, {
   ONBOARDING_TOKEN_SESSION_KEY,
   OnboardingDraftError,
@@ -42,6 +53,14 @@ const SOCIAL_AUTH_PROVIDER_LABELS: Record<SocialAuthProvider, string> = {
   microsoft: 'Microsoft',
 }
 
+const REQUIRED_MAIL_SCOPES: Record<SocialAuthProvider, string[]> = {
+  google: [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.send',
+  ],
+  microsoft: ['Mail.Read', 'Mail.Send'],
+}
+
 export function passwordAuthEnabled(): boolean {
   return env.get('PASSWORD_AUTH_ENABLED', false)
 }
@@ -58,6 +77,102 @@ function nonEmptyString(value: unknown): string | null {
 
 function emailLocalPart(email: string): string {
   return email.split('@')[0] || email
+}
+
+function normalizeAccountType(value: unknown): EmailAuthorizationAccountType {
+  return value === 'vendor' ? 'vendor' : 'consumer'
+}
+
+function normalizeAuthorizationFlow(value: unknown): EmailAuthorizationFlow {
+  if (value === 'registration' || value === 'reauth') {
+    return value
+  }
+
+  return 'login'
+}
+
+function getOauthTokenValue(token: Record<string, unknown>): string | null {
+  return typeof token.token === 'string' && token.token.length > 0 ? token.token : null
+}
+
+function normalizeOauthScopes(token: Record<string, unknown>, fallbackScopes: string[]): string {
+  if (Array.isArray(token.grantedScopes)) {
+    return token.grantedScopes
+      .filter((scope): scope is string => typeof scope === 'string')
+      .join(' ')
+  }
+
+  if (Array.isArray(token.scope)) {
+    return token.scope.filter((scope): scope is string => typeof scope === 'string').join(' ')
+  }
+
+  if (typeof token.scope === 'string' && token.scope.trim().length > 0) {
+    return token.scope.trim()
+  }
+
+  return fallbackScopes.join(' ')
+}
+
+function scopeSet(scopes: string) {
+  return new Set(scopes.split(/\s+/).filter(Boolean))
+}
+
+function assertMailScopesGranted(provider: SocialAuthProvider, scopes: string) {
+  const grantedScopes = scopeSet(scopes)
+  const missingScopes = REQUIRED_MAIL_SCOPES[provider].filter((scope) => !grantedScopes.has(scope))
+
+  if (missingScopes.length > 0) {
+    throw new Error(`Missing required email scopes: ${missingScopes.join(', ')}`)
+  }
+}
+
+function normalizeSocialTokens(
+  provider: SocialAuthProvider,
+  rawSocialUser: unknown
+): NormalizedEmailAuthorizationTokens {
+  const socialUser =
+    rawSocialUser && typeof rawSocialUser === 'object'
+      ? (rawSocialUser as Record<string, unknown>)
+      : {}
+  const token =
+    socialUser.token && typeof socialUser.token === 'object'
+      ? (socialUser.token as Record<string, unknown>)
+      : {}
+  const accessToken = getOauthTokenValue(token)
+
+  if (!accessToken) {
+    throw new Error('Provider did not return an access token')
+  }
+
+  const refreshToken =
+    typeof token.refreshToken === 'string' && token.refreshToken.length > 0
+      ? token.refreshToken
+      : null
+
+  let expiresAt: Date | null = null
+  if (token.expiresAt instanceof Date) {
+    expiresAt = token.expiresAt
+  } else if (typeof token.expiresAt === 'string' || typeof token.expiresAt === 'number') {
+    const parsedExpiresAt = new Date(token.expiresAt)
+    expiresAt = Number.isNaN(parsedExpiresAt.getTime()) ? null : parsedExpiresAt
+  } else if (typeof token.expiresIn === 'number') {
+    expiresAt = new Date(Date.now() + token.expiresIn * 1000)
+  }
+
+  const fallbackScopes =
+    provider === 'google'
+      ? ['openid', 'userinfo.email', 'userinfo.profile', ...REQUIRED_MAIL_SCOPES.google]
+      : ['openid', 'profile', 'email', 'User.Read', ...REQUIRED_MAIL_SCOPES.microsoft]
+
+  const scopes = normalizeOauthScopes(token, fallbackScopes)
+  assertMailScopesGranted(provider, scopes)
+
+  return {
+    accessToken,
+    refreshToken,
+    expiresAt,
+    scopes,
+  }
 }
 
 export function normalizeSocialUser(
@@ -144,13 +259,31 @@ export default class AuthController {
     return Boolean(env.get('MICROSOFT_CLIENT_ID') && env.get('MICROSOFT_CLIENT_SECRET'))
   }
 
-  private getSocialAuthOptions(): SocialAuthOption[] {
+  private getSocialAuthOptions(
+    input: {
+      flow?: EmailAuthorizationFlow
+      accountType?: EmailAuthorizationAccountType
+      emailTermsAccepted?: boolean
+    } = {}
+  ): SocialAuthOption[] {
+    const params = new URLSearchParams()
+    if (input.flow) {
+      params.set('flow', input.flow)
+    }
+    if (input.accountType) {
+      params.set('accountType', input.accountType)
+    }
+    if (input.emailTermsAccepted) {
+      params.set('emailTermsAccepted', '1')
+    }
+    const query = params.toString()
+
     return SOCIAL_AUTH_PROVIDERS.filter((provider) =>
       this.isSocialAuthProviderConfigured(provider)
     ).map((provider) => ({
       provider,
       label: SOCIAL_AUTH_PROVIDER_LABELS[provider],
-      href: `/auth/${provider}`,
+      href: query ? `/auth/${provider}?${query}` : `/auth/${provider}`,
     }))
   }
 
@@ -159,42 +292,6 @@ export default class AuthController {
     session.forget('auth.intended_url')
 
     return resolvePostLoginRedirect(intendedUrl)
-  }
-
-  private async findUserBySocialProfile(profile: NormalizedSocialUser) {
-    const userByProviderId = await User.findBy('providerId', profile.providerUserId)
-    if (userByProviderId) {
-      return userByProviderId
-    }
-
-    return User.findBy('email', profile.email)
-  }
-
-  private async upsertSocialUser(profile: NormalizedSocialUser) {
-    const user = await this.findUserBySocialProfile(profile)
-
-    if (!user) {
-      return User.create({
-        fullName: profile.fullName,
-        email: profile.email,
-        password: randomBytes(32).toString('hex'),
-        providerId: profile.providerUserId,
-        googleAvatarUrl: profile.provider === 'google' ? profile.avatarUrl : null,
-        entitlementId: 1,
-        isActive: true,
-      })
-    }
-
-    if (profile.provider === 'google') {
-      user.googleAvatarUrl = profile.avatarUrl
-    }
-
-    if (!user.providerId) {
-      user.providerId = profile.providerUserId
-    }
-
-    await user.save()
-    return user
   }
 
   private getSessionOnboardingToken(session: HttpContext['session']) {
@@ -273,12 +370,18 @@ export default class AuthController {
    */
   async showRegister({ inertia, request, session }: HttpContext) {
     const requestedAccountType = request.input('accountType')
+    const accountType = requestedAccountType === 'vendor' ? 'vendor' : 'consumer'
 
     return inertia.render('auth/register', {
       flashMessage: this.getFlashMessage(session),
-      socialAuthProviders: this.getSocialAuthOptions(),
+      socialAuthProviders: this.getSocialAuthOptions({
+        flow: 'registration',
+        accountType,
+        emailTermsAccepted: true,
+      }),
       passwordAuthEnabled: passwordAuthEnabled(),
-      accountType: requestedAccountType === 'vendor' ? 'vendor' : 'consumer',
+      accountType,
+      emailAuthorizationText: buildEmailAuthorizationConsentText(),
     })
   }
 
@@ -384,8 +487,30 @@ export default class AuthController {
       return response.redirect().toRoute('auth.login')
     }
 
-    session.put('redirect.previousUrl', '/login')
-    return ally.use(provider).redirect()
+    const flow = normalizeAuthorizationFlow(request.input('flow'))
+    const accountType = normalizeAccountType(request.input('accountType'))
+    const termsAccepted = request.input('emailTermsAccepted') === '1'
+
+    if (flow === 'registration' && !termsAccepted) {
+      session.flash('error', 'You must accept email authorization before creating an account.')
+      return response.redirect().toRoute('auth.register')
+    }
+
+    const state = buildEmailAuthorizationState(session, {
+      provider,
+      flow,
+      termsAccepted,
+      accountType,
+      returnPath: request.input('returnTo') ?? session.get('auth.intended_url'),
+    })
+
+    session.put('redirect.previousUrl', flow === 'registration' ? '/register' : '/login')
+    return ally
+      .use(provider)
+      .stateless()
+      .redirect((redirectRequest) => {
+        redirectRequest.param('state', state)
+      })
   }
 
   /**
@@ -398,38 +523,62 @@ export default class AuthController {
       return response.redirect().toRoute('auth.login')
     }
 
-    const driver = ally.use(provider)
+    let emailAuthState: ReturnType<typeof consumeEmailAuthorizationState>
+    try {
+      emailAuthState = consumeEmailAuthorizationState(session, provider, request.input('state'))
+    } catch (error) {
+      logger.warn({ err: error, provider }, 'Social auth callback state validation failed')
+      session.flash('error', 'Sign-in could not be verified. Please try again.')
+      return response.redirect().toRoute('auth.login')
+    }
+
+    const driver = ally.use(provider).stateless()
     const providerLabel = SOCIAL_AUTH_PROVIDER_LABELS[provider]
+    const failureRoute =
+      emailAuthState.flow === 'registration' || emailAuthState.flow === 'reauth'
+        ? 'auth.register'
+        : 'auth.login'
 
     if (driver.accessDenied()) {
-      session.flash('error', `${providerLabel} sign-in was cancelled.`)
-      return response.redirect().toRoute('auth.login')
+      session.flash('error', `${providerLabel} authorization was cancelled.`)
+      return response.redirect().toRoute(failureRoute)
     }
 
     if (driver.stateMisMatch()) {
       session.flash('error', `${providerLabel} sign-in could not be verified. Please try again.`)
-      return response.redirect().toRoute('auth.login')
+      return response.redirect().toRoute(failureRoute)
     }
 
     if (driver.hasError()) {
       logger.warn({ provider, error: driver.getError() }, 'Social auth provider returned an error')
       session.flash('error', `${providerLabel} authentication failed. Please try again.`)
-      return response.redirect().toRoute('auth.login')
+      return response.redirect().toRoute(failureRoute)
     }
 
     try {
       const socialUser = await driver.user()
       const socialProfile = normalizeSocialUser(provider, socialUser)
+      const socialTokens = normalizeSocialTokens(provider, socialUser)
 
       if (socialProfile.emailVerificationState === 'unverified') {
         session.flash(
           'error',
           `${providerLabel} has not verified that email address. Please use another sign-in method.`
         )
-        return response.redirect().toRoute('auth.login')
+        return response.redirect().toRoute(failureRoute)
       }
 
-      const user = await this.upsertSocialUser(socialProfile)
+      const { user } = await completeEmailAuthorization({
+        profile: socialProfile,
+        tokens: socialTokens,
+        flow: emailAuthState.flow,
+        accountType: emailAuthState.accountType,
+        termsAccepted: emailAuthState.termsAccepted,
+        termsVersion: emailAuthState.termsVersion,
+        ipAddress: request.ip(),
+        userAgent: request.header('user-agent') ?? null,
+      })
+
       await auth.use('web').login(user)
       session.put('auth.login_method', provider)
       session.flash('success', 'Welcome!')
@@ -447,11 +596,20 @@ export default class AuthController {
         return response.redirect(intendedUrl)
       }
 
+      if (emailAuthState.returnPath) {
+        return response.redirect(emailAuthState.returnPath)
+      }
+
       return response.redirect().toRoute('dashboard')
     } catch (error) {
       logger.error({ err: error, provider }, 'Social auth callback failed')
-      session.flash('error', `${providerLabel} authentication failed. Please try again.`)
-      return response.redirect().toRoute('auth.login')
+      session.flash(
+        'error',
+        error instanceof EmailAuthorizationCompletionError
+          ? error.message
+          : `${providerLabel} authentication failed. Please try again.`
+      )
+      return response.redirect().toRoute(failureRoute)
     }
   }
 

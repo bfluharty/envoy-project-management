@@ -76,6 +76,9 @@ export default class AccountController {
         id: connection.id,
         provider: connection.provider,
         email: connection.email,
+        status: connection.status,
+        isPrimary: connection.isPrimary,
+        reauthReason: connection.reauthReason,
         createdAt: connection.createdTimestamp.toISO(),
       })),
     }

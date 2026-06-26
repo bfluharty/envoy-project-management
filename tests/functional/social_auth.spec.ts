@@ -4,6 +4,10 @@ import type { HttpContext } from '@adonisjs/core/http'
 import env from '#start/env'
 import AuthController from '#controllers/web/auth_controller'
 import User from '#models/user'
+import UserInboxConnection from '#models/user_inbox_connection'
+import EmailAuthorizationConsent from '#models/email_authorization_consent'
+import { buildEmailAuthorizationState } from '#services/email_authorization_state_service'
+import { decryptConnectionAccessToken } from '#services/oauth_token_encryption_service'
 
 type SocialProvider = 'google' | 'microsoft'
 
@@ -58,6 +62,7 @@ function makeSocialCallbackContext(
   const sessionValues = new Map<string, unknown>()
   const flashes = new Map<string, string>()
   let loggedInUser: User | null = null
+  let stateParam = ''
 
   if (intendedUrl) {
     sessionValues.set('auth.intended_url', intendedUrl)
@@ -67,13 +72,15 @@ function makeSocialCallbackContext(
     ally: {
       use(requestedProvider: SocialProvider) {
         assert.equal(requestedProvider, provider)
-        return {
+        const driver = {
+          stateless: () => driver,
           accessDenied: () => false,
           stateMisMatch: () => false,
           hasError: () => false,
           getError: () => null,
           user: async () => socialUser,
         }
+        return driver
       },
     },
     auth: {
@@ -88,6 +95,9 @@ function makeSocialCallbackContext(
     },
     request: {
       params: () => ({ provider }),
+      input: (key: string, defaultValue?: unknown) => (key === 'state' ? stateParam : defaultValue),
+      ip: () => '127.0.0.1',
+      header: (key: string) => (key.toLowerCase() === 'user-agent' ? 'test-agent' : null),
     },
     response: {
       redirect(path?: string) {
@@ -109,6 +119,14 @@ function makeSocialCallbackContext(
       flash: (key: string, value: string) => flashes.set(key, value),
     },
   } as unknown as HttpContext
+
+  stateParam = buildEmailAuthorizationState(ctx.session, {
+    provider,
+    flow: 'registration',
+    termsAccepted: true,
+    accountType: 'consumer',
+    returnPath: intendedUrl,
+  })
 
   return {
     ctx,
@@ -216,6 +234,21 @@ test.group('social auth routes', () => {
       restoreEnv()
     }
   })
+
+  test('registration provider OAuth requires email authorization acceptance', async ({
+    client,
+  }) => {
+    const restoreEnv = configureSocialEnv()
+
+    try {
+      const response = await client.get('/auth/google?flow=registration').redirects(0)
+
+      response.assertFound()
+      response.assertHeader('location', '/register')
+    } finally {
+      restoreEnv()
+    }
+  })
 })
 
 test.group('social auth callback', (group) => {
@@ -225,7 +258,7 @@ test.group('social auth callback', (group) => {
     await User.query().where('email', socialEmail).delete()
   })
 
-  test('creates and logs in Microsoft users from Ally profile data', async () => {
+  test('creates user, primary inbox connection, and consent from registration callback', async () => {
     await User.query().where('email', socialEmail).delete()
 
     const controller = new AuthController()
@@ -235,6 +268,12 @@ test.group('social auth callback', (group) => {
         id: 'microsoft-user-1',
         mail: socialEmail,
         displayName: 'Social Microsoft',
+        token: {
+          token: 'microsoft-access-token',
+          refreshToken: 'microsoft-refresh-token',
+          scope: 'openid profile email User.Read Mail.Read Mail.Send',
+          expiresIn: 3600,
+        },
       },
       '/account'
     )
@@ -250,5 +289,22 @@ test.group('social auth callback', (group) => {
     const user = await User.findByOrFail('email', socialEmail)
     assert.equal(user.fullName, 'Social Microsoft')
     assert.equal(user.providerId, 'microsoft-user-1')
+
+    const connection = await UserInboxConnection.query()
+      .where('user_uuid', user.uuid)
+      .where('provider', 'microsoft')
+      .where('email', socialEmail)
+      .firstOrFail()
+    assert.equal(connection.status, 'active')
+    assert.equal(connection.isPrimary, true)
+    assert.equal(connection.providerUserId, 'microsoft-user-1')
+    assert.equal(decryptConnectionAccessToken(connection), 'microsoft-access-token')
+
+    const consent = await EmailAuthorizationConsent.query()
+      .where('user_uuid', user.uuid)
+      .where('provider', 'microsoft')
+      .firstOrFail()
+    assert.equal(consent.email, socialEmail)
+    assert.equal(consent.termsVersion, '2026-06-26-email-access-v1')
   })
 })

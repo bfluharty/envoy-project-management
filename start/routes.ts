@@ -97,7 +97,7 @@ router
 router
   .get('/dashboard', [DashboardController, 'show'])
   .as('dashboard')
-  .middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.activeInbox()])
 router.get('/account', [AccountController, 'show']).as('account').middleware(middleware.auth())
 router
   .get('/account/avatar/google', [AccountController, 'googleAvatar'])
@@ -136,7 +136,7 @@ router
     router.delete('/:uuid', [ContactsController, 'destroy'])
   })
   .prefix('/contacts')
-  .middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.activeInbox()])
 
 // UI routes for projects
 router
@@ -153,7 +153,7 @@ router
     router.post('/:uuid/chat', [ConvoController, 'chat'])
   })
   .prefix('/projects')
-  .middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.activeInbox()])
 
 // API routes for projects
 router
@@ -211,7 +211,7 @@ router
     router.post('/reply', [InboxAPIController, 'sendReply'])
   })
   .prefix('/api/inbox')
-  .middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.activeInbox()])
 
 router
   .group(() => {
@@ -240,7 +240,7 @@ router
     ])
   })
   .prefix('/api/projects')
-  .middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.activeInbox()])
 
 // Internal API routes for reasoning-engine callbacks
 router

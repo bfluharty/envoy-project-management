@@ -9,6 +9,9 @@
     id: number
     provider: string
     email: string
+    status: 'active' | 'reauth_required' | 'disconnected'
+    isPrimary: boolean
+    reauthReason: string | null
     createdAt: string | null
   }
 
@@ -97,6 +100,14 @@
     } catch {
       return value
     }
+  }
+
+  function statusLabel(status: Connection['status']) {
+    return status === 'active'
+      ? 'Active'
+      : status === 'reauth_required'
+        ? 'Reauthorization required'
+        : 'Disconnected'
   }
 
   function passwordSetupDescription() {
@@ -363,14 +374,16 @@
             <div>
               <h2 class="text-xl font-semibold">Connected Email Accounts</h2>
               <p class="text-sm text-surface-600-400 mt-1">
-                Envoy sends outreach from your connected inbox when available. Otherwise it falls back
-                to the Envoy system mailbox.
+                Envoy requires one active connected inbox for vendor outreach and reply sync.
               </p>
             </div>
             {#if connections.length === 0}
               <div class="flex gap-2 flex-wrap">
                 <a href="/inbox/connect?provider=gmail" class="btn preset-filled-primary-500">
                   Connect Gmail
+                </a>
+                <a href="/inbox/connect?provider=microsoft" class="btn preset-tonal">
+                  Connect Microsoft
                 </a>
               </div>
             {/if}
@@ -387,11 +400,27 @@
                 <li class="rounded-xl border border-surface-200-800 bg-surface-100-900/40 p-4">
                   <div class="flex items-center justify-between gap-4 flex-wrap">
                     <div>
-                      <p class="font-medium">{providerLabel(connection.provider)}</p>
+                      <div class="flex flex-wrap items-center gap-2">
+                        <p class="font-medium">{providerLabel(connection.provider)}</p>
+                        {#if connection.isPrimary}
+                          <span class="badge preset-tonal-primary-500 text-xs">Primary</span>
+                        {/if}
+                        <span
+                          class="badge text-xs"
+                          class:preset-tonal-success={connection.status === 'active'}
+                          class:preset-tonal-warning={connection.status === 'reauth_required'}
+                          class:preset-tonal-error={connection.status === 'disconnected'}
+                        >
+                          {statusLabel(connection.status)}
+                        </span>
+                      </div>
                       <p class="text-sm text-surface-600-400">{connection.email}</p>
                       <p class="text-xs text-surface-600-400 mt-1">
                         Connected {formatConnectedAt(connection.createdAt)}
                       </p>
+                      {#if connection.reauthReason}
+                        <p class="text-xs text-warning-600-400 mt-1">{connection.reauthReason}</p>
+                      {/if}
                     </div>
                     <button
                       type="button"
