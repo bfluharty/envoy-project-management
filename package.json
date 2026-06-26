@@ -75,6 +75,7 @@
     "vite": "^6.4.1"
   },
   "dependencies": {
+    "@adonisjs/ally": "^5.1.1",
     "@adonisjs/auth": "^9.5.1",
     "@adonisjs/core": "^6.18.0",
     "@adonisjs/cors": "^2.2.1",
@@ -88,6 +89,7 @@
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@skeletonlabs/skeleton-svelte": "^4.8.0",
     "@tailwindcss/vite": "^4.1.18",
+    "@tpointurier/ally-microsoft": "^0.3.0",
     "@vinejs/vine": "^3.0.1",
     "axios": "^1.13.4",
     "edge.js": "^6.4.0",

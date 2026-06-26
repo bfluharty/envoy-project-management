@@ -4,6 +4,7 @@ import { test } from '@japa/runner'
 import { strict as assert } from 'node:assert'
 import User from '#models/user'
 import testUtils from '@adonisjs/core/services/test_utils'
+import env from '#start/env'
 
 const NEW_EMAIL = 'registration.test.new@example.com'
 const DUPLICATE_EMAIL = 'registration.test.existing@example.com'
@@ -11,6 +12,15 @@ const VALID_PASSWORD = 'Password123!'
 
 test.group('registration', (group) => {
   group.setup(() => testUtils.db().truncate())
+
+  group.each.setup(() => {
+    const previousValue = env.get('PASSWORD_AUTH_ENABLED')
+    env.set('PASSWORD_AUTH_ENABLED', true)
+
+    return () => {
+      env.set('PASSWORD_AUTH_ENABLED', previousValue ?? false)
+    }
+  })
 
   test('happy path: new email creates account and redirects to login', async ({ client }) => {
     await User.query().where('email', NEW_EMAIL).delete()

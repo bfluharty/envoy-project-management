@@ -16,8 +16,10 @@
     fullName: string
     email: string
     avatar: AvatarData
-    googleConnected: boolean
-    sessionLoginMethod: 'password' | 'google' | null
+    socialAccountConnected: boolean
+    linkedAuthProviderLabel: string | null
+    sessionLoginMethod: 'password' | 'google' | 'microsoft' | null
+    passwordAuthEnabled: boolean
     canChangePasswordDirectly: boolean
     canSendPasswordSetupEmail: boolean
   }
@@ -84,7 +86,7 @@
     return provider === 'gmail'
       ? 'Gmail'
       : provider === 'microsoft'
-        ? 'Microsoft (unsupported)'
+        ? 'Microsoft'
         : provider
   }
 
@@ -98,11 +100,16 @@
   }
 
   function passwordSetupDescription() {
-    if (account.sessionLoginMethod === 'google') {
-      return `This session was signed in with Google. To enable or update email/password sign-in, we'll send a secure link to ${account.email}.`
+    if (account.sessionLoginMethod === 'google' || account.sessionLoginMethod === 'microsoft') {
+      const provider = account.sessionLoginMethod === 'google' ? 'Google' : 'Microsoft'
+      return `This session was signed in with ${provider}. To enable or update email/password sign-in, we'll send a secure link to ${account.email}.`
     }
 
-    return `This account is linked to Google. To enable or update email/password sign-in, we'll send a secure link to ${account.email}.`
+    return `This account is linked to ${linkedProviderText()}. To enable or update email/password sign-in, we'll send a secure link to ${account.email}.`
+  }
+
+  function linkedProviderText() {
+    return account.linkedAuthProviderLabel ?? 'a social provider'
   }
 
   function handleAvatarUpload(event: Event) {
@@ -211,114 +218,122 @@
             </p>
             <p class="flex items-center gap-2">
               <PlugZapIcon class="size-4 text-surface-600-400" />
-              <span>{account.googleConnected ? 'Google account linked' : 'Google account not linked'}</span>
+              <span>
+                {account.socialAccountConnected
+                  ? `${linkedProviderText()} account linked`
+                  : 'No social account linked'}
+              </span>
             </p>
           </div>
         </div>
 
-        <section class="card preset-outlined-surface-200-800 p-6 space-y-4">
-          <div class="flex items-start gap-4">
-            <div
-              class="flex size-12 items-center justify-center rounded-full bg-surface-200-800/70 text-surface-700-300"
-            >
-              <KeyRoundIcon class="size-6" />
-            </div>
-            <div class="space-y-1">
-              <h2 class="text-xl font-semibold">Password</h2>
-              <p class="text-sm text-surface-600-400">
-                Manage the password you use to sign in with email.
-              </p>
-            </div>
-          </div>
-
-          {#if account.canChangePasswordDirectly}
-            <form class="space-y-4" onsubmit={changePassword}>
-              <label class="label">
-                <span>Current password</span>
-                <input
-                  id="currentPassword"
-                  name="currentPassword"
-                  type="password"
-                  autocomplete="current-password"
-                  required
-                  bind:value={currentPassword}
-                  class="input"
-                  class:input-error={passwordErrors.currentPassword || pageErrors.currentPassword}
-                  placeholder="Enter your current password"
-                />
-                {#if passwordErrors.currentPassword || pageErrors.currentPassword}
-                  <p class="text-error-500 text-sm">
-                    {(passwordErrors.currentPassword || pageErrors.currentPassword)?.[0]}
-                  </p>
-                {/if}
-              </label>
-
-              <label class="label">
-                <span>New password</span>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autocomplete="new-password"
-                  required
-                  bind:value={password}
-                  class="input"
-                  class:input-error={passwordErrors.password || pageErrors.password}
-                  placeholder="At least 8 characters"
-                />
-                {#if passwordErrors.password || pageErrors.password}
-                  <p class="text-error-500 text-sm">
-                    {(passwordErrors.password || pageErrors.password)?.[0]}
-                  </p>
-                {/if}
-              </label>
-
-              <label class="label">
-                <span>Confirm new password</span>
-                <input
-                  id="passwordConfirmation"
-                  name="passwordConfirmation"
-                  type="password"
-                  autocomplete="new-password"
-                  required
-                  bind:value={passwordConfirmation}
-                  class="input"
-                  class:input-error={passwordErrors.passwordConfirmation || pageErrors.passwordConfirmation}
-                  placeholder="Confirm your new password"
-                />
-                {#if passwordErrors.passwordConfirmation || pageErrors.passwordConfirmation}
-                  <p class="text-error-500 text-sm">
-                    {(passwordErrors.passwordConfirmation || pageErrors.passwordConfirmation)?.[0]}
-                  </p>
-                {/if}
-              </label>
-
-              <button
-                type="submit"
-                disabled={passwordProcessing}
-                class="btn preset-filled-primary-500 w-fit"
+        {#if account.passwordAuthEnabled}
+          <section class="card preset-outlined-surface-200-800 p-6 space-y-4">
+            <div class="flex items-start gap-4">
+              <div
+                class="flex size-12 items-center justify-center rounded-full bg-surface-200-800/70 text-surface-700-300"
               >
-                {passwordProcessing ? 'Updating...' : 'Update Password'}
-              </button>
-            </form>
-          {:else if account.canSendPasswordSetupEmail}
-            <div class="space-y-4 rounded-xl border border-surface-200-800 bg-surface-100-900/40 p-4">
-              <p class="text-sm text-surface-600-400">
-                {passwordSetupDescription()}
-              </p>
-              <button
-                type="button"
-                class="btn preset-filled-primary-500 w-fit"
-                disabled={passwordSetupProcessing}
-                onclick={sendPasswordSetupEmail}
-              >
-                {passwordSetupProcessing
-                  ? 'Sending setup link...'
-                  : 'Email me a password setup link'}
-              </button>
+                <KeyRoundIcon class="size-6" />
+              </div>
+              <div class="space-y-1">
+                <h2 class="text-xl font-semibold">Password</h2>
+                <p class="text-sm text-surface-600-400">
+                  Manage the password you use to sign in with email.
+                </p>
+              </div>
             </div>
-          {/if}
-        </section>
+
+            {#if account.canChangePasswordDirectly}
+              <form class="space-y-4" onsubmit={changePassword}>
+                <label class="label">
+                  <span>Current password</span>
+                  <input
+                    id="currentPassword"
+                    name="currentPassword"
+                    type="password"
+                    autocomplete="current-password"
+                    required
+                    bind:value={currentPassword}
+                    class="input"
+                    class:input-error={passwordErrors.currentPassword || pageErrors.currentPassword}
+                    placeholder="Enter your current password"
+                  />
+                  {#if passwordErrors.currentPassword || pageErrors.currentPassword}
+                    <p class="text-error-500 text-sm">
+                      {(passwordErrors.currentPassword || pageErrors.currentPassword)?.[0]}
+                    </p>
+                  {/if}
+                </label>
+
+                <label class="label">
+                  <span>New password</span>
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    autocomplete="new-password"
+                    required
+                    bind:value={password}
+                    class="input"
+                    class:input-error={passwordErrors.password || pageErrors.password}
+                    placeholder="At least 8 characters"
+                  />
+                  {#if passwordErrors.password || pageErrors.password}
+                    <p class="text-error-500 text-sm">
+                      {(passwordErrors.password || pageErrors.password)?.[0]}
+                    </p>
+                  {/if}
+                </label>
+
+                <label class="label">
+                  <span>Confirm new password</span>
+                  <input
+                    id="passwordConfirmation"
+                    name="passwordConfirmation"
+                    type="password"
+                    autocomplete="new-password"
+                    required
+                    bind:value={passwordConfirmation}
+                    class="input"
+                    class:input-error={passwordErrors.passwordConfirmation || pageErrors.passwordConfirmation}
+                    placeholder="Confirm your new password"
+                  />
+                  {#if passwordErrors.passwordConfirmation || pageErrors.passwordConfirmation}
+                    <p class="text-error-500 text-sm">
+                      {(passwordErrors.passwordConfirmation || pageErrors.passwordConfirmation)?.[0]}
+                    </p>
+                  {/if}
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={passwordProcessing}
+                  class="btn preset-filled-primary-500 w-fit"
+                >
+                  {passwordProcessing ? 'Updating...' : 'Update Password'}
+                </button>
+              </form>
+            {:else if account.canSendPasswordSetupEmail}
+              <div
+                class="space-y-4 rounded-xl border border-surface-200-800 bg-surface-100-900/40 p-4"
+              >
+                <p class="text-sm text-surface-600-400">
+                  {passwordSetupDescription()}
+                </p>
+                <button
+                  type="button"
+                  class="btn preset-filled-primary-500 w-fit"
+                  disabled={passwordSetupProcessing}
+                  onclick={sendPasswordSetupEmail}
+                >
+                  {passwordSetupProcessing
+                    ? 'Sending setup link...'
+                    : 'Email me a password setup link'}
+                </button>
+              </div>
+            {/if}
+          </section>
+        {/if}
       </div>
 
       <div class="space-y-6">

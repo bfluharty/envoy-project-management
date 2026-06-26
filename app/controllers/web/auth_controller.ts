@@ -11,9 +11,96 @@ import {
 } from '#validators/auth_validator'
 import { randomBytes } from 'node:crypto'
 import { DateTime } from 'luxon'
-import { getGoogleAuthUrl, getGoogleUser } from '#services/google_auth_service'
 import { sendPasswordResetLink } from '#services/password_reset_service'
-import UserInboxConnection from '#models/user_inbox_connection'
+
+const SOCIAL_AUTH_PROVIDERS = ['google', 'microsoft'] as const
+type SocialAuthProvider = (typeof SOCIAL_AUTH_PROVIDERS)[number]
+
+interface SocialAuthOption {
+  provider: SocialAuthProvider
+  label: string
+  href: string
+}
+
+interface NormalizedSocialUser {
+  provider: SocialAuthProvider
+  providerUserId: string
+  email: string
+  fullName: string
+  avatarUrl: string | null
+  emailVerificationState: 'verified' | 'unverified' | 'unsupported'
+}
+
+const SOCIAL_AUTH_PROVIDER_LABELS: Record<SocialAuthProvider, string> = {
+  google: 'Google',
+  microsoft: 'Microsoft',
+}
+
+export function passwordAuthEnabled(): boolean {
+  return env.get('PASSWORD_AUTH_ENABLED', false)
+}
+
+function isSocialAuthProvider(provider: unknown): provider is SocialAuthProvider {
+  return (
+    typeof provider === 'string' && SOCIAL_AUTH_PROVIDERS.includes(provider as SocialAuthProvider)
+  )
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+}
+
+function emailLocalPart(email: string): string {
+  return email.split('@')[0] || email
+}
+
+export function normalizeSocialUser(
+  provider: SocialAuthProvider,
+  rawUser: unknown
+): NormalizedSocialUser {
+  const user = rawUser && typeof rawUser === 'object' ? (rawUser as Record<string, unknown>) : {}
+
+  if (provider === 'google') {
+    const providerUserId = nonEmptyString(user.id)
+    const email = nonEmptyString(user.email)
+    if (!providerUserId || !email) {
+      throw new Error('Google did not return a usable profile')
+    }
+
+    const emailVerificationState =
+      user.emailVerificationState === 'verified' || user.emailVerificationState === 'unverified'
+        ? user.emailVerificationState
+        : 'unsupported'
+
+    return {
+      provider,
+      providerUserId,
+      email,
+      fullName: nonEmptyString(user.name) ?? emailLocalPart(email),
+      avatarUrl: nonEmptyString(user.avatarUrl),
+      emailVerificationState,
+    }
+  }
+
+  const providerUserId = nonEmptyString(user.id)
+  const email =
+    nonEmptyString(user.mail) ??
+    nonEmptyString(user.userPrincipalName) ??
+    nonEmptyString(user.email)
+  if (!providerUserId || !email) {
+    throw new Error('Microsoft did not return a usable profile')
+  }
+
+  return {
+    provider,
+    providerUserId,
+    email,
+    fullName:
+      nonEmptyString(user.displayName) ?? nonEmptyString(user.name) ?? emailLocalPart(email),
+    avatarUrl: null,
+    emailVerificationState: 'unsupported',
+  }
+}
 
 export function resolvePostLoginRedirect(intendedUrl: unknown): string | null {
   if (typeof intendedUrl !== 'string' || intendedUrl.length === 0) {
@@ -29,6 +116,38 @@ export function resolvePostLoginRedirect(intendedUrl: unknown): string | null {
 }
 
 export default class AuthController {
+  private getFlashMessage(session: HttpContext['session']) {
+    const successMessage = session.flashMessages.get('success')
+    if (typeof successMessage === 'string') {
+      return { type: 'success' as const, message: successMessage }
+    }
+
+    const errorMessage = session.flashMessages.get('error')
+    if (typeof errorMessage === 'string') {
+      return { type: 'error' as const, message: errorMessage }
+    }
+
+    return null
+  }
+
+  private isSocialAuthProviderConfigured(provider: SocialAuthProvider): boolean {
+    if (provider === 'google') {
+      return Boolean(env.get('GOOGLE_CLIENT_ID') && env.get('GOOGLE_CLIENT_SECRET'))
+    }
+
+    return Boolean(env.get('MICROSOFT_CLIENT_ID') && env.get('MICROSOFT_CLIENT_SECRET'))
+  }
+
+  private getSocialAuthOptions(): SocialAuthOption[] {
+    return SOCIAL_AUTH_PROVIDERS.filter((provider) =>
+      this.isSocialAuthProviderConfigured(provider)
+    ).map((provider) => ({
+      provider,
+      label: SOCIAL_AUTH_PROVIDER_LABELS[provider],
+      href: `/auth/${provider}`,
+    }))
+  }
+
   private consumePostLoginRedirect(session: HttpContext['session']) {
     const intendedUrl = session.get('auth.intended_url')
     session.forget('auth.intended_url')
@@ -36,14 +155,50 @@ export default class AuthController {
     return resolvePostLoginRedirect(intendedUrl)
   }
 
+  private async findUserBySocialProfile(profile: NormalizedSocialUser) {
+    const userByProviderId = await User.findBy('providerId', profile.providerUserId)
+    if (userByProviderId) {
+      return userByProviderId
+    }
+
+    return User.findBy('email', profile.email)
+  }
+
+  private async upsertSocialUser(profile: NormalizedSocialUser) {
+    const user = await this.findUserBySocialProfile(profile)
+
+    if (!user) {
+      return User.create({
+        fullName: profile.fullName,
+        email: profile.email,
+        password: randomBytes(32).toString('hex'),
+        providerId: profile.providerUserId,
+        googleAvatarUrl: profile.provider === 'google' ? profile.avatarUrl : null,
+        entitlementId: 1,
+        isActive: true,
+      })
+    }
+
+    if (profile.provider === 'google') {
+      user.googleAvatarUrl = profile.avatarUrl
+    }
+
+    if (!user.providerId) {
+      user.providerId = profile.providerUserId
+    }
+
+    await user.save()
+    return user
+  }
+
   /**
    * Show the login form
    */
   async showLogin({ inertia, session }: HttpContext) {
     return inertia.render('auth/login', {
-      flashMessage:
-        session.flashMessages.get('success') ?? session.flashMessages.get('error') ?? null,
-      googleAuthAvailable: Boolean(env.get('GOOGLE_CLIENT_ID') && env.get('GOOGLE_CLIENT_SECRET')),
+      flashMessage: this.getFlashMessage(session),
+      socialAuthProviders: this.getSocialAuthOptions(),
+      passwordAuthEnabled: passwordAuthEnabled(),
     })
   }
 
@@ -51,6 +206,11 @@ export default class AuthController {
    * Handle login request
    */
   async login({ auth, request, response, session, inertia }: HttpContext) {
+    if (!passwordAuthEnabled()) {
+      session.flash('error', 'Email and password sign-in is not available right now.')
+      return response.redirect().toRoute('auth.login')
+    }
+
     const { email, password } = await request.validateUsing(loginValidator)
 
     try {
@@ -71,6 +231,8 @@ export default class AuthController {
       return inertia.render('auth/login', {
         flashMessage: { type: 'error', message: 'Invalid email or password' },
         errors: { email: ['Invalid credentials'] },
+        socialAuthProviders: this.getSocialAuthOptions(),
+        passwordAuthEnabled: passwordAuthEnabled(),
       })
     }
   }
@@ -79,16 +241,10 @@ export default class AuthController {
    * Show the registration form
    */
   async showRegister({ inertia, session }: HttpContext) {
-    const successMsg = session.flashMessages.get('success')
-    const errorMsg = session.flashMessages.get('error')
-    const flashMessage = successMsg
-      ? { type: 'success' as const, message: successMsg }
-      : errorMsg
-        ? { type: 'error' as const, message: errorMsg }
-        : null
     return inertia.render('auth/register', {
-      flashMessage,
-      googleAuthAvailable: Boolean(env.get('GOOGLE_CLIENT_ID') && env.get('GOOGLE_CLIENT_SECRET')),
+      flashMessage: this.getFlashMessage(session),
+      socialAuthProviders: this.getSocialAuthOptions(),
+      passwordAuthEnabled: passwordAuthEnabled(),
     })
   }
 
@@ -96,11 +252,12 @@ export default class AuthController {
    * Handle registration request
    */
   async register({ request, response, session, inertia }: HttpContext) {
-    const data = await request.validateUsing(registerValidator)
+    if (!passwordAuthEnabled()) {
+      session.flash('error', 'Email and password registration is not available right now.')
+      return response.redirect().toRoute('auth.register')
+    }
 
-    const googleAuthAvailable = Boolean(
-      env.get('GOOGLE_CLIENT_ID') && env.get('GOOGLE_CLIENT_SECRET')
-    )
+    const data = await request.validateUsing(registerValidator)
 
     try {
       await User.create({
@@ -114,7 +271,6 @@ export default class AuthController {
       session.flash('success', 'Account created successfully! Please log in.')
       return response.redirect().toRoute('auth.login')
     } catch (error: unknown) {
-      logger.error(error, 'Registration failed')
       if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
         return inertia.render('auth/register', {
           flashMessage: {
@@ -122,12 +278,15 @@ export default class AuthController {
             message: 'An account with that email already exists. Try signing in instead.',
           },
           errors: { email: 'An account with this email already exists.' },
-          googleAuthAvailable,
+          socialAuthProviders: this.getSocialAuthOptions(),
+          passwordAuthEnabled: passwordAuthEnabled(),
         })
       }
+      logger.error(error, 'Registration failed')
       return inertia.render('auth/register', {
         flashMessage: { type: 'error', message: 'Something went wrong. Please try again.' },
-        googleAuthAvailable,
+        socialAuthProviders: this.getSocialAuthOptions(),
+        passwordAuthEnabled: passwordAuthEnabled(),
       })
     }
   }
@@ -143,73 +302,71 @@ export default class AuthController {
   }
 
   /**
-   * Redirect to Google OAuth consent screen
+   * Redirect to the selected social provider via Ally.
    */
-  async googleRedirect({ response, session }: HttpContext) {
-    try {
-      const url = getGoogleAuthUrl()
-      return response.redirect(url)
-    } catch (error) {
-      logger.error(error, 'Google OAuth redirect failed')
-      session.flash('error', 'Google sign-in is not configured right now. Please try email login.')
+  async socialRedirect({ ally, request, response, session }: HttpContext) {
+    const provider = request.params().provider
+    if (!isSocialAuthProvider(provider)) {
+      session.flash('error', 'That sign-in provider is not supported.')
       return response.redirect().toRoute('auth.login')
     }
+
+    if (!this.isSocialAuthProviderConfigured(provider)) {
+      session.flash(
+        'error',
+        `${SOCIAL_AUTH_PROVIDER_LABELS[provider]} sign-in is not configured right now. Please try email login.`
+      )
+      return response.redirect().toRoute('auth.login')
+    }
+
+    session.put('redirect.previousUrl', '/login')
+    return ally.use(provider).redirect()
   }
 
   /**
-   * Handle Google OAuth callback
+   * Handle a social provider callback via Ally.
    */
-  async googleCallback({ auth, request, response, session }: HttpContext) {
-    const code = request.input('code')
-    if (!code) {
-      session.flash('error', 'Google authentication failed. Please try again.')
+  async socialCallback({ ally, auth, request, response, session }: HttpContext) {
+    const provider = request.params().provider
+    if (!isSocialAuthProvider(provider)) {
+      session.flash('error', 'That sign-in provider is not supported.')
+      return response.redirect().toRoute('auth.login')
+    }
+
+    const driver = ally.use(provider)
+    const providerLabel = SOCIAL_AUTH_PROVIDER_LABELS[provider]
+
+    if (driver.accessDenied()) {
+      session.flash('error', `${providerLabel} sign-in was cancelled.`)
+      return response.redirect().toRoute('auth.login')
+    }
+
+    if (driver.stateMisMatch()) {
+      session.flash('error', `${providerLabel} sign-in could not be verified. Please try again.`)
+      return response.redirect().toRoute('auth.login')
+    }
+
+    if (driver.hasError()) {
+      logger.warn({ provider, error: driver.getError() }, 'Social auth provider returned an error')
+      session.flash('error', `${providerLabel} authentication failed. Please try again.`)
       return response.redirect().toRoute('auth.login')
     }
 
     try {
-      const googleProfile = await getGoogleUser(code)
+      const socialUser = await driver.user()
+      const socialProfile = normalizeSocialUser(provider, socialUser)
 
-      // Try to find existing user by googleId or email
-      let user = await User.findBy('googleId', googleProfile.googleId)
-      if (!user) {
-        user = await User.findBy('email', googleProfile.email)
+      if (socialProfile.emailVerificationState === 'unverified') {
+        session.flash(
+          'error',
+          `${providerLabel} has not verified that email address. Please use another sign-in method.`
+        )
+        return response.redirect().toRoute('auth.login')
       }
 
-      if (user) {
-        // Link Google ID if not already set
-        if (!user.googleId) {
-          user.googleId = googleProfile.googleId
-        }
-        user.googleAvatarUrl = googleProfile.picture
-        await user.save()
-      } else {
-        // Create new user
-        user = await User.create({
-          fullName: googleProfile.fullName,
-          email: googleProfile.email,
-          googleId: googleProfile.googleId,
-          googleAvatarUrl: googleProfile.picture,
-          password: randomBytes(32).toString('hex'),
-          entitlementId: 1,
-          isActive: true,
-        })
-      }
-
-      // Sync Gmail inbox connection
-      await UserInboxConnection.updateOrCreate(
-        { userUuid: user.uuid, provider: 'gmail', email: googleProfile.email },
-        {
-          accessToken: googleProfile.accessToken,
-          refreshToken: googleProfile.refreshToken,
-          accessTokenExpiresAt: googleProfile.expiresAt
-            ? DateTime.fromJSDate(googleProfile.expiresAt)
-            : null,
-          scopes: googleProfile.scopes,
-        }
-      )
-
+      const user = await this.upsertSocialUser(socialProfile)
       await auth.use('web').login(user)
-      session.put('auth.login_method', 'google')
+      session.put('auth.login_method', provider)
       session.flash('success', 'Welcome!')
 
       const intendedUrl = this.consumePostLoginRedirect(session)
@@ -219,8 +376,8 @@ export default class AuthController {
 
       return response.redirect().toRoute('dashboard')
     } catch (error) {
-      logger.error(error, 'Google OAuth callback failed')
-      session.flash('error', 'Google authentication failed. Please try again.')
+      logger.error({ err: error, provider }, 'Social auth callback failed')
+      session.flash('error', `${providerLabel} authentication failed. Please try again.`)
       return response.redirect().toRoute('auth.login')
     }
   }

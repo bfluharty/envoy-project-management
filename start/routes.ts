@@ -59,10 +59,10 @@ router
     router.post('/login', [AuthController, 'login'])
     router.get('/register', [AuthController, 'showRegister']).as('auth.register')
     router.post('/register', [AuthController, 'register'])
-    router.get('/auth/google', [AuthController, 'googleRedirect']).as('auth.google')
+    router.get('/auth/:provider', [AuthController, 'socialRedirect']).as('auth.social')
     router
-      .get('/auth/google/callback', [AuthController, 'googleCallback'])
-      .as('auth.google.callback')
+      .get('/auth/:provider/callback', [AuthController, 'socialCallback'])
+      .as('auth.social.callback')
   })
   .middleware(middleware.guest())
 
