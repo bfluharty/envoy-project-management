@@ -19,17 +19,6 @@ import VendorService from '#services/vendor_service'
 
 const PASSWORD = 'Password123!'
 
-function cookieHeader(response: any) {
-  const rawSetCookieHeader = response.header('set-cookie')
-  const setCookieValues = Array.isArray(rawSetCookieHeader)
-    ? rawSetCookieHeader
-    : rawSetCookieHeader
-      ? [rawSetCookieHeader]
-      : []
-
-  return setCookieValues.map((cookie: string) => cookie.split(';', 1)[0]).join('; ')
-}
-
 async function createUser(role: 'CONSUMER' | 'VENDOR') {
   const entitlement = await UserEntitlement.findByOrFail('canonicalName', role)
   return User.create({
@@ -40,15 +29,6 @@ async function createUser(role: 'CONSUMER' | 'VENDOR') {
     vendorApprovalStatus: role === 'VENDOR' ? 'PENDING' : null,
     isActive: true,
   })
-}
-
-async function login(client: any, user: User) {
-  const response = await client
-    .post('/login')
-    .form({ email: user.email, password: PASSWORD })
-    .redirects(0)
-  response.assertFound()
-  return cookieHeader(response)
 }
 
 async function createSearchListing(email: string | null = null) {
@@ -92,14 +72,13 @@ test.group('onboarding project completion', (group) => {
 
   test('requires a consumer account for both completion routes', async ({ client }) => {
     const vendorUser = await createUser('VENDOR')
-    const cookie = await login(client, vendorUser)
 
-    const showResponse = await client.get('/onboarding/project').header('Cookie', cookie)
+    const showResponse = await client.get('/onboarding/project').loginAs(vendorUser)
     showResponse.assertStatus(403)
 
     const storeResponse = await client
       .post('/onboarding/project')
-      .header('Cookie', cookie)
+      .loginAs(vendorUser)
       .json(validProjectRequest)
     storeResponse.assertStatus(403)
   })
@@ -154,26 +133,25 @@ test.group('onboarding project completion', (group) => {
     const consumer = await createUser('CONSUMER')
     const listing = await createSearchListing(null)
     const draft = await createAssociatedDraft(consumer, [listing])
-    const cookie = await login(client, consumer)
     const outreachDraftCountBefore = await OutreachDraft.query()
       .count('* as total')
       .then((rows) => Number(rows[0].$extras.total))
 
     const validationResponse = await client
       .post('/onboarding/project')
-      .header('Cookie', cookie)
+      .loginAs(consumer)
       .json({ ...validProjectRequest, title: '' })
     validationResponse.assertStatus(422)
 
     const tokenResponse = await client
       .post('/onboarding/project')
-      .header('Cookie', cookie)
+      .loginAs(consumer)
       .json({ ...validProjectRequest, onboardingToken: draft.tokenUuid })
     tokenResponse.assertStatus(422)
 
     const firstResponse = await client
       .post('/onboarding/project')
-      .header('Cookie', cookie)
+      .loginAs(consumer)
       .json(validProjectRequest)
       .redirects(0)
     firstResponse.assertFound()
@@ -186,7 +164,7 @@ test.group('onboarding project completion', (group) => {
 
     const secondResponse = await client
       .post('/onboarding/project')
-      .header('Cookie', cookie)
+      .loginAs(consumer)
       .json(validProjectRequest)
       .redirects(0)
     secondResponse.assertFound()
@@ -194,7 +172,7 @@ test.group('onboarding project completion', (group) => {
 
     const showRecoveryResponse = await client
       .get('/onboarding/project')
-      .header('Cookie', cookie)
+      .loginAs(consumer)
       .redirects(0)
     showRecoveryResponse.assertFound()
     showRecoveryResponse.assertHeader('location', `/projects/${draft.consumedProjectUuid}`)
@@ -238,7 +216,6 @@ test.group('onboarding project completion', (group) => {
     const draft = await createAssociatedDraft(consumer, [listing])
     draft.expiresAt = DateTime.utc().minus({ minute: 1 })
     await draft.save()
-    const cookie = await login(client, consumer)
 
     const rendered: Array<{ component: string; props: any }> = []
     await new OnboardingProjectController().show({
@@ -260,7 +237,7 @@ test.group('onboarding project completion', (group) => {
 
     const storeResponse = await client
       .post('/onboarding/project')
-      .header('Cookie', cookie)
+      .loginAs(consumer)
       .json(validProjectRequest)
       .redirects(0)
     storeResponse.assertFound()
@@ -379,9 +356,7 @@ test.group('onboarding project completion', (group) => {
     draft.consumedProjectUuid = null
     await draft.save()
 
-    const response = await client
-      .get('/onboarding/project')
-      .header('Cookie', await login(client, consumer))
+    const response = await client.get('/onboarding/project').loginAs(consumer)
     response.assertStatus(409)
     response.assertBodyContains({
       error: 'Onboarding completion could not recover the created project',

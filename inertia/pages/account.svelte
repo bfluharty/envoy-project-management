@@ -3,12 +3,32 @@
   import ThemeToggle from '#components/theme_toggle.svelte'
   import UserAvatar, { type AvatarData } from '#components/user_avatar.svelte'
   import { router, page } from '@inertiajs/svelte'
-  import { KeyRoundIcon, MailIcon, MonitorCogIcon, PlugZapIcon, Trash2Icon, UploadIcon } from '@lucide/svelte'
+  import {
+    AlertTriangleIcon,
+    CheckCircleIcon,
+    KeyRoundIcon,
+    MailIcon,
+    MonitorCogIcon,
+    PlugZapIcon,
+    RefreshCwIcon,
+    Trash2Icon,
+    UploadIcon,
+  } from '@lucide/svelte'
 
   interface Connection {
     id: number
     provider: string
     email: string
+    status: 'active' | 'reauth_required' | 'disconnected'
+    isPrimary: boolean
+    reauthReason: string | null
+    reauthRequiredAt: string | null
+    lastSyncAt: string | null
+    lastSyncError: string | null
+    watchStatus: 'active' | 'renewal_required' | 'not_configured' | 'error'
+    watchExpiresAt: string | null
+    subscriptionExpiresAt: string | null
+    disconnectedAt: string | null
     createdAt: string | null
   }
 
@@ -16,8 +36,10 @@
     fullName: string
     email: string
     avatar: AvatarData
-    googleConnected: boolean
-    sessionLoginMethod: 'password' | 'google' | null
+    socialAccountConnected: boolean
+    linkedAuthProviderLabel: string | null
+    sessionLoginMethod: 'password' | 'google' | 'microsoft' | null
+    passwordAuthEnabled: boolean
     canChangePasswordDirectly: boolean
     canSendPasswordSetupEmail: boolean
   }
@@ -25,6 +47,13 @@
   const { account, connections = [] }: { account: Account; connections: Connection[] } = $props()
   const flash = $derived($page.props.flash || {})
   const pageErrors = $derived(($page.props.errors || {}) as Record<string, string[]>)
+  const primaryConnection = $derived(connections.find((connection) => connection.isPrimary) ?? null)
+  const activePrimaryConnection = $derived(
+    connections.find((connection) => connection.isPrimary && connection.status === 'active') ?? null
+  )
+  const reauthConnection = $derived(
+    connections.find((connection) => connection.status === 'reauth_required') ?? null
+  )
   let currentPassword = $state('')
   let password = $state('')
   let passwordConfirmation = $state('')
@@ -37,6 +66,10 @@
   function disconnect(id: number) {
     if (!confirm('Disconnect this inbox? Envoy will stop listening for vendor emails from it.')) return
     router.post('/inbox/disconnect', { id }, { preserveScroll: true })
+  }
+
+  function connectUrl(provider: string) {
+    return `/inbox/connect?provider=${provider}`
   }
 
   function changePassword(event: Event) {
@@ -84,7 +117,7 @@
     return provider === 'gmail'
       ? 'Gmail'
       : provider === 'microsoft'
-        ? 'Microsoft (unsupported)'
+        ? 'Microsoft'
         : provider
   }
 
@@ -97,12 +130,50 @@
     }
   }
 
+  function formatDateTime(value: string | null) {
+    if (!value) return 'Not available'
+    try {
+      return new Date(value).toLocaleString()
+    } catch {
+      return value
+    }
+  }
+
+  function statusLabel(status: Connection['status']) {
+    return status === 'active'
+      ? 'Active'
+      : status === 'reauth_required'
+        ? 'Reauthorization required'
+        : 'Disconnected'
+  }
+
+  function watchStatusLabel(status: Connection['watchStatus']) {
+    return status === 'active'
+      ? 'Listening'
+      : status === 'renewal_required'
+        ? 'Renewal required'
+        : status === 'not_configured'
+          ? 'Not configured'
+          : 'Error'
+  }
+
+  function watchExpiresAt(connection: Connection) {
+    return connection.provider === 'microsoft'
+      ? connection.subscriptionExpiresAt
+      : connection.watchExpiresAt
+  }
+
   function passwordSetupDescription() {
-    if (account.sessionLoginMethod === 'google') {
-      return `This session was signed in with Google. To enable or update email/password sign-in, we'll send a secure link to ${account.email}.`
+    if (account.sessionLoginMethod === 'google' || account.sessionLoginMethod === 'microsoft') {
+      const provider = account.sessionLoginMethod === 'google' ? 'Google' : 'Microsoft'
+      return `This session was signed in with ${provider}. To enable or update email/password sign-in, we'll send a secure link to ${account.email}.`
     }
 
-    return `This account is linked to Google. To enable or update email/password sign-in, we'll send a secure link to ${account.email}.`
+    return `This account is linked to ${linkedProviderText()}. To enable or update email/password sign-in, we'll send a secure link to ${account.email}.`
+  }
+
+  function linkedProviderText() {
+    return account.linkedAuthProviderLabel ?? 'a social provider'
   }
 
   function handleAvatarUpload(event: Event) {
@@ -166,6 +237,57 @@
       </div>
     {/if}
 
+    {#if reauthConnection}
+      <div
+        class="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-warning-500/30 bg-warning-500/10 p-4"
+      >
+        <div class="flex min-w-0 items-start gap-3">
+          <AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-warning-600-400" />
+          <div class="min-w-0">
+            <p class="font-medium">Reconnect {providerLabel(reauthConnection.provider)}</p>
+            <p class="mt-1 text-sm text-surface-700-300">
+              Envoy cannot sync or send from {reauthConnection.email} until authorization is
+              refreshed.
+            </p>
+            {#if reauthConnection.reauthReason}
+              <p class="mt-1 break-words text-xs text-warning-700-300">
+                {reauthConnection.reauthReason}
+              </p>
+            {/if}
+          </div>
+        </div>
+        <a
+          href={connectUrl(reauthConnection.provider)}
+          class="btn preset-filled-primary-500 btn-sm"
+        >
+          <RefreshCwIcon class="size-4" />
+          <span>Reconnect</span>
+        </a>
+      </div>
+    {:else if !activePrimaryConnection}
+      <div
+        class="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-error-500/30 bg-error-500/10 p-4"
+      >
+        <div class="flex min-w-0 items-start gap-3">
+          <AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-error-500" />
+          <div>
+            <p class="font-medium">Connect an inbox to send outreach</p>
+            <p class="mt-1 text-sm text-surface-700-300">
+              Envoy needs one active primary inbox for vendor email sync and approved sends.
+            </p>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <a href={connectUrl('gmail')} class="btn preset-filled-primary-500 btn-sm">
+            Connect Gmail
+          </a>
+          <a href={connectUrl('microsoft')} class="btn preset-tonal btn-sm">
+            Connect Microsoft
+          </a>
+        </div>
+      </div>
+    {/if}
+
     <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
       <div class="space-y-6">
         <div class="card preset-outlined-surface-200-800 p-6 space-y-4">
@@ -211,114 +333,122 @@
             </p>
             <p class="flex items-center gap-2">
               <PlugZapIcon class="size-4 text-surface-600-400" />
-              <span>{account.googleConnected ? 'Google account linked' : 'Google account not linked'}</span>
+              <span>
+                {account.socialAccountConnected
+                  ? `${linkedProviderText()} account linked`
+                  : 'No social account linked'}
+              </span>
             </p>
           </div>
         </div>
 
-        <section class="card preset-outlined-surface-200-800 p-6 space-y-4">
-          <div class="flex items-start gap-4">
-            <div
-              class="flex size-12 items-center justify-center rounded-full bg-surface-200-800/70 text-surface-700-300"
-            >
-              <KeyRoundIcon class="size-6" />
-            </div>
-            <div class="space-y-1">
-              <h2 class="text-xl font-semibold">Password</h2>
-              <p class="text-sm text-surface-600-400">
-                Manage the password you use to sign in with email.
-              </p>
-            </div>
-          </div>
-
-          {#if account.canChangePasswordDirectly}
-            <form class="space-y-4" onsubmit={changePassword}>
-              <label class="label">
-                <span>Current password</span>
-                <input
-                  id="currentPassword"
-                  name="currentPassword"
-                  type="password"
-                  autocomplete="current-password"
-                  required
-                  bind:value={currentPassword}
-                  class="input"
-                  class:input-error={passwordErrors.currentPassword || pageErrors.currentPassword}
-                  placeholder="Enter your current password"
-                />
-                {#if passwordErrors.currentPassword || pageErrors.currentPassword}
-                  <p class="text-error-500 text-sm">
-                    {(passwordErrors.currentPassword || pageErrors.currentPassword)?.[0]}
-                  </p>
-                {/if}
-              </label>
-
-              <label class="label">
-                <span>New password</span>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autocomplete="new-password"
-                  required
-                  bind:value={password}
-                  class="input"
-                  class:input-error={passwordErrors.password || pageErrors.password}
-                  placeholder="At least 8 characters"
-                />
-                {#if passwordErrors.password || pageErrors.password}
-                  <p class="text-error-500 text-sm">
-                    {(passwordErrors.password || pageErrors.password)?.[0]}
-                  </p>
-                {/if}
-              </label>
-
-              <label class="label">
-                <span>Confirm new password</span>
-                <input
-                  id="passwordConfirmation"
-                  name="passwordConfirmation"
-                  type="password"
-                  autocomplete="new-password"
-                  required
-                  bind:value={passwordConfirmation}
-                  class="input"
-                  class:input-error={passwordErrors.passwordConfirmation || pageErrors.passwordConfirmation}
-                  placeholder="Confirm your new password"
-                />
-                {#if passwordErrors.passwordConfirmation || pageErrors.passwordConfirmation}
-                  <p class="text-error-500 text-sm">
-                    {(passwordErrors.passwordConfirmation || pageErrors.passwordConfirmation)?.[0]}
-                  </p>
-                {/if}
-              </label>
-
-              <button
-                type="submit"
-                disabled={passwordProcessing}
-                class="btn preset-filled-primary-500 w-fit"
+        {#if account.passwordAuthEnabled}
+          <section class="card preset-outlined-surface-200-800 p-6 space-y-4">
+            <div class="flex items-start gap-4">
+              <div
+                class="flex size-12 items-center justify-center rounded-full bg-surface-200-800/70 text-surface-700-300"
               >
-                {passwordProcessing ? 'Updating...' : 'Update Password'}
-              </button>
-            </form>
-          {:else if account.canSendPasswordSetupEmail}
-            <div class="space-y-4 rounded-xl border border-surface-200-800 bg-surface-100-900/40 p-4">
-              <p class="text-sm text-surface-600-400">
-                {passwordSetupDescription()}
-              </p>
-              <button
-                type="button"
-                class="btn preset-filled-primary-500 w-fit"
-                disabled={passwordSetupProcessing}
-                onclick={sendPasswordSetupEmail}
-              >
-                {passwordSetupProcessing
-                  ? 'Sending setup link...'
-                  : 'Email me a password setup link'}
-              </button>
+                <KeyRoundIcon class="size-6" />
+              </div>
+              <div class="space-y-1">
+                <h2 class="text-xl font-semibold">Password</h2>
+                <p class="text-sm text-surface-600-400">
+                  Manage the password you use to sign in with email.
+                </p>
+              </div>
             </div>
-          {/if}
-        </section>
+
+            {#if account.canChangePasswordDirectly}
+              <form class="space-y-4" onsubmit={changePassword}>
+                <label class="label">
+                  <span>Current password</span>
+                  <input
+                    id="currentPassword"
+                    name="currentPassword"
+                    type="password"
+                    autocomplete="current-password"
+                    required
+                    bind:value={currentPassword}
+                    class="input"
+                    class:input-error={passwordErrors.currentPassword || pageErrors.currentPassword}
+                    placeholder="Enter your current password"
+                  />
+                  {#if passwordErrors.currentPassword || pageErrors.currentPassword}
+                    <p class="text-error-500 text-sm">
+                      {(passwordErrors.currentPassword || pageErrors.currentPassword)?.[0]}
+                    </p>
+                  {/if}
+                </label>
+
+                <label class="label">
+                  <span>New password</span>
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    autocomplete="new-password"
+                    required
+                    bind:value={password}
+                    class="input"
+                    class:input-error={passwordErrors.password || pageErrors.password}
+                    placeholder="At least 8 characters"
+                  />
+                  {#if passwordErrors.password || pageErrors.password}
+                    <p class="text-error-500 text-sm">
+                      {(passwordErrors.password || pageErrors.password)?.[0]}
+                    </p>
+                  {/if}
+                </label>
+
+                <label class="label">
+                  <span>Confirm new password</span>
+                  <input
+                    id="passwordConfirmation"
+                    name="passwordConfirmation"
+                    type="password"
+                    autocomplete="new-password"
+                    required
+                    bind:value={passwordConfirmation}
+                    class="input"
+                    class:input-error={passwordErrors.passwordConfirmation || pageErrors.passwordConfirmation}
+                    placeholder="Confirm your new password"
+                  />
+                  {#if passwordErrors.passwordConfirmation || pageErrors.passwordConfirmation}
+                    <p class="text-error-500 text-sm">
+                      {(passwordErrors.passwordConfirmation || pageErrors.passwordConfirmation)?.[0]}
+                    </p>
+                  {/if}
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={passwordProcessing}
+                  class="btn preset-filled-primary-500 w-fit"
+                >
+                  {passwordProcessing ? 'Updating...' : 'Update Password'}
+                </button>
+              </form>
+            {:else if account.canSendPasswordSetupEmail}
+              <div
+                class="space-y-4 rounded-xl border border-surface-200-800 bg-surface-100-900/40 p-4"
+              >
+                <p class="text-sm text-surface-600-400">
+                  {passwordSetupDescription()}
+                </p>
+                <button
+                  type="button"
+                  class="btn preset-filled-primary-500 w-fit"
+                  disabled={passwordSetupProcessing}
+                  onclick={sendPasswordSetupEmail}
+                >
+                  {passwordSetupProcessing
+                    ? 'Sending setup link...'
+                    : 'Email me a password setup link'}
+                </button>
+              </div>
+            {/if}
+          </section>
+        {/if}
       </div>
 
       <div class="space-y-6">
@@ -348,23 +478,53 @@
             <div>
               <h2 class="text-xl font-semibold">Connected Email Accounts</h2>
               <p class="text-sm text-surface-600-400 mt-1">
-                Envoy sends outreach from your connected inbox when available. Otherwise it falls back
-                to the Envoy system mailbox.
+                Envoy requires one active connected inbox for vendor outreach and reply sync.
               </p>
             </div>
-            {#if connections.length === 0}
-              <div class="flex gap-2 flex-wrap">
-                <a href="/inbox/connect?provider=gmail" class="btn preset-filled-primary-500">
-                  Connect Gmail
-                </a>
-              </div>
-            {/if}
+            <div class="flex gap-2 flex-wrap">
+              <a href={connectUrl('gmail')} class="btn preset-filled-primary-500">
+                {connections.length ? 'Replace with Gmail' : 'Connect Gmail'}
+              </a>
+              <a href={connectUrl('microsoft')} class="btn preset-tonal">
+                {connections.length ? 'Replace with Microsoft' : 'Connect Microsoft'}
+              </a>
+            </div>
           </div>
+
+          {#if activePrimaryConnection}
+            <div
+              class="rounded-xl border border-success-500/20 bg-success-500/10 p-4 text-sm"
+            >
+              <div class="flex items-start gap-3">
+                <CheckCircleIcon class="mt-0.5 size-5 shrink-0 text-success-600-400" />
+                <div class="min-w-0">
+                  <p class="font-medium">
+                    Primary inbox: {providerLabel(activePrimaryConnection.provider)}
+                  </p>
+                  <p class="mt-1 break-all text-surface-700-300">
+                    {activePrimaryConnection.email}
+                  </p>
+                </div>
+              </div>
+            </div>
+          {:else if primaryConnection}
+            <div
+              class="rounded-xl border border-warning-500/30 bg-warning-500/10 p-4 text-sm"
+            >
+              <div class="flex items-start gap-3">
+                <AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-warning-600-400" />
+                <div class="min-w-0">
+                  <p class="font-medium">Primary inbox needs attention</p>
+                  <p class="mt-1 break-all text-surface-700-300">{primaryConnection.email}</p>
+                </div>
+              </div>
+            </div>
+          {/if}
 
           {#if connections.length === 0}
             <div class="rounded-xl border border-dashed border-surface-200-800 p-5 text-sm text-surface-600-400">
-              No inbox connected yet. Connect Gmail to send project outreach from your own address
-              and sync vendor replies back into Outreach.
+              No inbox connected yet. Connect Gmail or Microsoft to send project outreach from your
+              own address and sync vendor replies back into Outreach.
             </div>
           {:else}
             <ul class="space-y-3">
@@ -372,19 +532,66 @@
                 <li class="rounded-xl border border-surface-200-800 bg-surface-100-900/40 p-4">
                   <div class="flex items-center justify-between gap-4 flex-wrap">
                     <div>
-                      <p class="font-medium">{providerLabel(connection.provider)}</p>
+                      <div class="flex flex-wrap items-center gap-2">
+                        <p class="font-medium">{providerLabel(connection.provider)}</p>
+                        {#if connection.isPrimary}
+                          <span class="badge preset-tonal-primary-500 text-xs">Primary</span>
+                        {/if}
+                        <span
+                          class="badge text-xs"
+                          class:preset-tonal-success={connection.status === 'active'}
+                          class:preset-tonal-warning={connection.status === 'reauth_required'}
+                          class:preset-tonal-error={connection.status === 'disconnected'}
+                        >
+                          {statusLabel(connection.status)}
+                        </span>
+                      </div>
                       <p class="text-sm text-surface-600-400">{connection.email}</p>
                       <p class="text-xs text-surface-600-400 mt-1">
                         Connected {formatConnectedAt(connection.createdAt)}
                       </p>
+                      {#if connection.reauthReason}
+                        <p class="text-xs text-warning-600-400 mt-1">{connection.reauthReason}</p>
+                      {/if}
                     </div>
-                    <button
-                      type="button"
-                      class="btn preset-tonal-error btn-sm"
-                      onclick={() => disconnect(connection.id)}
-                    >
-                      Disconnect
-                    </button>
+                    <div class="flex flex-wrap gap-2">
+                      {#if connection.status === 'reauth_required'}
+                        <a
+                          href={connectUrl(connection.provider)}
+                          class="btn preset-filled-primary-500 btn-sm"
+                        >
+                          <RefreshCwIcon class="size-4" />
+                          <span>Reconnect</span>
+                        </a>
+                      {/if}
+                      <button
+                        type="button"
+                        class="btn preset-tonal-error btn-sm"
+                        onclick={() => disconnect(connection.id)}
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 grid gap-3 text-xs text-surface-600-400 sm:grid-cols-2">
+                    <div>
+                      <p class="font-medium text-surface-700-300">Provider watch</p>
+                      <p>{watchStatusLabel(connection.watchStatus)}</p>
+                      <p>Expires: {formatDateTime(watchExpiresAt(connection))}</p>
+                    </div>
+                    <div>
+                      <p class="font-medium text-surface-700-300">Last sync</p>
+                      <p>{formatDateTime(connection.lastSyncAt)}</p>
+                      {#if connection.lastSyncError}
+                        <p class="mt-1 break-words text-error-500">{connection.lastSyncError}</p>
+                      {/if}
+                      {#if connection.reauthRequiredAt}
+                        <p class="mt-1">
+                          Reauth requested: {formatDateTime(connection.reauthRequiredAt)}
+                        </p>
+                      {/if}
+                    </div>
                   </div>
                 </li>
               {/each}

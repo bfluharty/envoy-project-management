@@ -6,6 +6,7 @@ import { v1 as uuidv1, v4 as uuidv4 } from 'uuid'
 import { DateTime } from 'luxon'
 import User from '#models/user'
 import testUtils from '@adonisjs/core/services/test_utils'
+import env from '#start/env'
 import EntitlementService from '#services/entitlement_service'
 import AnonymousOnboardingDraft from '#models/anonymous_onboarding_draft'
 import OnboardingDraftService from '#services/onboarding_draft_service'
@@ -22,17 +23,6 @@ const QUERY_TOKEN_EMAIL = 'registration.test.query@example.com'
 const VENDOR_EMAIL = 'registration.test.vendor@example.com'
 const VALID_PASSWORD = 'Password123!'
 
-function cookieHeader(response: any) {
-  const rawSetCookieHeader = response.header('set-cookie')
-  const setCookieValues = Array.isArray(rawSetCookieHeader)
-    ? rawSetCookieHeader
-    : rawSetCookieHeader
-      ? [rawSetCookieHeader]
-      : []
-
-  return setCookieValues.map((cookie: string) => cookie.split(';', 1)[0]).join('; ')
-}
-
 function setCookieHeader(response: any) {
   const value = response.header('set-cookie')
   return Array.isArray(value) ? value.join('; ') : (value ?? '')
@@ -40,6 +30,15 @@ function setCookieHeader(response: any) {
 
 test.group('registration', (group) => {
   group.setup(() => testUtils.db().truncate())
+
+  group.each.setup(() => {
+    const previousValue = env.get('PASSWORD_AUTH_ENABLED')
+    env.set('PASSWORD_AUTH_ENABLED', true)
+
+    return () => {
+      env.set('PASSWORD_AUTH_ENABLED', previousValue ?? false)
+    }
+  })
 
   test('happy path: new email creates account, logs in, and redirects to dashboard', async ({
     client,
@@ -123,7 +122,7 @@ test.group('registration', (group) => {
 
       const response = await client
         .post('/register')
-        .header('Cookie', cookieHeader(handoffResponse))
+        .withSession(handoffResponse.session())
         .form({
           fullName: 'Onboarding Test User',
           email: SESSION_ONBOARDING_EMAIL,
@@ -168,7 +167,7 @@ test.group('registration', (group) => {
 
       const response = await client
         .post('/register')
-        .header('Cookie', cookieHeader(handoffResponse))
+        .withSession(handoffResponse.session())
         .form({
           fullName: 'Precedence Test User',
           email: PRECEDENCE_EMAIL,

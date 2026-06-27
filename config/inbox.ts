@@ -13,20 +13,15 @@ export default {
     scopes: [
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/gmail.send',
-      'https://www.googleapis.com/auth/gmail.modify',
       'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/userinfo.profile',
+      'openid',
     ],
   },
 
   microsoft: {
     clientId: env.get('MICROSOFT_CLIENT_ID') || '',
     clientSecret: env.get('MICROSOFT_CLIENT_SECRET') || '',
-    scopes: [
-      'https://graph.microsoft.com/Mail.Read',
-      'https://graph.microsoft.com/Mail.Send',
-      'https://graph.microsoft.com/User.Read',
-      'offline_access',
-      'openid',
-    ],
+    scopes: ['openid', 'profile', 'email', 'offline_access', 'User.Read', 'Mail.Read', 'Mail.Send'],
   },
 }

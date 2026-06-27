@@ -39,8 +39,8 @@ export default class User extends compose(BaseModel, AuthFinder) {
   @column({ serializeAs: null })
   declare password: string
 
-  @column({ columnName: 'google_id' })
-  declare googleId: string | null
+  @column({ columnName: 'provider_id' })
+  declare providerId: string | null
 
   @column({ columnName: 'google_avatar_url' })
   declare googleAvatarUrl: string | null

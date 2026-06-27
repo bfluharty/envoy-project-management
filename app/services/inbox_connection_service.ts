@@ -2,6 +2,11 @@ import { google } from 'googleapis'
 import type UserInboxConnection from '#models/user_inbox_connection'
 import inboxConfig from '#config/inbox'
 import logger from '@adonisjs/core/services/logger'
+import {
+  decryptConnectionRefreshToken,
+  encryptOauthToken,
+  OAUTH_TOKEN_ENCRYPTION_VERSION,
+} from './oauth_token_encryption_service.js'
 
 export type InboxProvider = 'gmail' | 'microsoft'
 
@@ -41,7 +46,7 @@ export function getAuthUrl(provider: InboxProvider, userUuid: string): string {
     )
     return oauth2.generateAuthUrl({
       access_type: 'offline',
-      prompt: 'consent',
+      prompt: 'consent select_account',
       scope: inboxConfig.google.scopes,
       state,
     })
@@ -59,6 +64,7 @@ export function getAuthUrl(provider: InboxProvider, userUuid: string): string {
       scope,
       state,
       response_mode: 'query',
+      prompt: 'select_account',
     })
     return `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params.toString()}`
   }
@@ -168,18 +174,21 @@ export async function refreshConnectionTokens(
   connection: UserInboxConnection
 ): Promise<UserInboxConnection> {
   if (connection.provider === 'gmail') {
+    const refreshToken = decryptConnectionRefreshToken(connection)
     const oauth2 = new google.auth.OAuth2(
       inboxConfig.google.clientId,
       inboxConfig.google.clientSecret,
       REDIRECT_URI
     )
     oauth2.setCredentials({
-      refresh_token: connection.refreshToken || undefined,
+      refresh_token: refreshToken || undefined,
     })
     const tokenResponse = await oauth2.refreshAccessToken()
     const { credentials } = tokenResponse
-    connection.accessToken = credentials.access_token!
-    if (credentials.refresh_token) connection.refreshToken = credentials.refresh_token
+    connection.accessToken = encryptOauthToken(credentials.access_token!)
+    if (credentials.refresh_token)
+      connection.refreshToken = encryptOauthToken(credentials.refresh_token)
+    connection.tokenEncryptionVersion = OAUTH_TOKEN_ENCRYPTION_VERSION
     const { DateTime } = await import('luxon')
     connection.accessTokenExpiresAt = credentials.expiry_date
       ? DateTime.fromJSDate(new Date(credentials.expiry_date))
@@ -189,13 +198,14 @@ export async function refreshConnectionTokens(
   }
 
   if (connection.provider === 'microsoft') {
-    if (!connection.refreshToken) {
+    const refreshToken = decryptConnectionRefreshToken(connection)
+    if (!refreshToken) {
       throw new Error('Microsoft connection has no refresh token')
     }
     const body = new URLSearchParams({
       client_id: inboxConfig.microsoft.clientId,
       client_secret: inboxConfig.microsoft.clientSecret,
-      refresh_token: connection.refreshToken,
+      refresh_token: refreshToken,
       grant_type: 'refresh_token',
     })
     const res = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
@@ -214,8 +224,9 @@ export async function refreshConnectionTokens(
       expires_in?: number
     }
     const { DateTime } = await import('luxon')
-    connection.accessToken = data.access_token
-    if (data.refresh_token) connection.refreshToken = data.refresh_token
+    connection.accessToken = encryptOauthToken(data.access_token)
+    if (data.refresh_token) connection.refreshToken = encryptOauthToken(data.refresh_token)
+    connection.tokenEncryptionVersion = OAUTH_TOKEN_ENCRYPTION_VERSION
     connection.accessTokenExpiresAt = data.expires_in
       ? DateTime.now().plus({ seconds: data.expires_in })
       : null
