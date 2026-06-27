@@ -1,9 +1,7 @@
 import axios, { type AxiosResponse } from 'axios'
 import { DateTime } from 'luxon'
-import mail from '@adonisjs/mail/services/main'
 import logger from '@adonisjs/core/services/logger'
 import env from '#start/env'
-import OutreachMail from '#mails/outreach_mail'
 import OutreachDraft from '#models/outreach_draft'
 import Message from '#models/message'
 import Project from '#models/project'
@@ -14,6 +12,7 @@ import VendorConversation from '#models/vendor_conversation'
 import ProjectService from '#services/project_service'
 import ReasoningRequestContextService from '#services/reasoning_request_context_service'
 import { getReasoningChatUrl } from '#utils/reasoning_engine_urls'
+import { safeError } from '#utils/safe_error'
 import type { ActionExecution, Turn } from '../../types/turn.js'
 import { getOrCreateEmailCommunicationForProjectVendor } from './email_communication_context.js'
 import {
@@ -69,6 +68,10 @@ type ConversationSelectionMessage = Pick<
 export type ConversationSelectionCandidate = Pick<VendorConversation, 'uuid' | 'timestamp'> & {
   messages?: ConversationSelectionMessage[]
 }
+
+const ACTIVE_INBOX_REQUIRED_MESSAGE =
+  'An active connected email account is required before sending outreach'
+const OUTBOUND_RECONCILIATION_WINDOW_MINUTES = 15
 
 function firstNonEmptyString(...values: Array<string | null | undefined>) {
   for (const value of values) {
@@ -333,15 +336,15 @@ async function getConversationForProjectOrFail(
   return conversation
 }
 
-async function getPreferredConnection(userUuid: string) {
+async function getActivePrimaryConnectionOrFail(userUuid: string) {
   const connection = await UserInboxConnection.query()
     .where('user_uuid', userUuid)
-    .orderBy('provider')
-    .orderBy('email')
+    .where('is_primary', true)
+    .where('status', 'active')
     .first()
 
   if (!connection) {
-    return null
+    throw new Error(ACTIVE_INBOX_REQUIRED_MESSAGE)
   }
 
   return ensureValidToken(connection)
@@ -377,16 +380,98 @@ async function recordOutboundMessage(
   })
 }
 
-async function sendViaEnvoySystemMailbox(
-  projectVendor: ProjectVendor,
-  subject: string,
-  body: string
-) {
-  await mail.send(new OutreachMail(getVendorEmailOrFail(projectVendor), subject, body))
+function normalizeComparableText(value?: string | null) {
+  return (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+}
 
-  return {
-    from: env.get('MAIL_FROM_ADDRESS') ?? 'onboarding@resend.dev',
+function emailHeadersMatch(left?: string | null, right?: string | null) {
+  if (!left || !right) {
+    return false
   }
+
+  return normalizeEmailForMatching(parseEmailFromHeader(left)) === normalizeEmailForMatching(right)
+}
+
+function recipientHeadersOverlap(left?: string | null, right?: string | null) {
+  const leftEmails = new Set(parseEmailList(left).map((email) => normalizeEmailForMatching(email)))
+  return parseEmailList(right).some((email) => leftEmails.has(normalizeEmailForMatching(email)))
+}
+
+function bodiesLikelyMatch(left?: string | null, right?: string | null) {
+  const normalizedLeft = normalizeComparableText(left)
+  const normalizedRight = normalizeComparableText(right)
+
+  if (!normalizedLeft || !normalizedRight) {
+    return true
+  }
+
+  if (normalizedLeft === normalizedRight) {
+    return true
+  }
+
+  const leftPrefix = normalizedLeft.slice(0, 160)
+  const rightPrefix = normalizedRight.slice(0, 160)
+  return normalizedLeft.includes(rightPrefix) || normalizedRight.includes(leftPrefix)
+}
+
+async function reconcileProviderOutboundMessage(
+  conversation: VendorConversation,
+  connection: UserInboxConnection,
+  params: {
+    providerMessageId: string
+    providerThreadId: string | null
+    detail: {
+      from: string
+      to: string
+      subject: string
+      body: string
+      date: Date
+      messageId?: string
+      references?: string
+    }
+    snippet?: string
+  }
+): Promise<Message | null> {
+  const sentAt = DateTime.fromJSDate(params.detail.date)
+  const candidates = await Message.query()
+    .where('vendor_conversation_uuid', conversation.uuid)
+    .where('direction', 'outbound')
+    .whereNull('provider_message_id')
+    .whereBetween('sent_timestamp', [
+      sentAt.minus({ minutes: OUTBOUND_RECONCILIATION_WINDOW_MINUTES }).toJSDate(),
+      sentAt.plus({ minutes: OUTBOUND_RECONCILIATION_WINDOW_MINUTES }).toJSDate(),
+    ])
+    .orderBy('sent_timestamp', 'desc')
+
+  const normalizedSubject = normalizeComparableText(params.detail.subject)
+  const body = params.detail.body || params.snippet || ''
+  const match = candidates.find((candidate) => {
+    if (normalizeComparableText(candidate.subject) !== normalizedSubject) {
+      return false
+    }
+
+    if (!emailHeadersMatch(candidate.from, connection.email)) {
+      return false
+    }
+
+    if (!recipientHeadersOverlap(candidate.to, params.detail.to)) {
+      return false
+    }
+
+    return bodiesLikelyMatch(candidate.body, body)
+  })
+
+  if (!match) {
+    return null
+  }
+
+  match.providerMessageId = params.providerMessageId
+  match.messageIdHeader = params.detail.messageId ?? match.messageIdHeader
+  match.referencesHeader = params.detail.references ?? match.referencesHeader
+  match.providerThreadId = params.providerThreadId ?? match.providerThreadId
+  match.sentTimestamp = sentAt
+  await match.save()
+  return match
 }
 
 function toMillis(value: Date | DateTime | string | null | undefined): number | null {
@@ -649,6 +734,152 @@ function computeReplyReceived(messages: Message[], draft: OutreachDraft | null) 
   )
 }
 
+export interface ProviderMessageSyncSummary {
+  id: string
+  threadId: string | null
+  from: string
+  to: string
+  subject: string
+  date: string
+  snippet?: string
+  source?: 'email_service' | 'gmail_direct'
+}
+
+export interface ProviderMessageSyncResult {
+  processed: boolean
+  created: boolean
+  reason?: string
+  messageUuid?: string
+  conversationUuid?: string
+  projectUuid?: string
+  direction?: 'inbound' | 'outbound'
+}
+
+export async function syncProviderMessageForConnection(
+  connection: UserInboxConnection,
+  summary: ProviderMessageSyncSummary,
+  options: { projectUuid?: string } = {}
+): Promise<ProviderMessageSyncResult> {
+  const user = await User.findBy('uuid', connection.userUuid)
+  if (!user) {
+    return { processed: false, created: false, reason: 'user_not_found' }
+  }
+
+  const validConnection = await ensureValidToken(connection)
+  const providerMessageId = `${validConnection.provider}:${summary.id}`
+  const existing = await Message.query().where('provider_message_id', providerMessageId).first()
+  if (existing) {
+    return {
+      processed: true,
+      created: false,
+      reason: 'duplicate',
+      messageUuid: existing.uuid,
+      conversationUuid: existing.vendorConversationUuid ?? undefined,
+    }
+  }
+
+  const detail =
+    summary.source === 'gmail_direct'
+      ? await getGmailMessageDirect(validConnection, summary.id)
+      : await getInboxMessage(validConnection, summary.id)
+  if (!detail) {
+    return { processed: true, created: false, reason: 'message_not_found' }
+  }
+
+  const counterpartyEmail = resolveCounterpartyEmail(detail, validConnection.email)
+  if (!counterpartyEmail) {
+    return { processed: true, created: false, reason: 'counterparty_not_found' }
+  }
+
+  const direction = getMessageDirectionForConnection(detail.from, validConnection.email)
+  const providerThreadId = summary.threadId ?? detail.threadId ?? null
+  const conversation = await resolveConversationForEmail(user, {
+    counterpartyEmail,
+    projectUuid: options.projectUuid,
+    providerThreadId,
+    inReplyTo: detail.inReplyTo ?? null,
+    references: detail.references ?? null,
+    receivedAt: detail.date,
+  })
+
+  if (!conversation?.projectVendorUuid) {
+    return { processed: true, created: false, reason: 'vendor_not_matched' }
+  }
+
+  const projectVendorQuery = ProjectVendor.query()
+    .where('uuid', conversation.projectVendorUuid)
+    .where('is_active', true)
+
+  if (options.projectUuid) {
+    projectVendorQuery.where('project_uuid', options.projectUuid)
+  }
+
+  const projectVendor = await projectVendorQuery.first()
+  if (!projectVendor) {
+    return { processed: true, created: false, reason: 'project_vendor_not_found' }
+  }
+
+  if (direction === 'outbound') {
+    const reconciled = await reconcileProviderOutboundMessage(conversation, validConnection, {
+      providerMessageId,
+      providerThreadId,
+      detail,
+      snippet: summary.snippet,
+    })
+
+    if (reconciled) {
+      return {
+        processed: true,
+        created: false,
+        reason: 'reconciled',
+        messageUuid: reconciled.uuid,
+        conversationUuid: reconciled.vendorConversationUuid ?? undefined,
+        projectUuid: projectVendor.projectUuid,
+        direction,
+      }
+    }
+  }
+
+  const communication = await getOrCreateEmailCommunicationForProjectVendor(projectVendor.uuid)
+  const message = await Message.create({
+    communicationUuid: communication.uuid,
+    vendorConversationUuid: conversation.uuid,
+    direction,
+    subject: detail.subject,
+    from: detail.from,
+    to: detail.to,
+    cc: detail.cc ?? undefined,
+    body: detail.body || summary.snippet || '',
+    createdBy: 'email-sync-worker',
+    sentTimestamp: DateTime.fromJSDate(detail.date),
+    providerMessageId,
+    messageIdHeader: detail.messageId ?? null,
+    referencesHeader: detail.references ?? null,
+    providerThreadId,
+  })
+
+  if (direction === 'inbound') {
+    await draftReplyForInboundMessage(projectVendor.projectUuid, conversation, {
+      subject: detail.subject,
+      body: detail.body || summary.snippet || '',
+    }).catch((err) => {
+      logger.warn(
+        { err, projectUuid: projectVendor.projectUuid, conversationUuid: conversation.uuid },
+        'Email sync worker: auto-reply draft failed'
+      )
+    })
+  }
+
+  return {
+    processed: true,
+    created: true,
+    messageUuid: message.uuid,
+    conversationUuid: conversation.uuid,
+    projectUuid: projectVendor.projectUuid,
+    direction,
+  }
+}
+
 export async function getProjectOutreach(userUuid: string, projectUuid: string) {
   await getProjectOrFail(userUuid, projectUuid)
 
@@ -758,12 +989,16 @@ export async function getProjectOutreach(userUuid: string, projectUuid: string) 
       return leftRank - rightRank
     })
 
-  const connections = await UserInboxConnection.query().where('user_uuid', userUuid)
+  const activePrimaryConnection = await UserInboxConnection.query()
+    .where('user_uuid', userUuid)
+    .where('is_primary', true)
+    .where('status', 'active')
+    .first()
 
   return {
     cards,
-    hasConnectedInbox: connections.length > 0,
-    senderMode: connections.length > 0 ? 'connected_inbox' : 'envoy_system',
+    hasConnectedInbox: Boolean(activePrimaryConnection),
+    senderMode: activePrimaryConnection ? 'connected_inbox' : 'unavailable',
   }
 }
 
@@ -835,7 +1070,7 @@ export async function syncProjectOutreach(user: User, projectUuid: string) {
   for (const connection of connections) {
     type SyncSummary = {
       id: string
-      threadId: string
+      threadId: string | null
       from: string
       to: string
       subject: string
@@ -943,11 +1178,12 @@ export async function syncProjectOutreach(user: User, projectUuid: string) {
       }
 
       const direction = getMessageDirectionForConnection(detail.from, validConnection.email)
+      const providerThreadId = summary.threadId ?? detail.threadId ?? null
 
       const conversation = await resolveConversationForEmail(user, {
         counterpartyEmail,
         projectUuid,
-        providerThreadId: summary.threadId,
+        providerThreadId,
         inReplyTo: detail.inReplyTo ?? null,
         references: detail.references ?? null,
         receivedAt: detail.date,
@@ -967,6 +1203,19 @@ export async function syncProjectOutreach(user: User, projectUuid: string) {
         continue
       }
 
+      if (direction === 'outbound') {
+        const reconciled = await reconcileProviderOutboundMessage(conversation, validConnection, {
+          providerMessageId,
+          providerThreadId,
+          detail,
+          snippet: summary.snippet,
+        })
+
+        if (reconciled) {
+          continue
+        }
+      }
+
       const communication = await getOrCreateEmailCommunicationForProjectVendor(projectVendor.uuid)
 
       await Message.create({
@@ -983,8 +1232,22 @@ export async function syncProjectOutreach(user: User, projectUuid: string) {
         providerMessageId,
         messageIdHeader: detail.messageId ?? null,
         referencesHeader: detail.references ?? null,
-        providerThreadId: summary.threadId ?? null,
+        providerThreadId,
       })
+
+      // When a vendor replies, automatically draft a response for the user to review.
+      // Fire-and-forget — a drafting failure must never interrupt inbox sync.
+      if (direction === 'inbound') {
+        draftReplyForInboundMessage(projectUuid, conversation, {
+          subject: detail.subject,
+          body: detail.body || summary.snippet || '',
+        }).catch((err) => {
+          logger.warn(
+            { err, projectUuid, conversationUuid: conversation.uuid },
+            'Inbox sync: auto-reply draft failed'
+          )
+        })
+      }
     }
   }
 
@@ -1002,7 +1265,6 @@ export async function sendOutreachDraft(
     projectUuid,
     draftUuid
   )
-  const connection = await getPreferredConnection(user.uuid)
   const subject = overrides?.subject?.trim() || draft.subject
   const body = overrides?.body?.trim() || draft.body
 
@@ -1022,30 +1284,23 @@ export async function sendOutreachDraft(
   }
 
   try {
-    let message: Message
-    if (connection) {
-      const providerMessageId = await sendOnBehalf(connection, {
-        to: vendorEmail,
-        subject,
-        body,
-      })
+    const connection = await getActivePrimaryConnectionOrFail(user.uuid)
+    const sendResult = await sendOnBehalf(connection, {
+      to: vendorEmail,
+      subject,
+      body,
+    })
 
-      message = await recordOutboundMessage(user, projectVendor, threadConversation, {
-        from: connection.email,
-        to: vendorEmail,
-        subject,
-        body,
-        providerMessageId: providerMessageId ? `${connection.provider}:${providerMessageId}` : null,
-      })
-    } else {
-      const fallback = await sendViaEnvoySystemMailbox(projectVendor, subject, body)
-      message = await recordOutboundMessage(user, projectVendor, threadConversation, {
-        from: fallback.from,
-        to: vendorEmail,
-        subject,
-        body,
-      })
-    }
+    const message = await recordOutboundMessage(user, projectVendor, threadConversation, {
+      from: connection.email,
+      to: vendorEmail,
+      subject,
+      body,
+      providerMessageId: sendResult.messageId
+        ? `${connection.provider}:${sendResult.messageId}`
+        : null,
+      threadId: sendResult.threadId,
+    })
 
     draft.subject = subject
     draft.body = body
@@ -1060,6 +1315,15 @@ export async function sendOutreachDraft(
     draft.status = 'error'
     draft.lastError = error instanceof Error ? error.message : 'Failed to send outreach email'
     await draft.save()
+    logger.error(
+      {
+        err: safeError(error),
+        projectUuid,
+        draftUuid,
+        projectVendorUuid: projectVendor.uuid,
+      },
+      'Outreach draft send failed'
+    )
     throw error
   }
 }
@@ -1107,7 +1371,10 @@ export async function reviseOutreachDraft(
       ...reasoningContext,
     })
   } catch (error) {
-    logger.error({ err: error, projectUuid, draftUuid }, 'Failed to revise outreach draft')
+    logger.error(
+      { err: safeError(error), projectUuid, draftUuid },
+      'Failed to revise outreach draft'
+    )
     throw new Error(getAxiosErrorMessage(error, 'Failed to revise outreach draft'))
   }
 
@@ -1154,11 +1421,12 @@ export async function sendThreadReply(
     projectUuid,
     conversation.projectVendorUuid!
   )
-  const connection = await getPreferredConnection(user.uuid)
+  const connection = await getActivePrimaryConnectionOrFail(user.uuid)
   const vendorEmail = getVendorEmailOrFail(projectVendor)
 
-  if (connection) {
-    const providerMessageId = await sendOnBehalf(connection, {
+  let sendResult: Awaited<ReturnType<typeof sendOnBehalf>>
+  try {
+    sendResult = await sendOnBehalf(connection, {
       to: vendorEmail,
       subject: payload.subject,
       body: payload.body,
@@ -1166,24 +1434,29 @@ export async function sendThreadReply(
       references: payload.references,
       threadId: payload.threadId,
     })
-
-    await recordOutboundMessage(user, projectVendor, conversation, {
-      from: connection.email,
-      to: vendorEmail,
-      subject: payload.subject,
-      body: payload.body,
-      providerMessageId: providerMessageId ? `${connection.provider}:${providerMessageId}` : null,
-      threadId: payload.threadId ?? null,
-    })
-  } else {
-    const fallback = await sendViaEnvoySystemMailbox(projectVendor, payload.subject, payload.body)
-    await recordOutboundMessage(user, projectVendor, conversation, {
-      from: fallback.from,
-      to: vendorEmail,
-      subject: payload.subject,
-      body: payload.body,
-    })
+  } catch (error) {
+    logger.error(
+      {
+        err: safeError(error),
+        projectUuid,
+        threadUuid,
+        projectVendorUuid: projectVendor.uuid,
+      },
+      'Outreach thread reply send failed'
+    )
+    throw error
   }
+
+  await recordOutboundMessage(user, projectVendor, conversation, {
+    from: connection.email,
+    to: vendorEmail,
+    subject: payload.subject,
+    body: payload.body,
+    providerMessageId: sendResult.messageId
+      ? `${connection.provider}:${sendResult.messageId}`
+      : null,
+    threadId: sendResult.threadId ?? payload.threadId ?? null,
+  })
 
   return getProjectOutreach(user.uuid, projectUuid)
 }
@@ -1255,7 +1528,10 @@ export async function reviseThreadReply(
       ...reasoningContext,
     })
   } catch (error) {
-    logger.error({ err: error, projectUuid, threadUuid }, 'Failed to revise thread reply')
+    logger.error(
+      { err: safeError(error), projectUuid, threadUuid },
+      'Failed to revise thread reply'
+    )
     throw new Error(getAxiosErrorMessage(error, 'Failed to revise reply'))
   }
 
@@ -1290,6 +1566,130 @@ export async function reviseThreadReply(
     revisedThreadUuid: threadUuid,
     revisedReplyBody: revisedBody,
   }
+}
+
+/**
+ * Called after a new inbound message is recorded during inbox sync.
+ * Guards against creating duplicate drafts, then asks the reasoning engine
+ * (HANDLE_VENDOR_RESPONSE) to draft a reply and saves it to the existing
+ * conversation thread so the user can review and send it from the Outreach tab.
+ *
+ * This is intentionally fire-and-forget — callers should .catch() errors so
+ * a drafting failure never breaks the inbox sync.
+ */
+async function draftReplyForInboundMessage(
+  projectUuid: string,
+  conversation: VendorConversation,
+  inboundMessage: { subject: string; body: string }
+): Promise<void> {
+  // Skip if a draft already exists for this thread — avoid duplicate pending drafts.
+  const existingDraft = await OutreachDraft.query()
+    .where('vendor_conversation_uuid', conversation.uuid)
+    .first()
+  if (existingDraft?.status === 'draft') {
+    return
+  }
+
+  // Only draft if we have previously sent something on this thread.
+  // An inbound message with no prior outbound is an unsolicited email, not a reply.
+  const priorOutbound = await Message.query()
+    .where('vendor_conversation_uuid', conversation.uuid)
+    .where('direction', 'outbound')
+    .first()
+  if (!priorOutbound) {
+    return
+  }
+
+  // Load the project and all its active vendors to build the projectContext
+  // the reasoning engine needs for DRAFT_OUTREACH_EMAILS.
+  const project = await Project.query().where('uuid', projectUuid).where('is_active', true).first()
+  if (!project) {
+    return
+  }
+
+  const allProjectVendors = await ProjectVendor.query()
+    .where('project_uuid', projectUuid)
+    .where('is_active', true)
+    .preload('vendor', (q) => q.preload('vendorListing'))
+
+  const projectContext = {
+    uuid: project.uuid,
+    name: project.title,
+    description: project.description ?? null,
+    goals: project.goals ?? null,
+    vendors: allProjectVendors.map((pv) => ({
+      name: pv.vendor.vendorListing.name,
+      email: pv.vendor.vendorListing.email ?? null,
+    })),
+  }
+
+  logger.info(
+    { projectUuid, conversationUuid: conversation.uuid },
+    'Inbox sync: auto-drafting reply for inbound message'
+  )
+
+  const reasoningResponse = await axios.post(env.get('REASONING_ENGINE_URL', ''), {
+    agentId: 'envoy-reasoning-agent-001',
+    prompt: inboundMessage.body || inboundMessage.subject,
+    variables: { context: 'HANDLE_VENDOR_RESPONSE' },
+    projectUuid,
+    projectContext,
+  })
+
+  const turn = reasoningResponse.data as Turn
+
+  // Extract drafts from DRAFT_OUTREACH_EMAILS action executions and save them
+  // to the *existing* conversation so the reply appears inline with the thread.
+  for (const ae of turn.actionExecutions ?? []) {
+    if (ae.action?.toUpperCase() !== 'DRAFT_OUTREACH_EMAILS' || !ae.success) {
+      continue
+    }
+
+    const drafts: Array<{ vendorEmail?: string; subject?: string; body?: string }> =
+      ae.data?.drafts ?? []
+
+    for (const draft of drafts) {
+      if (!draft.subject?.trim() || !draft.body?.trim()) {
+        continue
+      }
+
+      if (existingDraft) {
+        existingDraft.merge({
+          projectVendorUuid: conversation.projectVendorUuid!,
+          subject: draft.subject.trim(),
+          body: draft.body.trim(),
+          status: 'draft',
+          sentTimestamp: null,
+          sentMessageUuid: null,
+          lastError: null,
+        })
+        await existingDraft.save()
+      } else {
+        await OutreachDraft.create({
+          projectVendorUuid: conversation.projectVendorUuid!,
+          vendorConversationUuid: conversation.uuid,
+          subject: draft.subject.trim(),
+          body: draft.body.trim(),
+          status: 'draft',
+          sentTimestamp: null,
+          sentMessageUuid: null,
+          lastError: null,
+        })
+      }
+
+      logger.info(
+        { projectUuid, conversationUuid: conversation.uuid },
+        'Inbox sync: auto-reply draft saved'
+      )
+      // One draft per inbound message is enough.
+      return
+    }
+  }
+
+  logger.info(
+    { projectUuid, conversationUuid: conversation.uuid },
+    'Inbox sync: reasoning engine did not produce a draft (may need more context)'
+  )
 }
 
 export async function applyOutreachActions(

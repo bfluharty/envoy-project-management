@@ -1,4 +1,5 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import logger from '@adonisjs/core/services/logger'
 import {
   cancelOutreachDraft,
   createOutreachDraft,
@@ -7,8 +8,9 @@ import {
   reviseOutreachDraft,
   sendOutreachDraft,
   sendThreadReply,
-  syncProjectOutreach,
 } from '#services/project_outreach_service'
+import UserInboxConnection from '#models/user_inbox_connection'
+import { buildManualBackfillEvent, enqueueEmailSyncEvent } from '#services/email_sync_event_service'
 import { requestParamsValidator } from '#validators/projects_validator'
 import {
   createOutreachDraftValidator,
@@ -24,6 +26,51 @@ import {
   outreachAiRevisionRateLimitRules,
   rejectWhenRateLimited,
 } from '#utils/rate_limit_utils'
+import { safeError } from '#utils/safe_error'
+
+const ACTIVE_INBOX_REQUIRED_MESSAGE =
+  'An active connected email account is required before sending outreach'
+
+async function queueManualBackfillForActivePrimaryInboxes(userUuid: string) {
+  const connections = await UserInboxConnection.query()
+    .where('user_uuid', userUuid)
+    .where('is_primary', true)
+    .where('status', 'active')
+
+  let queued = 0
+  let skipped = 0
+  let failed = 0
+
+  for (const connection of connections) {
+    try {
+      const wasQueued = await enqueueEmailSyncEvent(buildManualBackfillEvent(connection))
+      if (wasQueued) {
+        queued += 1
+      } else {
+        skipped += 1
+      }
+    } catch (error) {
+      failed += 1
+      logger.warn(
+        { err: safeError(error), connectionUuid: connection.uuid, provider: connection.provider },
+        'Project outreach sync enqueue failed'
+      )
+    }
+  }
+
+  if (connections.length > 0 && queued === 0) {
+    throw new Error(
+      failed > 0 ? 'Failed to queue inbox sync' : 'Email sync queue is not configured'
+    )
+  }
+
+  return {
+    activeConnections: connections.length,
+    queued,
+    skipped,
+    failed,
+  }
+}
 
 export default class ProjectOutreachApiController {
   async cancelDraft({ auth, request, response }: HttpContext) {
@@ -37,6 +84,11 @@ export default class ProjectOutreachApiController {
       const message = error instanceof Error ? error.message : 'Failed to cancel outreach draft'
       if (message === 'Project not found' || message === 'Draft not found') {
         return response.notFound({ error: message })
+      }
+      if (message === ACTIVE_INBOX_REQUIRED_MESSAGE) {
+        return response
+          .status(409)
+          .send({ error: message, reconnectUrl: '/account#email-accounts' })
       }
 
       return response.internalServerError({ error: message })
@@ -85,7 +137,14 @@ export default class ProjectOutreachApiController {
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
 
     try {
-      return response.ok(await syncProjectOutreach(user, projectUuid))
+      const outreach = await getProjectOutreach(user.uuid, projectUuid)
+      const sync = await queueManualBackfillForActivePrimaryInboxes(user.uuid)
+
+      return response.ok({
+        ...outreach,
+        syncQueued: sync.queued > 0,
+        sync,
+      })
     } catch (error) {
       if (error instanceof Error && error.message === 'Project not found') {
         return response.notFound({ error: error.message })
@@ -159,6 +218,11 @@ export default class ProjectOutreachApiController {
       const message = error instanceof Error ? error.message : 'Failed to send reply'
       if (message === 'Project not found' || message === 'Thread not found') {
         return response.notFound({ error: message })
+      }
+      if (message === ACTIVE_INBOX_REQUIRED_MESSAGE) {
+        return response
+          .status(409)
+          .send({ error: message, reconnectUrl: '/account#email-accounts' })
       }
 
       return response.internalServerError({ error: message })

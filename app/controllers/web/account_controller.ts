@@ -1,4 +1,5 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import env from '#start/env'
 import UserInboxConnection from '#models/user_inbox_connection'
 import hash from '@adonisjs/core/services/hash'
 import logger from '@adonisjs/core/services/logger'
@@ -12,21 +13,50 @@ import {
 } from '#services/user_avatar_service'
 
 export default class AccountController {
-  private getSessionLoginMethod(session: HttpContext['session']): 'password' | 'google' | null {
+  private passwordAuthEnabled(): boolean {
+    return env.get('PASSWORD_AUTH_ENABLED', false)
+  }
+
+  private getSessionLoginMethod(
+    session: HttpContext['session']
+  ): 'password' | 'google' | 'microsoft' | null {
     const loginMethod = session.get('auth.login_method')
-    return loginMethod === 'password' || loginMethod === 'google' ? loginMethod : null
+    return loginMethod === 'password' || loginMethod === 'google' || loginMethod === 'microsoft'
+      ? loginMethod
+      : null
   }
 
   private canChangePasswordDirectly(
     user: User,
-    sessionLoginMethod: 'password' | 'google' | null
+    sessionLoginMethod: 'password' | 'google' | 'microsoft' | null
   ): boolean {
-    return !user.googleId || sessionLoginMethod === 'password'
+    return !user.providerId || sessionLoginMethod === 'password'
+  }
+
+  private getLinkedAuthProviderLabel(
+    user: User,
+    sessionLoginMethod: 'password' | 'google' | 'microsoft' | null
+  ) {
+    if (!user.providerId) {
+      return null
+    }
+
+    if (sessionLoginMethod === 'google') {
+      return 'Google'
+    }
+
+    if (sessionLoginMethod === 'microsoft') {
+      return 'Microsoft'
+    }
+
+    return 'Social'
   }
 
   private async buildPageProps(user: User, session: HttpContext['session']) {
     const connections = await UserInboxConnection.query()
       .where('user_uuid', user.uuid)
+      .orderBy('is_primary', 'desc')
+      .orderBy('status')
       .orderBy('provider')
       .orderBy('email')
     const sessionLoginMethod = this.getSessionLoginMethod(session)
@@ -37,15 +67,27 @@ export default class AccountController {
         fullName: user.fullName,
         email: user.email,
         avatar: buildUserAvatar(user),
-        googleConnected: Boolean(user.googleId),
+        socialAccountConnected: Boolean(user.providerId),
+        linkedAuthProviderLabel: this.getLinkedAuthProviderLabel(user, sessionLoginMethod),
         sessionLoginMethod,
+        passwordAuthEnabled: this.passwordAuthEnabled(),
         canChangePasswordDirectly,
-        canSendPasswordSetupEmail: Boolean(user.googleId) && !canChangePasswordDirectly,
+        canSendPasswordSetupEmail: Boolean(user.providerId) && !canChangePasswordDirectly,
       },
       connections: connections.map((connection) => ({
         id: connection.id,
         provider: connection.provider,
         email: connection.email,
+        status: connection.status,
+        isPrimary: connection.isPrimary,
+        reauthReason: connection.reauthReason,
+        reauthRequiredAt: connection.reauthRequiredAt?.toISO() ?? null,
+        lastSyncAt: connection.lastSyncAt?.toISO() ?? null,
+        lastSyncError: connection.lastSyncError,
+        watchStatus: connection.watchStatus,
+        watchExpiresAt: connection.watchExpiresAt?.toISO() ?? null,
+        subscriptionExpiresAt: connection.subscriptionExpiresAt?.toISO() ?? null,
+        disconnectedAt: connection.disconnectedAt?.toISO() ?? null,
         createdAt: connection.createdTimestamp.toISO(),
       })),
     }
@@ -57,6 +99,11 @@ export default class AccountController {
   }
 
   async changePassword({ auth, request, response, session, inertia }: HttpContext) {
+    if (!this.passwordAuthEnabled()) {
+      session.flash('error', 'Email and password sign-in is not available right now.')
+      return response.redirect().toRoute('account')
+    }
+
     const user = auth.getUserOrFail()
     const sessionLoginMethod = this.getSessionLoginMethod(session)
     if (!this.canChangePasswordDirectly(user, sessionLoginMethod)) {
@@ -87,10 +134,15 @@ export default class AccountController {
   }
 
   async sendPasswordSetupEmail({ auth, response, session }: HttpContext) {
+    if (!this.passwordAuthEnabled()) {
+      session.flash('error', 'Email and password sign-in is not available right now.')
+      return response.redirect().toRoute('account')
+    }
+
     const user = auth.getUserOrFail()
     const sessionLoginMethod = this.getSessionLoginMethod(session)
 
-    if (!user.googleId || this.canChangePasswordDirectly(user, sessionLoginMethod)) {
+    if (!user.providerId || this.canChangePasswordDirectly(user, sessionLoginMethod)) {
       session.flash('error', 'You can update your password directly from this page.')
       return response.redirect().toRoute('account')
     }

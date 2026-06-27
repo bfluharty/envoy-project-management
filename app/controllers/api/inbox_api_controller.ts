@@ -3,6 +3,7 @@ import logger from '@adonisjs/core/services/logger'
 import UserInboxConnection from '#models/user_inbox_connection'
 import VendorConversation from '#models/vendor_conversation'
 import { sendReplyAndRecord } from '#services/inbox_reply_service'
+import { safeError } from '#utils/safe_error'
 
 export default class InboxAPIController {
   /**
@@ -25,7 +26,7 @@ export default class InboxAPIController {
     logger.info(
       {
         to: body.to,
-        subject: body.subject,
+        subjectLength: typeof body.subject === 'string' ? body.subject.length : 0,
         vendorConversationUuid: body.vendorConversationUuid,
         bodyLength: typeof body.body === 'string' ? body.body.length : 0,
       },
@@ -40,16 +41,21 @@ export default class InboxAPIController {
       return response.badRequest({ error: 'Missing to, subject, or body' })
     }
 
-    const connection = connectionId
-      ? await UserInboxConnection.query()
-          .where('id', connectionId)
-          .where('user_uuid', user.uuid)
-          .first()
-      : await UserInboxConnection.query().where('user_uuid', user.uuid).first()
+    const connectionQuery = UserInboxConnection.query()
+      .where('user_uuid', user.uuid)
+      .where('is_primary', true)
+      .where('status', 'active')
+
+    if (connectionId) {
+      connectionQuery.where('id', connectionId)
+    }
+
+    const connection = await connectionQuery.first()
 
     if (!connection) {
-      return response.badRequest({
-        error: 'No inbox connected. Connect an inbox in Settings > Inbox.',
+      return response.status(409).send({
+        error: 'An active connected email account is required before sending replies.',
+        reconnectUrl: '/account#email-accounts',
       })
     }
 
@@ -69,7 +75,7 @@ export default class InboxAPIController {
     logger.info(
       {
         to,
-        subject,
+        subjectLength: subject.length,
         connectionEmail: connection.email,
         inReplyTo: !!inReplyTo,
         references: !!references,
@@ -89,7 +95,10 @@ export default class InboxAPIController {
       return response.ok({ message: { uuid: message.uuid } })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to send reply'
-      logger.error({ err, to, connectionEmail: connection.email }, 'Inbox reply failed')
+      logger.error(
+        { err: safeError(err), to, connectionEmail: connection.email },
+        'Inbox reply failed'
+      )
       return response.internalServerError({ error: message })
     }
   }

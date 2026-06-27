@@ -76,10 +76,11 @@ interface OutreachCard {
 
 interface OutreachStateResponse {
     cards?: OutreachCard[];
-    senderMode?: 'connected_inbox' | 'envoy_system';
+    senderMode?: 'connected_inbox' | 'unavailable';
     createdThreadUuid?: string;
     revisedReplyBody?: string;
     revisedThreadUuid?: string;
+    syncQueued?: boolean;
 }
 
 interface SharedUser {
@@ -234,7 +235,7 @@ let outreachLoading = $state(false);
 let outreachSyncing = $state(false);
 let outreachInitialLoadAttempted = $state(false);
 let outreachError = $state<string | null>(null);
-let outreachSenderMode = $state<'connected_inbox' | 'envoy_system'>('envoy_system');
+let outreachSenderMode = $state<'connected_inbox' | 'unavailable'>('unavailable');
 let sendingDraftUuid = $state<string | null>(null);
 let creatingDraftProjectVendorUuid = $state<string | null>(null);
 let revisingDraftUuid = $state<string | null>(null);
@@ -301,7 +302,7 @@ function selectOutreachCard(card: OutreachCard) {
 
 function applyOutreachState(data: OutreachStateResponse) {
     outreachCards = data.cards ?? [];
-    outreachSenderMode = data.senderMode ?? 'envoy_system';
+    outreachSenderMode = data.senderMode ?? 'unavailable';
     outreachLoaded = true;
 
 
@@ -391,12 +392,15 @@ async function loadOutreach(sync = false) {
     }
 
     try {
-        await requestOutreach(
+        const data = await requestOutreach(
             sync
                 ? `/api/projects/${project.uuid}/outreach/sync`
                 : `/api/projects/${project.uuid}/outreach`,
             sync ? { method: 'POST' } : undefined
         );
+        if (sync && data.syncQueued) {
+            setOperationSuccess('Inbox refresh queued.');
+        }
     } catch (error) {
         outreachError = error instanceof Error ? error.message : 'Failed to load outreach.';
     } finally {
@@ -489,6 +493,15 @@ async function sendDraft(card: OutreachCard) {
         setOperationSuccess('Outreach email sent.');
     } catch (error) {
         outreachError = error instanceof Error ? error.message : 'Failed to send outreach email.';
+        outreachCards = outreachCards.map((entry) =>
+            entry.draftUuid === card.draftUuid
+                ? {
+                    ...entry,
+                    status: 'error',
+                    lastError: outreachError,
+                }
+                : entry
+        );
     } finally {
         sendingDraftUuid = null;
     }
@@ -963,9 +976,6 @@ onDestroy(() => {
         sectionLabel="Outreach"
         projectName={project.name}
         description="Review drafts, send outreach, and reply to vendor threads without leaving this project."
-        note={outreachSenderMode === 'connected_inbox'
-            ? 'Envoy will send from your connected inbox by default.'
-            : 'No inbox connected. Envoy will send from the system mailbox until you connect one in Account.'}
     >
         {#snippet actions()}
 

@@ -58,7 +58,7 @@ const inertiaConfig = defineConfig({
    * Options for the server-side rendering
    */
   ssr: {
-    enabled: true,
+    enabled: env.get('NODE_ENV') !== 'test',
     entrypoint: 'inertia/app/ssr.ts',
   },
 })

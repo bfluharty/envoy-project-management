@@ -16,6 +16,7 @@ export default class extends BaseSeeder {
           accessTokenExpiresAt: DateTime.fromISO('2026-12-31T23:59:59.000Z'),
           scopes:
             'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send',
+          tokenEncryptionVersion: 'plaintext_legacy',
         },
         {
           userUuid: 'c8f2b3c4-2d4e-5f6a-7b8c-9d0e1f2a3b41',
@@ -26,6 +27,7 @@ export default class extends BaseSeeder {
           accessTokenExpiresAt: DateTime.fromISO('2026-12-31T23:59:59.000Z'),
           scopes:
             'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send',
+          tokenEncryptionVersion: 'plaintext_legacy',
         },
       ]
     )

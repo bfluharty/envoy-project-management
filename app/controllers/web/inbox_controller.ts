@@ -8,7 +8,13 @@ import {
   decodeState,
   type InboxProvider,
 } from '#services/inbox_connection_service'
+import {
+  encryptOauthToken,
+  OAUTH_TOKEN_ENCRYPTION_VERSION,
+} from '#services/oauth_token_encryption_service'
+import { setupEmailWatch, stopEmailWatch } from '#services/email_watch_service'
 import logger from '@adonisjs/core/services/logger'
+import { safeError } from '#utils/safe_error'
 
 export default class InboxController {
   /**
@@ -17,18 +23,15 @@ export default class InboxController {
   async connect({ auth, request, response, session }: HttpContext) {
     const user = auth.getUserOrFail()
     const provider = request.input('provider') as string
-    if (provider === 'microsoft') {
-      session.flash('error', 'Outlook inbox connection is not available yet.')
-      return response.redirect().toPath('/account#email-accounts')
-    }
-    if (provider !== 'gmail') {
-      return response.badRequest('Invalid provider. Use gmail.')
+    if (provider !== 'gmail' && provider !== 'microsoft') {
+      return response.badRequest('Invalid provider. Use gmail or microsoft.')
     }
     try {
       const url = getAuthUrl(provider as InboxProvider, user.uuid)
+      logger.info({ userUuid: user.uuid, provider }, 'Inbox OAuth connect started')
       return response.redirect(url)
     } catch (err) {
-      logger.error(err, 'Inbox connect: getAuthUrl failed')
+      logger.error({ err: safeError(err), provider }, 'Inbox connect: getAuthUrl failed')
       const message =
         err instanceof Error ? err.message : 'Could not start sign-in. Check server logs.'
       session.flash('error', message)
@@ -60,37 +63,86 @@ export default class InboxController {
       session.flash('error', 'Invalid state. Please try connecting again.')
       return response.redirect().toPath('/account#email-accounts')
     }
-    if (decoded.provider !== 'gmail') {
-      session.flash('error', 'Outlook inbox connection is not available yet.')
-      return response.redirect().toPath('/account#email-accounts')
-    }
-
     try {
       const tokens = await exchangeCode(decoded.provider, code, state)
       const expiresAt = tokens.expiresAt !== null ? DateTime.fromJSDate(tokens.expiresAt) : null
-      await UserInboxConnection.updateOrCreate(
+      const existing = await UserInboxConnection.query()
+        .where('user_uuid', user.uuid)
+        .where('provider', decoded.provider)
+        .where('email', tokens.email)
+        .first()
+
+      if (!tokens.refreshToken && !existing?.refreshToken) {
+        throw new Error(
+          'The email provider did not return offline access. Please try again and approve mailbox access.'
+        )
+      }
+
+      let otherPrimaryQuery = UserInboxConnection.query()
+        .where('user_uuid', user.uuid)
+        .where('is_primary', true)
+        .whereIn('status', ['active', 'reauth_required'])
+
+      if (existing) {
+        otherPrimaryQuery = otherPrimaryQuery.whereNot('id', existing.id)
+      }
+
+      const replacedConnections = await otherPrimaryQuery
+      for (const replacedConnection of replacedConnections) {
+        await stopEmailWatch(replacedConnection)
+      }
+
+      if (replacedConnections.length > 0) {
+        await UserInboxConnection.query()
+          .whereIn(
+            'id',
+            replacedConnections.map((connection) => connection.id)
+          )
+          .update({
+            is_primary: false,
+            status: 'disconnected',
+            disconnected_at: DateTime.utc().toSQL(),
+          })
+      }
+
+      const connection = existing ?? new UserInboxConnection()
+      connection.merge({
+        userUuid: user.uuid,
+        provider: decoded.provider,
+        email: tokens.email,
+        accessToken: encryptOauthToken(tokens.accessToken),
+        refreshToken: tokens.refreshToken
+          ? encryptOauthToken(tokens.refreshToken)
+          : (existing?.refreshToken ?? null),
+        accessTokenExpiresAt: expiresAt,
+        scopes: tokens.scopes,
+        status: 'active',
+        isPrimary: true,
+        tokenEncryptionVersion: OAUTH_TOKEN_ENCRYPTION_VERSION,
+        reauthReason: null,
+        reauthRequiredAt: null,
+        disconnectedAt: null,
+      })
+      await connection.save()
+      await setupEmailWatch(connection)
+
+      const label = decoded.provider === 'gmail' ? 'Gmail' : 'Microsoft'
+      logger.info(
         {
           userUuid: user.uuid,
-          provider: decoded.provider,
-          email: tokens.email,
+          connectionUuid: connection.uuid,
+          provider: connection.provider,
+          email: connection.email,
         },
-        {
-          userUuid: user.uuid,
-          provider: decoded.provider,
-          email: tokens.email,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          accessTokenExpiresAt: expiresAt,
-          scopes: tokens.scopes,
-        }
+        'Inbox OAuth callback completed'
       )
       session.flash(
         'success',
-        'Gmail connected. Envoy will use it for outreach and replies when available.'
+        `${label} connected. Envoy will use it for outreach and replies when available.`
       )
       return response.redirect().toPath('/account#email-accounts')
     } catch (err) {
-      logger.error(err, 'Inbox callback: exchange failed')
+      logger.error({ err: safeError(err) }, 'Inbox callback: exchange failed')
       const message =
         err instanceof Error ? err.message : 'Could not connect inbox. Please try again.'
       session.flash('error', message)
@@ -137,6 +189,16 @@ export default class InboxController {
       return response.redirect().back()
     }
 
+    await stopEmailWatch(connection)
+    logger.info(
+      {
+        userUuid: user.uuid,
+        connectionUuid: connection.uuid,
+        provider: connection.provider,
+        email: connection.email,
+      },
+      'Inbox disconnected by user'
+    )
     await connection.delete()
     session.flash('success', 'Inbox disconnected.')
     return response.redirect().back()
