@@ -32,8 +32,18 @@ export default class ContactsController {
 
     try {
       const listing = await VendorService.createVendor(user.uuid, validatedRequest as VendorRequest)
+      const mapping = await VendorService.ensureUserVendorMapping(user.uuid, listing.uuid)
+      if (!mapping) {
+        throw new Error('Failed to create contact mapping')
+      }
       return response.status(201).json({
-        contact: { uuid: listing.uuid, name: listing.name, email: listing.email },
+        contact: {
+          uuid: listing.uuid,
+          vendorListingUuid: listing.uuid,
+          vendorUuid: mapping.uuid,
+          name: listing.name,
+          email: listing.email,
+        },
       })
     } catch (error) {
       logger.error('Error creating contact:')
