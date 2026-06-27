@@ -80,6 +80,7 @@ interface OutreachStateResponse {
     createdThreadUuid?: string;
     revisedReplyBody?: string;
     revisedThreadUuid?: string;
+    syncQueued?: boolean;
 }
 
 interface SharedUser {
@@ -391,12 +392,15 @@ async function loadOutreach(sync = false) {
     }
 
     try {
-        await requestOutreach(
+        const data = await requestOutreach(
             sync
                 ? `/api/projects/${project.uuid}/outreach/sync`
                 : `/api/projects/${project.uuid}/outreach`,
             sync ? { method: 'POST' } : undefined
         );
+        if (sync && data.syncQueued) {
+            setOperationSuccess('Inbox refresh queued.');
+        }
     } catch (error) {
         outreachError = error instanceof Error ? error.message : 'Failed to load outreach.';
     } finally {

@@ -236,9 +236,7 @@ from project management on every request.
 
 There are two sync-related paths in project management.
 
-### Project Outreach sync
-
-The primary current flow is project-scoped outreach sync:
+### Project Outreach refresh
 
 ```text
 POST /api/projects/:uuid/outreach/sync
@@ -247,33 +245,24 @@ POST /api/projects/:uuid/outreach/sync
 Handled by:
 
 - `ProjectOutreachApiController.sync`
-- `syncProjectOutreach` in `project_outreach_service.ts`
+- `buildManualBackfillEvent` and `enqueueEmailSyncEvent` in
+  `email_sync_event_service.ts`
 
 The flow:
 
 1. Load the project for the authenticated user.
-2. Load all `UserInboxConnection` rows for that user.
-3. Refresh each connection's token if needed.
-4. Call `listInboxMessages(connection, { maxResults: 200 })`.
-5. Try to list sent messages by calling `listInboxMessages` with a `mailbox`
-   option.
-6. For Gmail only, also use a direct Gmail fallback,
-   `listGmailMessagesDirect(..., query: 'in:anywhere')`.
-7. De-duplicate by provider message id.
-8. Fetch message details through `getInboxMessage` or the Gmail direct fallback.
-9. Determine inbound vs outbound by comparing the message sender to the
-   connected mailbox address.
-10. Match the counterparty email to project vendors.
-11. Resolve or create the appropriate `VendorConversation`.
-12. Persist a `Message` with provider ids and threading headers.
-13. If a new inbound message is a reply to a thread with prior outbound mail,
-   fire-and-forget an AI-generated local reply draft.
+2. Return the current outreach state immediately.
+3. Enqueue a `manual_backfill` SQS event for the user's active primary inbox.
+4. The background sync worker refreshes the token if needed, searches provider
+   mail for known vendor email addresses, de-duplicates by provider message id,
+   fetches message details, and persists matching vendor conversations.
+5. If a new inbound message is a reply to a thread with prior outbound mail, the
+   worker fire-and-forgets an AI-generated local reply draft.
 
-Current limitation: project management passes a `mailbox` option, but
-`envoy-email-service` does not include `mailbox` in its request model or
-validation result. Today the email service's Gmail list implementation always
-queries `in:inbox`. The Gmail direct fallback partially compensates for Gmail by
-querying `in:anywhere`; Microsoft will need first-class mailbox/folder support.
+This endpoint intentionally does not perform provider mailbox scans inline. The
+old direct `syncProjectOutreach` path remains in `project_outreach_service.ts`
+for now, but the UI refresh button uses the SQS-backed worker path to avoid
+CloudFront or ALB request timeouts during Gmail and Microsoft backfills.
 
 ### Older/global inbox sync
 
