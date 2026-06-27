@@ -25,6 +25,8 @@ interface ChatMessage {
 
 interface Vendor {
     uuid: string;
+    vendorUuid?: string | null;
+    vendorListingUuid?: string | null;
     name: string;
     email: string;
 }
@@ -838,18 +840,26 @@ async function createAndAttachContact(e: Event) {
             return;
         }
         const { contact } = await createRes.json();
-        const newList = [...localLinked.map((v) => v.uuid), contact.uuid];
+        const contactVendorUuid = contact.vendorUuid ?? contact.uuid;
+        const linkedContact = {
+            uuid: contactVendorUuid,
+            vendorUuid: contactVendorUuid,
+            vendorListingUuid: contact.vendorListingUuid ?? contact.uuid,
+            name: contact.name,
+            email: contact.email,
+        };
+        const newList = [...localLinked.map((v) => v.uuid), contactVendorUuid];
         const patchRes = await patchProject({ vendors: newList });
         if (patchRes.ok) {
-            localLinked = [...localLinked, contact];
-            localAllVendors = [...localAllVendors, contact];
+            localLinked = [...localLinked, linkedContact];
+            localAllVendors = [...localAllVendors, linkedContact];
             newContactName = '';
             newContactEmail = '';
             activeContactPanel = null;
             setOperationSuccess('Contact created and attached.');
         } else {
             // Contact was created but linking failed — surface it in the dropdown
-            localAllVendors = [...localAllVendors, contact];
+            localAllVendors = [...localAllVendors, linkedContact];
             contactSearchQuery = contact.name;
             activeContactPanel = 'attach';
             vendorError = 'Contact created but could not be attached. Select them from the dropdown and click Attach.';
