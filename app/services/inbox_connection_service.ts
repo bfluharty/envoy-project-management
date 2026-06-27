@@ -46,7 +46,7 @@ export function getAuthUrl(provider: InboxProvider, userUuid: string): string {
     )
     return oauth2.generateAuthUrl({
       access_type: 'offline',
-      prompt: 'consent',
+      prompt: 'consent select_account',
       scope: inboxConfig.google.scopes,
       state,
     })
@@ -64,6 +64,7 @@ export function getAuthUrl(provider: InboxProvider, userUuid: string): string {
       scope,
       state,
       response_mode: 'query',
+      prompt: 'select_account',
     })
     return `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params.toString()}`
   }

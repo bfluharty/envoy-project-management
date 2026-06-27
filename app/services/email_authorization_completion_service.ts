@@ -50,6 +50,7 @@ export interface CompleteEmailAuthorizationResult {
   user: User
   connection: UserInboxConnection
   createdUser: boolean
+  replacedConnectionIds: number[]
 }
 
 export class EmailAuthorizationCompletionError extends Error {
@@ -183,6 +184,9 @@ async function createOrUpdatePrimaryConnection(
     otherPrimaryQuery = otherPrimaryQuery.whereNot('id', existing.id)
   }
 
+  const replacedConnections = await otherPrimaryQuery.clone().select('id')
+  const replacedConnectionIds = replacedConnections.map((connection) => connection.id)
+
   await otherPrimaryQuery.update({
     is_primary: false,
     status: 'disconnected',
@@ -213,10 +217,13 @@ async function createOrUpdatePrimaryConnection(
     existing.useTransaction(trx)
     existing.merge(connectionValues)
     await existing.save()
-    return existing
+    return { connection: existing, replacedConnectionIds }
   }
 
-  return UserInboxConnection.create(connectionValues, { client: trx })
+  return {
+    connection: await UserInboxConnection.create(connectionValues, { client: trx }),
+    replacedConnectionIds,
+  }
 }
 
 async function recordConsent(
@@ -261,9 +268,14 @@ export async function completeEmailAuthorization(
       trx
     )
 
-    const connection = await createOrUpdatePrimaryConnection(user, input.profile, input.tokens, trx)
+    const { connection, replacedConnectionIds } = await createOrUpdatePrimaryConnection(
+      user,
+      input.profile,
+      input.tokens,
+      trx
+    )
     await recordConsent(user, input.profile, input.tokens, input, trx)
 
-    return { user, connection, createdUser }
+    return { user, connection, createdUser, replacedConnectionIds }
   })
 }

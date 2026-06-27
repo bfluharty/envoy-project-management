@@ -3,6 +3,7 @@ import logger from '@adonisjs/core/services/logger'
 import UserInboxConnection from '#models/user_inbox_connection'
 import VendorConversation from '#models/vendor_conversation'
 import { sendReplyAndRecord } from '#services/inbox_reply_service'
+import { safeError } from '#utils/safe_error'
 
 export default class InboxAPIController {
   /**
@@ -25,7 +26,7 @@ export default class InboxAPIController {
     logger.info(
       {
         to: body.to,
-        subject: body.subject,
+        subjectLength: typeof body.subject === 'string' ? body.subject.length : 0,
         vendorConversationUuid: body.vendorConversationUuid,
         bodyLength: typeof body.body === 'string' ? body.body.length : 0,
       },
@@ -74,7 +75,7 @@ export default class InboxAPIController {
     logger.info(
       {
         to,
-        subject,
+        subjectLength: subject.length,
         connectionEmail: connection.email,
         inReplyTo: !!inReplyTo,
         references: !!references,
@@ -94,7 +95,10 @@ export default class InboxAPIController {
       return response.ok({ message: { uuid: message.uuid } })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to send reply'
-      logger.error({ err, to, connectionEmail: connection.email }, 'Inbox reply failed')
+      logger.error(
+        { err: safeError(err), to, connectionEmail: connection.email },
+        'Inbox reply failed'
+      )
       return response.internalServerError({ error: message })
     }
   }

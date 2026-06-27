@@ -2,6 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
 import env from '#start/env'
 import User from '#models/user'
+import UserInboxConnection from '#models/user_inbox_connection'
 import PasswordResetToken from '#models/password_reset_token'
 import {
   forgotPasswordValidator,
@@ -23,12 +24,13 @@ import {
   EmailAuthorizationCompletionError,
   type NormalizedEmailAuthorizationTokens,
 } from '#services/email_authorization_completion_service'
-import { setupEmailWatch } from '#services/email_watch_service'
+import { setupEmailWatch, stopEmailWatch } from '#services/email_watch_service'
 import OnboardingDraftService, {
   ONBOARDING_TOKEN_SESSION_KEY,
   OnboardingDraftError,
   isUuidV4,
 } from '#services/onboarding_draft_service'
+import { safeError } from '#utils/safe_error'
 
 const SOCIAL_AUTH_PROVIDERS = ['google', 'microsoft'] as const
 type SocialAuthProvider = (typeof SOCIAL_AUTH_PROVIDERS)[number]
@@ -526,7 +528,10 @@ export default class AuthController {
     try {
       emailAuthState = consumeEmailAuthorizationState(session, provider, request.input('state'))
     } catch (error) {
-      logger.warn({ err: error, provider }, 'Social auth callback state validation failed')
+      logger.warn(
+        { err: safeError(error), provider },
+        'Social auth callback state validation failed'
+      )
       session.flash('error', 'Sign-in could not be verified. Please try again.')
       return response.redirect().toRoute('auth.login')
     }
@@ -567,7 +572,7 @@ export default class AuthController {
         return response.redirect().toRoute(failureRoute)
       }
 
-      const { user, connection } = await completeEmailAuthorization({
+      const { user, connection, replacedConnectionIds } = await completeEmailAuthorization({
         profile: socialProfile,
         tokens: socialTokens,
         flow: emailAuthState.flow,
@@ -578,6 +583,18 @@ export default class AuthController {
         userAgent: request.header('user-agent') ?? null,
       })
 
+      for (const connectionId of replacedConnectionIds) {
+        const replacedConnection = await UserInboxConnection.find(connectionId)
+        if (replacedConnection) {
+          await stopEmailWatch(replacedConnection)
+          replacedConnection.merge({
+            isPrimary: false,
+            status: 'disconnected',
+            disconnectedAt: DateTime.utc(),
+          })
+          await replacedConnection.save()
+        }
+      }
       await setupEmailWatch(connection)
       await auth.use('web').login(user)
       session.put('auth.login_method', provider)
@@ -602,7 +619,7 @@ export default class AuthController {
 
       return response.redirect().toRoute('dashboard')
     } catch (error) {
-      logger.error({ err: error, provider }, 'Social auth callback failed')
+      logger.error({ err: safeError(error), provider }, 'Social auth callback failed')
       session.flash(
         'error',
         error instanceof EmailAuthorizationCompletionError

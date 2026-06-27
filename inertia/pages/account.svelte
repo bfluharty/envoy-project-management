@@ -3,7 +3,17 @@
   import ThemeToggle from '#components/theme_toggle.svelte'
   import UserAvatar, { type AvatarData } from '#components/user_avatar.svelte'
   import { router, page } from '@inertiajs/svelte'
-  import { KeyRoundIcon, MailIcon, MonitorCogIcon, PlugZapIcon, Trash2Icon, UploadIcon } from '@lucide/svelte'
+  import {
+    AlertTriangleIcon,
+    CheckCircleIcon,
+    KeyRoundIcon,
+    MailIcon,
+    MonitorCogIcon,
+    PlugZapIcon,
+    RefreshCwIcon,
+    Trash2Icon,
+    UploadIcon,
+  } from '@lucide/svelte'
 
   interface Connection {
     id: number
@@ -12,6 +22,13 @@
     status: 'active' | 'reauth_required' | 'disconnected'
     isPrimary: boolean
     reauthReason: string | null
+    reauthRequiredAt: string | null
+    lastSyncAt: string | null
+    lastSyncError: string | null
+    watchStatus: 'active' | 'renewal_required' | 'not_configured' | 'error'
+    watchExpiresAt: string | null
+    subscriptionExpiresAt: string | null
+    disconnectedAt: string | null
     createdAt: string | null
   }
 
@@ -30,6 +47,13 @@
   const { account, connections = [] }: { account: Account; connections: Connection[] } = $props()
   const flash = $derived($page.props.flash || {})
   const pageErrors = $derived(($page.props.errors || {}) as Record<string, string[]>)
+  const primaryConnection = $derived(connections.find((connection) => connection.isPrimary) ?? null)
+  const activePrimaryConnection = $derived(
+    connections.find((connection) => connection.isPrimary && connection.status === 'active') ?? null
+  )
+  const reauthConnection = $derived(
+    connections.find((connection) => connection.status === 'reauth_required') ?? null
+  )
   let currentPassword = $state('')
   let password = $state('')
   let passwordConfirmation = $state('')
@@ -42,6 +66,10 @@
   function disconnect(id: number) {
     if (!confirm('Disconnect this inbox? Envoy will stop listening for vendor emails from it.')) return
     router.post('/inbox/disconnect', { id }, { preserveScroll: true })
+  }
+
+  function connectUrl(provider: string) {
+    return `/inbox/connect?provider=${provider}`
   }
 
   function changePassword(event: Event) {
@@ -102,12 +130,37 @@
     }
   }
 
+  function formatDateTime(value: string | null) {
+    if (!value) return 'Not available'
+    try {
+      return new Date(value).toLocaleString()
+    } catch {
+      return value
+    }
+  }
+
   function statusLabel(status: Connection['status']) {
     return status === 'active'
       ? 'Active'
       : status === 'reauth_required'
         ? 'Reauthorization required'
         : 'Disconnected'
+  }
+
+  function watchStatusLabel(status: Connection['watchStatus']) {
+    return status === 'active'
+      ? 'Listening'
+      : status === 'renewal_required'
+        ? 'Renewal required'
+        : status === 'not_configured'
+          ? 'Not configured'
+          : 'Error'
+  }
+
+  function watchExpiresAt(connection: Connection) {
+    return connection.provider === 'microsoft'
+      ? connection.subscriptionExpiresAt
+      : connection.watchExpiresAt
   }
 
   function passwordSetupDescription() {
@@ -181,6 +234,57 @@
         class="alert rounded-lg border border-success-500/20 bg-success-500/10 p-4 text-surface-950 dark:border-surface-200-800 dark:bg-surface-100-900/40 dark:text-surface-50"
       >
         <span>{flash.success}</span>
+      </div>
+    {/if}
+
+    {#if reauthConnection}
+      <div
+        class="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-warning-500/30 bg-warning-500/10 p-4"
+      >
+        <div class="flex min-w-0 items-start gap-3">
+          <AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-warning-600-400" />
+          <div class="min-w-0">
+            <p class="font-medium">Reconnect {providerLabel(reauthConnection.provider)}</p>
+            <p class="mt-1 text-sm text-surface-700-300">
+              Envoy cannot sync or send from {reauthConnection.email} until authorization is
+              refreshed.
+            </p>
+            {#if reauthConnection.reauthReason}
+              <p class="mt-1 break-words text-xs text-warning-700-300">
+                {reauthConnection.reauthReason}
+              </p>
+            {/if}
+          </div>
+        </div>
+        <a
+          href={connectUrl(reauthConnection.provider)}
+          class="btn preset-filled-primary-500 btn-sm"
+        >
+          <RefreshCwIcon class="size-4" />
+          <span>Reconnect</span>
+        </a>
+      </div>
+    {:else if !activePrimaryConnection}
+      <div
+        class="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-error-500/30 bg-error-500/10 p-4"
+      >
+        <div class="flex min-w-0 items-start gap-3">
+          <AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-error-500" />
+          <div>
+            <p class="font-medium">Connect an inbox to send outreach</p>
+            <p class="mt-1 text-sm text-surface-700-300">
+              Envoy needs one active primary inbox for vendor email sync and approved sends.
+            </p>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <a href={connectUrl('gmail')} class="btn preset-filled-primary-500 btn-sm">
+            Connect Gmail
+          </a>
+          <a href={connectUrl('microsoft')} class="btn preset-tonal btn-sm">
+            Connect Microsoft
+          </a>
+        </div>
       </div>
     {/if}
 
@@ -377,22 +481,50 @@
                 Envoy requires one active connected inbox for vendor outreach and reply sync.
               </p>
             </div>
-            {#if connections.length === 0}
-              <div class="flex gap-2 flex-wrap">
-                <a href="/inbox/connect?provider=gmail" class="btn preset-filled-primary-500">
-                  Connect Gmail
-                </a>
-                <a href="/inbox/connect?provider=microsoft" class="btn preset-tonal">
-                  Connect Microsoft
-                </a>
-              </div>
-            {/if}
+            <div class="flex gap-2 flex-wrap">
+              <a href={connectUrl('gmail')} class="btn preset-filled-primary-500">
+                {connections.length ? 'Replace with Gmail' : 'Connect Gmail'}
+              </a>
+              <a href={connectUrl('microsoft')} class="btn preset-tonal">
+                {connections.length ? 'Replace with Microsoft' : 'Connect Microsoft'}
+              </a>
+            </div>
           </div>
+
+          {#if activePrimaryConnection}
+            <div
+              class="rounded-xl border border-success-500/20 bg-success-500/10 p-4 text-sm"
+            >
+              <div class="flex items-start gap-3">
+                <CheckCircleIcon class="mt-0.5 size-5 shrink-0 text-success-600-400" />
+                <div class="min-w-0">
+                  <p class="font-medium">
+                    Primary inbox: {providerLabel(activePrimaryConnection.provider)}
+                  </p>
+                  <p class="mt-1 break-all text-surface-700-300">
+                    {activePrimaryConnection.email}
+                  </p>
+                </div>
+              </div>
+            </div>
+          {:else if primaryConnection}
+            <div
+              class="rounded-xl border border-warning-500/30 bg-warning-500/10 p-4 text-sm"
+            >
+              <div class="flex items-start gap-3">
+                <AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-warning-600-400" />
+                <div class="min-w-0">
+                  <p class="font-medium">Primary inbox needs attention</p>
+                  <p class="mt-1 break-all text-surface-700-300">{primaryConnection.email}</p>
+                </div>
+              </div>
+            </div>
+          {/if}
 
           {#if connections.length === 0}
             <div class="rounded-xl border border-dashed border-surface-200-800 p-5 text-sm text-surface-600-400">
-              No inbox connected yet. Connect Gmail to send project outreach from your own address
-              and sync vendor replies back into Outreach.
+              No inbox connected yet. Connect Gmail or Microsoft to send project outreach from your
+              own address and sync vendor replies back into Outreach.
             </div>
           {:else}
             <ul class="space-y-3">
@@ -422,13 +554,44 @@
                         <p class="text-xs text-warning-600-400 mt-1">{connection.reauthReason}</p>
                       {/if}
                     </div>
-                    <button
-                      type="button"
-                      class="btn preset-tonal-error btn-sm"
-                      onclick={() => disconnect(connection.id)}
-                    >
-                      Disconnect
-                    </button>
+                    <div class="flex flex-wrap gap-2">
+                      {#if connection.status === 'reauth_required'}
+                        <a
+                          href={connectUrl(connection.provider)}
+                          class="btn preset-filled-primary-500 btn-sm"
+                        >
+                          <RefreshCwIcon class="size-4" />
+                          <span>Reconnect</span>
+                        </a>
+                      {/if}
+                      <button
+                        type="button"
+                        class="btn preset-tonal-error btn-sm"
+                        onclick={() => disconnect(connection.id)}
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 grid gap-3 text-xs text-surface-600-400 sm:grid-cols-2">
+                    <div>
+                      <p class="font-medium text-surface-700-300">Provider watch</p>
+                      <p>{watchStatusLabel(connection.watchStatus)}</p>
+                      <p>Expires: {formatDateTime(watchExpiresAt(connection))}</p>
+                    </div>
+                    <div>
+                      <p class="font-medium text-surface-700-300">Last sync</p>
+                      <p>{formatDateTime(connection.lastSyncAt)}</p>
+                      {#if connection.lastSyncError}
+                        <p class="mt-1 break-words text-error-500">{connection.lastSyncError}</p>
+                      {/if}
+                      {#if connection.reauthRequiredAt}
+                        <p class="mt-1">
+                          Reauth requested: {formatDateTime(connection.reauthRequiredAt)}
+                        </p>
+                      {/if}
+                    </div>
                   </div>
                 </li>
               {/each}

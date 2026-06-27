@@ -6,6 +6,7 @@ import logger from '@adonisjs/core/services/logger'
 import { ensureValidToken } from '#services/inbox_connection_service'
 import { decryptConnectionAccessToken } from '#services/oauth_token_encryption_service'
 import { buildManualBackfillEvent, enqueueEmailSyncEvent } from '#services/email_sync_event_service'
+import { safeError } from '#utils/safe_error'
 
 interface EmailServiceWatchResult {
   provider: string
@@ -147,7 +148,15 @@ async function handleWatchFailure(
     await markWatchError(connection, reason)
   }
 
-  logger.error({ err: error, connectionUuid: connection.uuid }, 'Email watch operation failed')
+  logger.error(
+    {
+      err: safeError(error),
+      connectionUuid: connection.uuid,
+      provider: connection.provider,
+      watchStatus: connection.watchStatus,
+    },
+    'Email watch operation failed'
+  )
   return { success: false, connection, error: reason }
 }
 
@@ -162,9 +171,19 @@ export async function setupEmailWatch(
     )
     applyWatchResult(conn, result)
     await conn.save()
+    logger.info(
+      {
+        connectionUuid: conn.uuid,
+        provider: conn.provider,
+        watchStatus: conn.watchStatus,
+        watchExpiresAt: conn.watchExpiresAt?.toISO() ?? null,
+        subscriptionExpiresAt: conn.subscriptionExpiresAt?.toISO() ?? null,
+      },
+      'Email watch setup succeeded'
+    )
     await enqueueEmailSyncEvent(buildManualBackfillEvent(conn)).catch((error) => {
       logger.warn(
-        { err: error, connectionUuid: conn.uuid },
+        { err: safeError(error), connectionUuid: conn.uuid, provider: conn.provider },
         'Email watch setup succeeded but initial backfill enqueue failed'
       )
     })
@@ -186,6 +205,16 @@ export async function renewEmailWatch(
     )
     applyWatchResult(conn, result)
     await conn.save()
+    logger.info(
+      {
+        connectionUuid: conn.uuid,
+        provider: conn.provider,
+        watchStatus: conn.watchStatus,
+        watchExpiresAt: conn.watchExpiresAt?.toISO() ?? null,
+        subscriptionExpiresAt: conn.subscriptionExpiresAt?.toISO() ?? null,
+      },
+      'Email watch renewal succeeded'
+    )
     return { success: true, connection: conn }
   } catch (error) {
     return handleWatchFailure(connection, error)
@@ -206,6 +235,7 @@ export async function stopEmailWatch(
       subscriptionExpiresAt: null,
     })
     await conn.save()
+    logger.info({ connectionUuid: conn.uuid, provider: conn.provider }, 'Email watch stopped')
     return { success: true, connection: conn }
   } catch (error) {
     return handleWatchFailure(connection, error)
@@ -258,6 +288,16 @@ export async function renewDueEmailWatches(
     }
 
     checked += 1
+    logger.info(
+      {
+        connectionUuid: connection.uuid,
+        provider: connection.provider,
+        watchStatus: connection.watchStatus,
+        watchExpiresAt: connection.watchExpiresAt?.toISO() ?? null,
+        subscriptionExpiresAt: connection.subscriptionExpiresAt?.toISO() ?? null,
+      },
+      'Email watch renewal due'
+    )
     const result = await renewEmailWatch(connection)
     if (result.success) {
       renewed += 1

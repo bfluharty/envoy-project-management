@@ -963,6 +963,19 @@ Acceptance criteria:
 
 ### Phase 7: UI polish and operational safeguards
 
+- Implemented in code.
+- Account settings show active primary inbox, reauthorization status, provider
+  watch status, watch expiration, last sync time, and last sync error.
+- Reconnect and replace actions reuse the provider OAuth flow and prompt account
+  selection.
+- Email-service and project-management logs include webhook receipt, SQS enqueue,
+  sync processing, watch setup/renew/stop, and send failures using counts and
+  identifiers only.
+- Sensitive error logging now avoids Axios request config, access tokens, and
+  message bodies.
+- `node ace email:sync-diagnostics` reports main queue and DLQ backlog counts
+  without reading message bodies.
+
 Tasks:
 
 - Update account page to show primary inbox and reauth status.

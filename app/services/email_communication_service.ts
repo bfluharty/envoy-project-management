@@ -388,7 +388,13 @@ export async function sendOnBehalf(
 
   const sendUrl = `${url.replace(/\/$/, '')}/send-on-behalf`
   logger.info(
-    { url: sendUrl, to: params.to, subject: params.subject, provider: conn.provider },
+    {
+      url: sendUrl,
+      to: params.to,
+      subjectLength: params.subject.length,
+      bodyLength: params.body.length,
+      provider: conn.provider,
+    },
     'Calling envoy-email-service POST /send-on-behalf'
   )
 

@@ -55,6 +55,8 @@ export default class AccountController {
   private async buildPageProps(user: User, session: HttpContext['session']) {
     const connections = await UserInboxConnection.query()
       .where('user_uuid', user.uuid)
+      .orderBy('is_primary', 'desc')
+      .orderBy('status')
       .orderBy('provider')
       .orderBy('email')
     const sessionLoginMethod = this.getSessionLoginMethod(session)
@@ -79,6 +81,13 @@ export default class AccountController {
         status: connection.status,
         isPrimary: connection.isPrimary,
         reauthReason: connection.reauthReason,
+        reauthRequiredAt: connection.reauthRequiredAt?.toISO() ?? null,
+        lastSyncAt: connection.lastSyncAt?.toISO() ?? null,
+        lastSyncError: connection.lastSyncError,
+        watchStatus: connection.watchStatus,
+        watchExpiresAt: connection.watchExpiresAt?.toISO() ?? null,
+        subscriptionExpiresAt: connection.subscriptionExpiresAt?.toISO() ?? null,
+        disconnectedAt: connection.disconnectedAt?.toISO() ?? null,
         createdAt: connection.createdTimestamp.toISO(),
       })),
     }

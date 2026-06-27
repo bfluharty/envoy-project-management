@@ -14,6 +14,7 @@ import {
 } from '#services/oauth_token_encryption_service'
 import { setupEmailWatch, stopEmailWatch } from '#services/email_watch_service'
 import logger from '@adonisjs/core/services/logger'
+import { safeError } from '#utils/safe_error'
 
 export default class InboxController {
   /**
@@ -27,9 +28,10 @@ export default class InboxController {
     }
     try {
       const url = getAuthUrl(provider as InboxProvider, user.uuid)
+      logger.info({ userUuid: user.uuid, provider }, 'Inbox OAuth connect started')
       return response.redirect(url)
     } catch (err) {
-      logger.error(err, 'Inbox connect: getAuthUrl failed')
+      logger.error({ err: safeError(err), provider }, 'Inbox connect: getAuthUrl failed')
       const message =
         err instanceof Error ? err.message : 'Could not start sign-in. Check server logs.'
       session.flash('error', message)
@@ -85,11 +87,23 @@ export default class InboxController {
         otherPrimaryQuery = otherPrimaryQuery.whereNot('id', existing.id)
       }
 
-      await otherPrimaryQuery.update({
-        is_primary: false,
-        status: 'disconnected',
-        disconnected_at: DateTime.utc().toSQL(),
-      })
+      const replacedConnections = await otherPrimaryQuery
+      for (const replacedConnection of replacedConnections) {
+        await stopEmailWatch(replacedConnection)
+      }
+
+      if (replacedConnections.length > 0) {
+        await UserInboxConnection.query()
+          .whereIn(
+            'id',
+            replacedConnections.map((connection) => connection.id)
+          )
+          .update({
+            is_primary: false,
+            status: 'disconnected',
+            disconnected_at: DateTime.utc().toSQL(),
+          })
+      }
 
       const connection = existing ?? new UserInboxConnection()
       connection.merge({
@@ -113,13 +127,22 @@ export default class InboxController {
       await setupEmailWatch(connection)
 
       const label = decoded.provider === 'gmail' ? 'Gmail' : 'Microsoft'
+      logger.info(
+        {
+          userUuid: user.uuid,
+          connectionUuid: connection.uuid,
+          provider: connection.provider,
+          email: connection.email,
+        },
+        'Inbox OAuth callback completed'
+      )
       session.flash(
         'success',
         `${label} connected. Envoy will use it for outreach and replies when available.`
       )
       return response.redirect().toPath('/account#email-accounts')
     } catch (err) {
-      logger.error(err, 'Inbox callback: exchange failed')
+      logger.error({ err: safeError(err) }, 'Inbox callback: exchange failed')
       const message =
         err instanceof Error ? err.message : 'Could not connect inbox. Please try again.'
       session.flash('error', message)
@@ -167,6 +190,15 @@ export default class InboxController {
     }
 
     await stopEmailWatch(connection)
+    logger.info(
+      {
+        userUuid: user.uuid,
+        connectionUuid: connection.uuid,
+        provider: connection.provider,
+        email: connection.email,
+      },
+      'Inbox disconnected by user'
+    )
     await connection.delete()
     session.flash('success', 'Inbox disconnected.')
     return response.redirect().back()

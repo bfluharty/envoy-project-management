@@ -12,6 +12,7 @@ import VendorConversation from '#models/vendor_conversation'
 import ProjectService from '#services/project_service'
 import ReasoningRequestContextService from '#services/reasoning_request_context_service'
 import { getReasoningChatUrl } from '#utils/reasoning_engine_urls'
+import { safeError } from '#utils/safe_error'
 import type { ActionExecution, Turn } from '../../types/turn.js'
 import { getOrCreateEmailCommunicationForProjectVendor } from './email_communication_context.js'
 import {
@@ -1314,6 +1315,15 @@ export async function sendOutreachDraft(
     draft.status = 'error'
     draft.lastError = error instanceof Error ? error.message : 'Failed to send outreach email'
     await draft.save()
+    logger.error(
+      {
+        err: safeError(error),
+        projectUuid,
+        draftUuid,
+        projectVendorUuid: projectVendor.uuid,
+      },
+      'Outreach draft send failed'
+    )
     throw error
   }
 }
@@ -1361,7 +1371,10 @@ export async function reviseOutreachDraft(
       ...reasoningContext,
     })
   } catch (error) {
-    logger.error({ err: error, projectUuid, draftUuid }, 'Failed to revise outreach draft')
+    logger.error(
+      { err: safeError(error), projectUuid, draftUuid },
+      'Failed to revise outreach draft'
+    )
     throw new Error(getAxiosErrorMessage(error, 'Failed to revise outreach draft'))
   }
 
@@ -1411,14 +1424,28 @@ export async function sendThreadReply(
   const connection = await getActivePrimaryConnectionOrFail(user.uuid)
   const vendorEmail = getVendorEmailOrFail(projectVendor)
 
-  const sendResult = await sendOnBehalf(connection, {
-    to: vendorEmail,
-    subject: payload.subject,
-    body: payload.body,
-    inReplyTo: payload.inReplyTo,
-    references: payload.references,
-    threadId: payload.threadId,
-  })
+  let sendResult: Awaited<ReturnType<typeof sendOnBehalf>>
+  try {
+    sendResult = await sendOnBehalf(connection, {
+      to: vendorEmail,
+      subject: payload.subject,
+      body: payload.body,
+      inReplyTo: payload.inReplyTo,
+      references: payload.references,
+      threadId: payload.threadId,
+    })
+  } catch (error) {
+    logger.error(
+      {
+        err: safeError(error),
+        projectUuid,
+        threadUuid,
+        projectVendorUuid: projectVendor.uuid,
+      },
+      'Outreach thread reply send failed'
+    )
+    throw error
+  }
 
   await recordOutboundMessage(user, projectVendor, conversation, {
     from: connection.email,
@@ -1501,7 +1528,10 @@ export async function reviseThreadReply(
       ...reasoningContext,
     })
   } catch (error) {
-    logger.error({ err: error, projectUuid, threadUuid }, 'Failed to revise thread reply')
+    logger.error(
+      { err: safeError(error), projectUuid, threadUuid },
+      'Failed to revise thread reply'
+    )
     throw new Error(getAxiosErrorMessage(error, 'Failed to revise reply'))
   }
 

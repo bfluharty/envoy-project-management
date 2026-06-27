@@ -1,5 +1,6 @@
 import {
   DeleteMessageCommand,
+  GetQueueAttributesCommand,
   ReceiveMessageCommand,
   SendMessageCommand,
   SQSClient,
@@ -22,6 +23,7 @@ import {
   syncProviderMessageForConnection,
   type ProviderMessageSyncResult,
 } from '#services/project_outreach_service'
+import { safeError } from '#utils/safe_error'
 
 export type EmailSyncEventType =
   | 'gmail_history'
@@ -61,6 +63,22 @@ export interface EmailSyncQueueProcessResult {
   created: number
 }
 
+export interface EmailSyncQueueAttributes {
+  label: 'main' | 'dlq'
+  configured: boolean
+  queueUrl?: string
+  approximateVisible: number | null
+  approximateNotVisible: number | null
+  approximateDelayed: number | null
+  createdTimestamp: string | null
+  lastModifiedTimestamp: string | null
+}
+
+export interface EmailSyncQueueDiagnostics {
+  main: EmailSyncQueueAttributes
+  dlq: EmailSyncQueueAttributes
+}
+
 class EmailSyncEventValidationError extends Error {
   constructor(message: string) {
     super(message)
@@ -79,6 +97,10 @@ function getQueueUrl(required = true): string | null {
   }
 
   return queueUrl || null
+}
+
+function getDlqUrl(): string | null {
+  return env.get('EMAIL_SYNC_DLQ_URL')?.trim() || null
 }
 
 function isProvider(value: unknown): value is EmailSyncEventMessage['provider'] {
@@ -165,6 +187,16 @@ async function markConnectionFailure(connection: UserInboxConnection, error: unk
   }
 
   await connection.save()
+  logger.warn(
+    {
+      err: safeError(error),
+      connectionUuid: connection.uuid,
+      provider: connection.provider,
+      status: connection.status,
+      reauthRequired: connection.status === 'reauth_required',
+    },
+    'Email sync connection failed'
+  )
 }
 
 async function findConnectionsForEvent(
@@ -300,6 +332,18 @@ export async function processEmailSyncEvent(
   event: EmailSyncEventMessage
 ): Promise<EmailSyncEventProcessResult> {
   const connections = await findConnectionsForEvent(event)
+  logger.info(
+    {
+      eventId: event.eventId,
+      provider: event.provider,
+      eventType: event.eventType,
+      connectionCount: connections.length,
+      connectionUuid: event.connectionUuid,
+      providerSubscriptionId: event.providerSubscriptionId,
+      hasProviderMessageId: Boolean(event.providerMessageId),
+    },
+    'Email sync event processing started'
+  )
   let processed = 0
   let created = 0
   let skipped = 0
@@ -328,13 +372,15 @@ export async function processEmailSyncEvent(
     }
   }
 
-  return {
+  const result = {
     eventId: event.eventId,
     connections: connections.length,
     processed,
     created,
     skipped,
   }
+  logger.info(result, 'Email sync event processing completed')
+  return result
 }
 
 export async function enqueueEmailSyncEvent(event: EmailSyncEventMessage): Promise<boolean> {
@@ -366,7 +412,85 @@ export async function enqueueEmailSyncEvent(event: EmailSyncEventMessage): Promi
       MessageAttributes: messageAttributes,
     })
   )
+  logger.info(
+    {
+      eventId: event.eventId,
+      provider: event.provider,
+      eventType: event.eventType,
+      connectionUuid: event.connectionUuid,
+      hasProviderMessageId: Boolean(event.providerMessageId),
+    },
+    'Email sync event enqueued'
+  )
   return true
+}
+
+function parseSqsNumber(value: string | undefined): number | null {
+  if (value === undefined) {
+    return null
+  }
+
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseSqsTimestamp(value: string | undefined): string | null {
+  const seconds = parseSqsNumber(value)
+  if (seconds === null) {
+    return null
+  }
+
+  return new Date(seconds * 1000).toISOString()
+}
+
+async function getQueueAttributes(
+  label: 'main' | 'dlq',
+  queueUrl: string | null
+): Promise<EmailSyncQueueAttributes> {
+  if (!queueUrl) {
+    return {
+      label,
+      configured: false,
+      approximateVisible: null,
+      approximateNotVisible: null,
+      approximateDelayed: null,
+      createdTimestamp: null,
+      lastModifiedTimestamp: null,
+    }
+  }
+
+  const response = await sqs.send(
+    new GetQueueAttributesCommand({
+      QueueUrl: queueUrl,
+      AttributeNames: [
+        'ApproximateNumberOfMessages',
+        'ApproximateNumberOfMessagesNotVisible',
+        'ApproximateNumberOfMessagesDelayed',
+        'CreatedTimestamp',
+        'LastModifiedTimestamp',
+      ],
+    })
+  )
+  const attributes = response.Attributes ?? {}
+  return {
+    label,
+    configured: true,
+    queueUrl,
+    approximateVisible: parseSqsNumber(attributes.ApproximateNumberOfMessages),
+    approximateNotVisible: parseSqsNumber(attributes.ApproximateNumberOfMessagesNotVisible),
+    approximateDelayed: parseSqsNumber(attributes.ApproximateNumberOfMessagesDelayed),
+    createdTimestamp: parseSqsTimestamp(attributes.CreatedTimestamp),
+    lastModifiedTimestamp: parseSqsTimestamp(attributes.LastModifiedTimestamp),
+  }
+}
+
+export async function getEmailSyncQueueDiagnostics(): Promise<EmailSyncQueueDiagnostics> {
+  const [main, dlq] = await Promise.all([
+    getQueueAttributes('main', getQueueUrl(true)),
+    getQueueAttributes('dlq', getDlqUrl()),
+  ])
+
+  return { main, dlq }
 }
 
 export function buildManualBackfillEvent(connection: UserInboxConnection): EmailSyncEventMessage {
@@ -441,7 +565,7 @@ export async function processEmailSyncQueue(
       } catch (error) {
         if (error instanceof EmailSyncEventValidationError) {
           logger.warn(
-            { err: error, messageId: message.MessageId },
+            { err: safeError(error), sqsMessageId: message.MessageId },
             'Invalid email sync SQS message'
           )
           await deleteSqsMessage(queueUrl, message)
@@ -450,11 +574,15 @@ export async function processEmailSyncQueue(
           continue
         }
 
-        logger.error({ err: error, messageId: message.MessageId }, 'Email sync SQS message failed')
+        logger.error(
+          { err: safeError(error), sqsMessageId: message.MessageId },
+          'Email sync SQS message failed'
+        )
         result.failed += 1
       }
     }
   }
 
+  logger.info(result, 'Email sync queue processing completed')
   return result
 }
