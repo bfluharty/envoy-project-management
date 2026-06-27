@@ -23,6 +23,7 @@ import {
   EmailAuthorizationCompletionError,
   type NormalizedEmailAuthorizationTokens,
 } from '#services/email_authorization_completion_service'
+import { setupEmailWatch } from '#services/email_watch_service'
 import OnboardingDraftService, {
   ONBOARDING_TOKEN_SESSION_KEY,
   OnboardingDraftError,
@@ -566,7 +567,7 @@ export default class AuthController {
         return response.redirect().toRoute(failureRoute)
       }
 
-      const { user } = await completeEmailAuthorization({
+      const { user, connection } = await completeEmailAuthorization({
         profile: socialProfile,
         tokens: socialTokens,
         flow: emailAuthState.flow,
@@ -577,6 +578,7 @@ export default class AuthController {
         userAgent: request.header('user-agent') ?? null,
       })
 
+      await setupEmailWatch(connection)
       await auth.use('web').login(user)
       session.put('auth.login_method', provider)
       session.flash('success', 'Welcome!')

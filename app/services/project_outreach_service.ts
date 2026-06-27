@@ -649,6 +649,131 @@ function computeReplyReceived(messages: Message[], draft: OutreachDraft | null) 
   )
 }
 
+export interface ProviderMessageSyncSummary {
+  id: string
+  threadId: string | null
+  from: string
+  to: string
+  subject: string
+  date: string
+  snippet?: string
+  source?: 'email_service' | 'gmail_direct'
+}
+
+export interface ProviderMessageSyncResult {
+  processed: boolean
+  created: boolean
+  reason?: string
+  messageUuid?: string
+  conversationUuid?: string
+  projectUuid?: string
+  direction?: 'inbound' | 'outbound'
+}
+
+export async function syncProviderMessageForConnection(
+  connection: UserInboxConnection,
+  summary: ProviderMessageSyncSummary,
+  options: { projectUuid?: string } = {}
+): Promise<ProviderMessageSyncResult> {
+  const user = await User.findBy('uuid', connection.userUuid)
+  if (!user) {
+    return { processed: false, created: false, reason: 'user_not_found' }
+  }
+
+  const validConnection = await ensureValidToken(connection)
+  const providerMessageId = `${validConnection.provider}:${summary.id}`
+  const existing = await Message.query().where('provider_message_id', providerMessageId).first()
+  if (existing) {
+    return {
+      processed: true,
+      created: false,
+      reason: 'duplicate',
+      messageUuid: existing.uuid,
+      conversationUuid: existing.vendorConversationUuid ?? undefined,
+    }
+  }
+
+  const detail =
+    summary.source === 'gmail_direct'
+      ? await getGmailMessageDirect(validConnection, summary.id)
+      : await getInboxMessage(validConnection, summary.id)
+  if (!detail) {
+    return { processed: true, created: false, reason: 'message_not_found' }
+  }
+
+  const counterpartyEmail = resolveCounterpartyEmail(detail, validConnection.email)
+  if (!counterpartyEmail) {
+    return { processed: true, created: false, reason: 'counterparty_not_found' }
+  }
+
+  const direction = getMessageDirectionForConnection(detail.from, validConnection.email)
+  const providerThreadId = summary.threadId ?? detail.threadId ?? null
+  const conversation = await resolveConversationForEmail(user, {
+    counterpartyEmail,
+    projectUuid: options.projectUuid,
+    providerThreadId,
+    inReplyTo: detail.inReplyTo ?? null,
+    references: detail.references ?? null,
+    receivedAt: detail.date,
+  })
+
+  if (!conversation?.projectVendorUuid) {
+    return { processed: true, created: false, reason: 'vendor_not_matched' }
+  }
+
+  const projectVendorQuery = ProjectVendor.query()
+    .where('uuid', conversation.projectVendorUuid)
+    .where('is_active', true)
+
+  if (options.projectUuid) {
+    projectVendorQuery.where('project_uuid', options.projectUuid)
+  }
+
+  const projectVendor = await projectVendorQuery.first()
+  if (!projectVendor) {
+    return { processed: true, created: false, reason: 'project_vendor_not_found' }
+  }
+
+  const communication = await getOrCreateEmailCommunicationForProjectVendor(projectVendor.uuid)
+  const message = await Message.create({
+    communicationUuid: communication.uuid,
+    vendorConversationUuid: conversation.uuid,
+    direction,
+    subject: detail.subject,
+    from: detail.from,
+    to: detail.to,
+    cc: detail.cc ?? undefined,
+    body: detail.body || summary.snippet || '',
+    createdBy: 'email-sync-worker',
+    sentTimestamp: DateTime.fromJSDate(detail.date),
+    providerMessageId,
+    messageIdHeader: detail.messageId ?? null,
+    referencesHeader: detail.references ?? null,
+    providerThreadId,
+  })
+
+  if (direction === 'inbound') {
+    await draftReplyForInboundMessage(projectVendor.projectUuid, conversation, {
+      subject: detail.subject,
+      body: detail.body || summary.snippet || '',
+    }).catch((err) => {
+      logger.warn(
+        { err, projectUuid: projectVendor.projectUuid, conversationUuid: conversation.uuid },
+        'Email sync worker: auto-reply draft failed'
+      )
+    })
+  }
+
+  return {
+    processed: true,
+    created: true,
+    messageUuid: message.uuid,
+    conversationUuid: conversation.uuid,
+    projectUuid: projectVendor.projectUuid,
+    direction,
+  }
+}
+
 export async function getProjectOutreach(userUuid: string, projectUuid: string) {
   await getProjectOrFail(userUuid, projectUuid)
 
@@ -835,7 +960,7 @@ export async function syncProjectOutreach(user: User, projectUuid: string) {
   for (const connection of connections) {
     type SyncSummary = {
       id: string
-      threadId: string
+      threadId: string | null
       from: string
       to: string
       subject: string
@@ -1323,9 +1448,8 @@ async function draftReplyForInboundMessage(
   // Skip if a draft already exists for this thread — avoid duplicate pending drafts.
   const existingDraft = await OutreachDraft.query()
     .where('vendor_conversation_uuid', conversation.uuid)
-    .where('status', 'draft')
     .first()
-  if (existingDraft) {
+  if (existingDraft?.status === 'draft') {
     return
   }
 
@@ -1392,16 +1516,29 @@ async function draftReplyForInboundMessage(
         continue
       }
 
-      await OutreachDraft.create({
-        projectVendorUuid: conversation.projectVendorUuid!,
-        vendorConversationUuid: conversation.uuid,
-        subject: draft.subject.trim(),
-        body: draft.body.trim(),
-        status: 'draft',
-        sentTimestamp: null,
-        sentMessageUuid: null,
-        lastError: null,
-      })
+      if (existingDraft) {
+        existingDraft.merge({
+          projectVendorUuid: conversation.projectVendorUuid!,
+          subject: draft.subject.trim(),
+          body: draft.body.trim(),
+          status: 'draft',
+          sentTimestamp: null,
+          sentMessageUuid: null,
+          lastError: null,
+        })
+        await existingDraft.save()
+      } else {
+        await OutreachDraft.create({
+          projectVendorUuid: conversation.projectVendorUuid!,
+          vendorConversationUuid: conversation.uuid,
+          subject: draft.subject.trim(),
+          body: draft.body.trim(),
+          status: 'draft',
+          sentTimestamp: null,
+          sentMessageUuid: null,
+          lastError: null,
+        })
+      }
 
       logger.info(
         { projectUuid, conversationUuid: conversation.uuid },

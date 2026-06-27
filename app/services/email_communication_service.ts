@@ -20,7 +20,7 @@ function authHeaders(): Record<string, string> {
 
 export interface InboxMessageSummary {
   id: string
-  threadId: string
+  threadId: string | null
   from: string
   to: string
   subject: string
@@ -39,6 +39,7 @@ export interface InboxMessageDetail {
   messageId?: string
   inReplyTo?: string
   references?: string
+  threadId?: string | null
 }
 
 export interface ListInboxMessagesOptions {
@@ -49,6 +50,17 @@ export interface ListInboxMessagesOptions {
    * Examples: 'inbox', 'sent'
    */
   mailbox?: string
+}
+
+export interface ListInboxChangesOptions {
+  cursor?: string
+  messageId?: string
+}
+
+export interface SearchVendorMessagesOptions {
+  vendorEmails: string[]
+  maxResults?: number
+  afterDate?: Date
 }
 
 function getHeader(
@@ -145,6 +157,7 @@ export async function getInboxMessage(
   messageId?: string
   inReplyTo?: string
   references?: string
+  threadId?: string | null
 } | null> {
   const url = baseUrl()
   if (!url) throw new Error('EMAIL_SERVICE_URL is not set')
@@ -168,7 +181,70 @@ export async function getInboxMessage(
     messageId: msg.messageId,
     inReplyTo: msg.inReplyTo,
     references: msg.references,
+    threadId: msg.threadId ?? null,
   }
+}
+
+export async function listInboxChanges(
+  connection: UserInboxConnection,
+  options?: ListInboxChangesOptions
+): Promise<InboxMessageSummary[]> {
+  const url = baseUrl()
+  if (!url) throw new Error('EMAIL_SERVICE_URL is not set')
+
+  const conn = await ensureValidToken(connection)
+  const accessToken = decryptConnectionAccessToken(conn)
+  const body: Record<string, unknown> = {
+    provider: conn.provider,
+    accessToken,
+  }
+  if (options?.cursor) body.cursor = options.cursor
+  if (options?.messageId) body.messageId = options.messageId
+
+  const { data } = await axios.post<{ messages?: InboxMessageSummary[] }>(
+    `${url.replace(/\/$/, '')}/inbox/changes`,
+    body,
+    { headers: { 'Content-Type': 'application/json', ...authHeaders() }, timeout: 30_000 }
+  )
+  const messages = Array.isArray(data?.messages) ? data.messages : []
+  logger.info({ count: messages.length }, 'Email service /inbox/changes returned messages')
+  return messages
+}
+
+export async function searchVendorMessages(
+  connection: UserInboxConnection,
+  options: SearchVendorMessagesOptions
+): Promise<InboxMessageSummary[]> {
+  const url = baseUrl()
+  if (!url) throw new Error('EMAIL_SERVICE_URL is not set')
+
+  if (options.vendorEmails.length === 0) {
+    return []
+  }
+
+  const conn = await ensureValidToken(connection)
+  const accessToken = decryptConnectionAccessToken(conn)
+  const body: Record<string, unknown> = {
+    provider: conn.provider,
+    accessToken,
+    vendorEmails: options.vendorEmails,
+    maxResults: options.maxResults ?? 200,
+  }
+  if (options.afterDate) {
+    body.afterDate = options.afterDate.toISOString()
+  }
+
+  const { data } = await axios.post<{ messages?: InboxMessageSummary[] }>(
+    `${url.replace(/\/$/, '')}/inbox/search-vendor-messages`,
+    body,
+    { headers: { 'Content-Type': 'application/json', ...authHeaders() }, timeout: 30_000 }
+  )
+  const messages = Array.isArray(data?.messages) ? data.messages : []
+  logger.info(
+    { count: messages.length },
+    'Email service /inbox/search-vendor-messages returned messages'
+  )
+  return messages
 }
 
 export async function listGmailMessagesDirect(
@@ -232,6 +308,7 @@ export async function getGmailMessageDirect(
   messageId?: string
   inReplyTo?: string
   references?: string
+  threadId?: string | null
 } | null> {
   if (connection.provider !== 'gmail') {
     return null
@@ -267,6 +344,7 @@ export async function getGmailMessageDirect(
     messageId: getHeader(headers, 'Message-ID') || undefined,
     inReplyTo: getHeader(headers, 'In-Reply-To') || undefined,
     references: getHeader(headers, 'References') || undefined,
+    threadId: message.threadId ?? null,
   }
 }
 

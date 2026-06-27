@@ -257,7 +257,7 @@ export interface EmailSyncEventMessage {
     | 'gmail_history'
     | 'microsoft_message_created'
     | 'microsoft_message_updated'
-    | 'subscription_renewal'
+    | 'microsoft_subscription_lifecycle'
     | 'manual_backfill'
   connectionUuid?: string
   email?: string
@@ -266,7 +266,7 @@ export interface EmailSyncEventMessage {
   providerThreadId?: string
   providerCursor?: string
   occurredAt: string
-  payload?: Record<string, unknown>
+  rawProviderEvent?: unknown
 }
 ```
 
@@ -818,8 +818,8 @@ Acceptance criteria:
 
 Tasks:
 
-- Replace registration form with provider-based flow and required terms
-  checkbox.
+- Replace registration form with provider-based flow and required internal
+  email authorization acceptance.
 - Request identity and mail scopes in one OAuth flow.
 - Validate signed state and nonce.
 - Create/update user and primary inbox connection atomically where practical.
@@ -859,6 +859,23 @@ Acceptance criteria:
 
 ### Phase 4: Push notification setup and renewal
 
+Implementation status:
+
+- Implemented in code.
+- `envoy-email-service` exposes watch setup/renew/stop endpoints and provider
+  webhook endpoints.
+- Gmail watch setup calls `users.watch` with `GMAIL_PUBSUB_TOPIC`.
+- Microsoft watch setup creates Graph subscriptions for inbox messages and
+  signs compact `clientState` with `MICROSOFT_GRAPH_CLIENT_STATE_SECRET`.
+- Provider webhooks publish normalized events to `EMAIL_SYNC_QUEUE_URL`.
+- `envoy-project-management` calls watch setup after OAuth registration/inbox
+  connection, stores returned metadata on `user_inbox_connections`, and provides
+  `node ace email:watches:renew` locally (`node ace.js email:watches:renew`
+  in the built container).
+- External infrastructure still must create/configure SQS, Google Pub/Sub,
+  Microsoft public webhook URLs, IAM permissions, and the scheduled renewal
+  trigger.
+
 Tasks:
 
 - Add email-service watch setup/renew/stop endpoints.
@@ -877,6 +894,28 @@ Acceptance criteria:
 - Auth failures mark connection `reauth_required`.
 
 ### Phase 5: Background sync processing
+
+Implementation status:
+
+- Implemented in code.
+- `envoy-project-management` provides `node ace email:sync-events` locally
+  (`node ace.js email:sync-events` in the built container), which polls
+  `EMAIL_SYNC_QUEUE_URL`, validates normalized provider events, processes each
+  event, and deletes the SQS message only after successful processing.
+- The active infrastructure runs the worker as a scheduled ECS task once per
+  minute in dev and prod east. This matches the current project-management ECS
+  deployment model; it can be converted to an SQS-triggered Lambda later if the
+  app gets a Lambda-compatible package.
+- Initial vendor-only backfill is queued after successful provider watch setup.
+- Gmail history events call email-service `/inbox/changes` with the stored
+  cursor and advance `provider_cursor` after successful processing.
+- Microsoft message events call email-service `/inbox/changes` by provider
+  message id.
+- Manual backfills call email-service `/inbox/search-vendor-messages` using the
+  user's active project vendor emails.
+- Persistence reuses the vendor conversation and outreach draft path, so
+  duplicate provider notifications are idempotent by `provider_message_id` and
+  inbound replies create at most one active local draft per thread.
 
 Tasks:
 

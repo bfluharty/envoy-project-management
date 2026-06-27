@@ -12,6 +12,7 @@ import {
   encryptOauthToken,
   OAUTH_TOKEN_ENCRYPTION_VERSION,
 } from '#services/oauth_token_encryption_service'
+import { setupEmailWatch, stopEmailWatch } from '#services/email_watch_service'
 import logger from '@adonisjs/core/services/logger'
 
 export default class InboxController {
@@ -109,6 +110,7 @@ export default class InboxController {
         disconnectedAt: null,
       })
       await connection.save()
+      await setupEmailWatch(connection)
 
       const label = decoded.provider === 'gmail' ? 'Gmail' : 'Microsoft'
       session.flash(
@@ -164,6 +166,7 @@ export default class InboxController {
       return response.redirect().back()
     }
 
+    await stopEmailWatch(connection)
     await connection.delete()
     session.flash('success', 'Inbox disconnected.')
     return response.redirect().back()
