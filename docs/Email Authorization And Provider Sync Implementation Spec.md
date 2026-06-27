@@ -938,6 +938,14 @@ Acceptance criteria:
 
 ### Phase 6: Send path hardening
 
+- Implemented in code.
+- Project outreach and inbox replies now require the user's active primary inbox.
+- Envoy system mailbox fallback has been removed from project outreach sends.
+- Approved sends persist local outbound messages immediately, including provider
+  thread ids when returned.
+- Provider sync reconciles later sent-mail records back onto local outbound
+  messages when the provider send response did not include a message id.
+
 Tasks:
 
 - Require active primary inbox before sending.

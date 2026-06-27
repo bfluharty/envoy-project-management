@@ -40,16 +40,21 @@ export default class InboxAPIController {
       return response.badRequest({ error: 'Missing to, subject, or body' })
     }
 
-    const connection = connectionId
-      ? await UserInboxConnection.query()
-          .where('id', connectionId)
-          .where('user_uuid', user.uuid)
-          .first()
-      : await UserInboxConnection.query().where('user_uuid', user.uuid).first()
+    const connectionQuery = UserInboxConnection.query()
+      .where('user_uuid', user.uuid)
+      .where('is_primary', true)
+      .where('status', 'active')
+
+    if (connectionId) {
+      connectionQuery.where('id', connectionId)
+    }
+
+    const connection = await connectionQuery.first()
 
     if (!connection) {
-      return response.badRequest({
-        error: 'No inbox connected. Connect an inbox in Settings > Inbox.',
+      return response.status(409).send({
+        error: 'An active connected email account is required before sending replies.',
+        reconnectUrl: '/account#email-accounts',
       })
     }
 

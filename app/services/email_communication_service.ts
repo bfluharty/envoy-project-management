@@ -357,14 +357,19 @@ export interface SendOnBehalfParams {
   threadId?: string
 }
 
+export interface SendOnBehalfResult {
+  messageId: string | null
+  threadId: string | null
+}
+
 /**
  * Send an email on behalf of the user via the email service (POST /send-on-behalf).
- * Uses the connection's refreshed access token. Returns the provider message id if available (Gmail; Microsoft returns '').
+ * Uses the connection's refreshed access token.
  */
 export async function sendOnBehalf(
   connection: UserInboxConnection,
   params: SendOnBehalfParams
-): Promise<string> {
+): Promise<SendOnBehalfResult> {
   const url = baseUrl()
   if (!url) throw new Error('EMAIL_SERVICE_URL is not set')
 
@@ -387,9 +392,16 @@ export async function sendOnBehalf(
     'Calling envoy-email-service POST /send-on-behalf'
   )
 
-  const { data } = await axios.post<{ messageId?: string }>(sendUrl, body, {
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    timeout: 30_000,
-  })
-  return typeof data.messageId === 'string' ? data.messageId : ''
+  const { data } = await axios.post<{ messageId?: string | null; threadId?: string | null }>(
+    sendUrl,
+    body,
+    {
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      timeout: 30_000,
+    }
+  )
+  return {
+    messageId: typeof data.messageId === 'string' && data.messageId.trim() ? data.messageId : null,
+    threadId: typeof data.threadId === 'string' && data.threadId.trim() ? data.threadId : null,
+  }
 }

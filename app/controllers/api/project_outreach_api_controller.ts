@@ -25,6 +25,9 @@ import {
   rejectWhenRateLimited,
 } from '#utils/rate_limit_utils'
 
+const ACTIVE_INBOX_REQUIRED_MESSAGE =
+  'An active connected email account is required before sending outreach'
+
 export default class ProjectOutreachApiController {
   async cancelDraft({ auth, request, response }: HttpContext) {
     const user = auth.getUserOrFail()
@@ -37,6 +40,11 @@ export default class ProjectOutreachApiController {
       const message = error instanceof Error ? error.message : 'Failed to cancel outreach draft'
       if (message === 'Project not found' || message === 'Draft not found') {
         return response.notFound({ error: message })
+      }
+      if (message === ACTIVE_INBOX_REQUIRED_MESSAGE) {
+        return response
+          .status(409)
+          .send({ error: message, reconnectUrl: '/account#email-accounts' })
       }
 
       return response.internalServerError({ error: message })
@@ -159,6 +167,11 @@ export default class ProjectOutreachApiController {
       const message = error instanceof Error ? error.message : 'Failed to send reply'
       if (message === 'Project not found' || message === 'Thread not found') {
         return response.notFound({ error: message })
+      }
+      if (message === ACTIVE_INBOX_REQUIRED_MESSAGE) {
+        return response
+          .status(409)
+          .send({ error: message, reconnectUrl: '/account#email-accounts' })
       }
 
       return response.internalServerError({ error: message })
