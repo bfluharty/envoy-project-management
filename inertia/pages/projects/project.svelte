@@ -976,9 +976,6 @@ onDestroy(() => {
         sectionLabel="Outreach"
         projectName={project.name}
         description="Review drafts, send outreach, and reply to vendor threads without leaving this project."
-        note={outreachSenderMode === 'connected_inbox'
-            ? 'Envoy will send from your connected inbox by default.'
-            : 'Connect an inbox in Account before sending outreach.'}
     >
         {#snippet actions()}
 
