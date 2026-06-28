@@ -902,10 +902,10 @@ Implementation status:
   (`node ace.js email:sync-events` in the built container), which polls
   `EMAIL_SYNC_QUEUE_URL`, validates normalized provider events, processes each
   event, and deletes the SQS message only after successful processing.
-- The active infrastructure runs the worker as a scheduled ECS task once per
-  minute in dev and prod east. This matches the current project-management ECS
-  deployment model; it can be converted to an SQS-triggered Lambda later if the
-  app gets a Lambda-compatible package.
+- The active infrastructure runs the worker inside the project-management ECS
+  service every 10 minutes in dev and prod east. This avoids launching a new
+  Fargate task for each poll. It can be converted to an SQS-triggered Lambda
+  later if the app gets a Lambda-compatible package.
 - Initial vendor-only backfill is queued after successful provider watch setup.
 - Gmail history events call email-service `/inbox/changes` with the stored
   cursor and advance `provider_cursor` after successful processing.

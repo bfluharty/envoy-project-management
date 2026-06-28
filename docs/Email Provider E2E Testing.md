@@ -257,8 +257,9 @@ node ace email:sync-diagnostics
 node ace email:sync-events
 ```
 
-The scheduled ECS task should normally run `email:sync-events` every minute in
-dev/prod. Running the command manually is useful for debugging.
+The project-management ECS service normally runs the email sync queue worker
+every 10 minutes in dev/prod. Running the command manually is useful for
+debugging.
 
 ## Manual Backfill Test
 
