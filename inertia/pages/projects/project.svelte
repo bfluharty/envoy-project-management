@@ -6,6 +6,7 @@ import Logo from '#components/logo.svelte';
 import UserAvatar, { type AvatarData } from '#components/user_avatar.svelte';
 import LocationSearch from '#components/location_search.svelte';
 import type { LocationData } from '#components/location_search.svelte';
+import VendorSearch from '#components/vendor_search.svelte';
 import { page } from '@inertiajs/svelte';
 import { RefreshCwIcon } from '@lucide/svelte';
 import { onDestroy, onMount, untrack } from 'svelte';
@@ -27,6 +28,7 @@ interface Vendor {
     uuid: string;
     name: string;
     email: string;
+    vendorListingUuid?: string | null;
 }
 
 interface Project {
@@ -636,7 +638,7 @@ let isAttachingVendors = $state(false);
 let selectedVendorUuids = $state(new Set<string>());
 let contactSearchQuery = $state('');
 let contactEditMode = $state(false);
-let activeContactPanel = $state<'attach' | 'new' | null>(null);
+let activeContactPanel = $state<'attach' | 'new' | 'find-vendors' | null>(null);
 let newContactName = $state('');
 let newContactEmail = $state('');
 let newContactErrors = $state<{ name?: string; email?: string }>({});
@@ -686,6 +688,11 @@ function setOperationSuccess(message: string) {
 
 let unlinkedVendors = $derived(
     localAllVendors.filter((v) => !localLinked.some((l) => l.uuid === v.uuid))
+);
+
+// Listing UUIDs already attached — used by VendorSearch to show "already in project" state
+let attachedListingUuids = $derived(
+    localLinked.flatMap((v) => v.vendorListingUuid ? [v.vendorListingUuid] : [])
 );
 
 let filteredUnlinked = $derived(
@@ -1275,7 +1282,7 @@ onDestroy(() => {
 
         {#if contactEditMode}
             <!-- Action buttons -->
-            <div class="flex gap-2 mb-3" role="group" aria-label="Add contact options">
+            <div class="flex gap-2 mb-3 flex-wrap" role="group" aria-label="Add contact options">
                 <button
                     class="btn btn-sm {activeContactPanel === 'attach' ? 'preset-filled-primary-500' : 'preset-tonal'}"
                     aria-expanded={activeContactPanel === 'attach'}
@@ -1290,6 +1297,13 @@ onDestroy(() => {
                     aria-controls="panel-new-contact"
                     onclick={() => { activeContactPanel = activeContactPanel === 'new' ? null : 'new'; contactSearchQuery = ''; selectedVendorUuids = new Set(); }}>
                     + New contact
+                </button>
+                <button
+                    class="btn btn-sm {activeContactPanel === 'find-vendors' ? 'preset-filled-primary-500' : 'preset-tonal'}"
+                    aria-expanded={activeContactPanel === 'find-vendors'}
+                    aria-controls="panel-find-vendors"
+                    onclick={() => { activeContactPanel = activeContactPanel === 'find-vendors' ? null : 'find-vendors'; contactSearchQuery = ''; selectedVendorUuids = new Set(); newContactName = ''; newContactEmail = ''; newContactErrors = {}; }}>
+                    🔍 Find vendors
                 </button>
             </div>
 
@@ -1369,6 +1383,22 @@ onDestroy(() => {
                         </button>
                     </div>
                 </form>
+            {/if}
+
+            <!-- Find vendors panel -->
+            {#if activeContactPanel === 'find-vendors'}
+                <div id="panel-find-vendors" class="card preset-outlined-surface-200-800 border border-surface-200-800 bg-surface-50-950/50 backdrop-blur-md p-4 mb-4">
+                    <VendorSearch
+                        context="project"
+                        projectUuid={project.uuid}
+                        projectVendors={attachedListingUuids}
+                        onClose={() => { activeContactPanel = null; }}
+                        onAttached={(_uuids) => {
+                            activeContactPanel = null;
+                            router.reload({ only: ['linkedVendors', 'allVendors'] });
+                        }}
+                    />
+                </div>
             {/if}
         {/if}
 

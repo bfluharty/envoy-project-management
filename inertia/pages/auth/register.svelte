@@ -1,6 +1,9 @@
 <script lang="ts">
   import { router } from '@inertiajs/svelte'
   import AuthPageShell from '#components/auth_page_shell.svelte'
+  import { onMount } from 'svelte'
+
+  const TOKEN_KEY = 'envoy_onboarding_token';
 
   const {
     flashMessage = null,
@@ -12,52 +15,89 @@
     errors?: Record<string, string>
   } = $props()
 
-  let fullName = $state('')
-  let email = $state('')
-  let password = $state('')
-  let passwordConfirmation = $state('')
-  let processing = $state(false)
-  let errors = $state<Record<string, string>>({})
-  let showError = $state(false)
-  let errorMessage = $state('')
-  let flashType = $state<'error' | 'success' | null>(null)
-  let flashText = $state('')
+  // ── Account type from query param ──────────────────────────────────────────
+  function readAccountTypeParam(): 'consumer' | 'vendor' {
+    if (typeof window === 'undefined') return 'consumer';
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get('accountType');
+    return v === 'vendor' ? 'vendor' : 'consumer';
+  }
 
+  // ── State ──────────────────────────────────────────────────────────────────
+  let accountType          = $state<'consumer' | 'vendor'>('consumer');
+  let fullName             = $state('');
+  let email                = $state('');
+  let password             = $state('');
+  let passwordConfirmation = $state('');
+  let processing           = $state(false);
+  let errors               = $state<Record<string, string>>({});
+  let showError            = $state(false);
+  let errorMessage         = $state('');
+  let flashType            = $state<'error' | 'success' | null>(null);
+  let flashText            = $state('');
+  let onboardingToken      = $state<string | null>(null);
+
+  onMount(() => {
+    accountType     = readAccountTypeParam();
+    onboardingToken = localStorage.getItem(TOKEN_KEY);
+  });
+
+  // ── Submit ─────────────────────────────────────────────────────────────────
   function handleSubmit(event: Event) {
-    event.preventDefault()
-    processing = true
-    errors = {}
-    showError = false
+    event.preventDefault();
+    processing = true;
+    errors     = {};
+    showError  = false;
 
-    router.post(
-      '/register',
-      {
-        fullName,
-        email,
-        password,
-        passwordConfirmation,
+    const payload: Record<string, string> = {
+      fullName,
+      email,
+      password,
+      passwordConfirmation,
+      accountType,
+    };
+
+    // Include onboarding token for consumer registrations when present
+    if (accountType === 'consumer' && onboardingToken) {
+      payload.onboardingToken = onboardingToken;
+    }
+
+    router.post('/register', payload, {
+      onFinish: () => { processing = false; },
+      onError: (responseErrors) => {
+        errors       = responseErrors || {};
+        showError    = true;
+        errorMessage = 'Please fix the errors below.';
       },
-      {
-        onFinish: () => {
-          processing = false
-        },
-        onError: (responseErrors) => {
-          errors = responseErrors || {}
-          showError = true
-          errorMessage = 'Please fix the errors below.'
-        },
+    });
+  }
+
+  // ── Google OAuth: call registration-handoff before external redirect ───────
+  async function handleGoogleSignUp() {
+    if (onboardingToken) {
+      try {
+        await fetch('/onboarding/registration-handoff', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: onboardingToken }),
+        });
+      } catch {
+        // Non-fatal — proceed to OAuth even if handoff fails
       }
-    )
+    }
+    window.location.href = '/auth/google';
   }
 
   $effect(() => {
     flashType =
-      flashMessage?.type === 'error' || flashMessage?.type === 'success' ? flashMessage.type : null
-    flashText = flashMessage?.message ?? ''
+      flashMessage?.type === 'error' || flashMessage?.type === 'success'
+        ? flashMessage.type
+        : null;
+    flashText = flashMessage?.message ?? '';
     if (propErrors && Object.keys(propErrors).length > 0) {
-      errors = propErrors
+      errors = propErrors;
     }
-  })
+  });
 </script>
 
 <AuthPageShell pageTitle="Register" showGuestCta={false}>
@@ -89,6 +129,51 @@
         <p>{errorMessage}</p>
       </aside>
     {/if}
+
+    <!-- Account type selection -->
+    <fieldset class="space-y-2">
+      <legend class="label font-medium mb-2">I am…</legend>
+      <div class="grid grid-cols-2 gap-3">
+        <label
+          class="flex items-start gap-3 cursor-pointer rounded-xl border p-4 transition-all duration-150 {accountType === 'consumer'
+            ? 'border-primary-500 bg-primary-500/10'
+            : 'border-surface-200-800 hover:bg-surface-100-900/40'}"
+        >
+          <input
+            type="radio"
+            name="accountType"
+            value="consumer"
+            bind:group={accountType}
+            class="mt-0.5 accent-primary-500"
+          />
+          <div>
+            <p class="font-medium text-sm leading-tight">Planning a project</p>
+            <p class="text-xs text-surface-600-400 mt-0.5">Find and hire vendors</p>
+          </div>
+        </label>
+
+        <label
+          class="flex items-start gap-3 cursor-pointer rounded-xl border p-4 transition-all duration-150 {accountType === 'vendor'
+            ? 'border-primary-500 bg-primary-500/10'
+            : 'border-surface-200-800 hover:bg-surface-100-900/40'}"
+        >
+          <input
+            type="radio"
+            name="accountType"
+            value="vendor"
+            bind:group={accountType}
+            class="mt-0.5 accent-primary-500"
+          />
+          <div>
+            <p class="font-medium text-sm leading-tight">A pro / vendor</p>
+            <p class="text-xs text-surface-600-400 mt-0.5">Receive and respond to leads</p>
+          </div>
+        </label>
+      </div>
+      {#if errors.accountType}
+        <p class="text-error-500 text-sm">{errors.accountType}</p>
+      {/if}
+    </fieldset>
 
     <div class="space-y-4">
       <label class="label">
@@ -187,7 +272,11 @@
 
   {#if googleAuthAvailable}
     <div class="space-y-3">
-      <a href="/auth/google" class="btn btn-outline w-full gap-2">
+      <button
+        type="button"
+        onclick={handleGoogleSignUp}
+        class="btn btn-outline w-full gap-2"
+      >
         <svg class="w-5 h-5" viewBox="0 0 24 24">
           <path
             fill="#4285F4"
@@ -207,7 +296,7 @@
           />
         </svg>
         Continue with Google
-      </a>
+      </button>
       <p class="text-sm text-surface-600-400">
         Google sign-up also asks for Gmail access so Envoy can sync your inbox from the same
         account.

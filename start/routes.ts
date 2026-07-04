@@ -177,6 +177,74 @@ router
   })
   .prefix('/api')
 
+// TODO: remove — stub for SCRUM-178 vendor search (replace with real SCRUM-177 implementation)
+router
+  .post('/api/vendors/search', ({ response }) => {
+    return response.json({
+      vendors: [
+        {
+          vendorListingUuid: 'stub-uuid-1',
+          name: 'Bloom & Co Florals',
+          categories: ['Florist', 'Event Decor'],
+          location: 'New York, NY',
+          hasEmail: true,
+          onboardedToEnvoy: true,
+          consumerOwned: false,
+          inContacts: false,
+          contactMappingUuid: null,
+        },
+        {
+          vendorListingUuid: 'stub-uuid-2',
+          name: 'Peak Catering',
+          categories: ['Catering', 'Bar Service'],
+          location: 'Brooklyn, NY',
+          hasEmail: false,
+          onboardedToEnvoy: false,
+          consumerOwned: false,
+          inContacts: false,
+          contactMappingUuid: null,
+        },
+        {
+          vendorListingUuid: 'stub-uuid-3',
+          name: "John's Photography",
+          categories: ['Photography', 'Videography'],
+          location: 'Hoboken, NJ',
+          hasEmail: true,
+          onboardedToEnvoy: false,
+          consumerOwned: true,
+          inContacts: true,
+          contactMappingUuid: 'stub-mapping-uuid-3',
+        },
+        {
+          vendorListingUuid: 'stub-uuid-4',
+          name: 'Golden Hour Venues',
+          categories: ['Venue'],
+          location: 'Manhattan, NY',
+          hasEmail: true,
+          onboardedToEnvoy: true,
+          consumerOwned: false,
+          inContacts: false,
+          contactMappingUuid: null,
+        },
+      ],
+    })
+  })
+  .middleware(middleware.auth())
+
+// TODO: remove — stub for SCRUM-178 save-to-contacts (replace with real SCRUM-177 implementation)
+router
+  .post('/api/vendors/:vendorListingUuid/select', ({ response }) => {
+    return response.json({ success: true })
+  })
+  .middleware(middleware.auth())
+
+// TODO: remove — stub for SCRUM-178 attach vendors to project (replace with real SCRUM-177 implementation)
+router
+  .post('/api/projects/:projectUuid/vendors', ({ response }) => {
+    return response.json({ success: true })
+  })
+  .middleware(middleware.auth())
+
 // API routes for inbox (authenticated)
 const InboxAPIController = () => import('#controllers/api/inbox_api_controller')
 const ProjectOutreachApiController = () =>

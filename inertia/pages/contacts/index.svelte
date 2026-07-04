@@ -1,5 +1,6 @@
 <script lang="ts">
 import Sidebar from '#components/sidebar.svelte';
+import VendorSearch from '#components/vendor_search.svelte';
 import { page } from '@inertiajs/svelte';
 import { untrack } from 'svelte';
 import { isValidEmail } from '../../utils/format';
@@ -18,6 +19,7 @@ let contacts = $state<Contact[]>(untrack(() => [...initialContacts]));
 // Page-level edit mode
 let pageEditMode = $state(false);
 let showAddForm = $state(false);
+let showVendorSearch = $state(false);
 
 // Add form state
 let addName = $state('');
@@ -162,18 +164,40 @@ async function deactivate(uuid: string) {
   <div class="w-full max-w-2xl px-6 py-10 space-y-6 mx-auto">
 
     <!-- Header -->
-    <div class="flex items-center justify-between">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
       <h1 class="text-2xl font-semibold">Contacts</h1>
-      {#if !pageEditMode}
-        <button class="btn btn-sm preset-tonal" onclick={() => { pageEditMode = true; }}>
-          Edit
+      <div class="flex gap-2">
+        <button
+          class="btn btn-sm {showVendorSearch ? 'preset-filled-primary-500' : 'preset-tonal'}"
+          onclick={() => { showVendorSearch = !showVendorSearch; }}
+          aria-expanded={showVendorSearch}
+        >
+          🔍 Find vendors
         </button>
-      {:else}
-        <button class="btn btn-sm preset-tonal" onclick={exitEditMode}>
-          Done
-        </button>
-      {/if}
+        {#if !pageEditMode}
+          <button class="btn btn-sm preset-tonal" onclick={() => { pageEditMode = true; }}>
+            Edit
+          </button>
+        {:else}
+          <button class="btn btn-sm preset-tonal" onclick={exitEditMode}>
+            Done
+          </button>
+        {/if}
+      </div>
     </div>
+
+    <!-- Vendor search panel -->
+    {#if showVendorSearch}
+      <div class="card preset-outlined-surface-200-800 border border-surface-200-800 bg-surface-50-950/50 backdrop-blur-md p-4">
+        <VendorSearch
+          context="contacts"
+          onClose={() => { showVendorSearch = false; }}
+          onSavedToContacts={(_uuid) => {
+            // The contact will appear when the page reloads; for now just show in-UI state
+          }}
+        />
+      </div>
+    {/if}
 
     {#if pageEditMode}
       {#if deleteError}

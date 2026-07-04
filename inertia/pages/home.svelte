@@ -2,6 +2,7 @@
   import Sidebar from "#components/sidebar.svelte";
   import LocationSearch from '#components/location_search.svelte';
   import type { LocationData } from '#components/location_search.svelte';
+  import VendorSearch from '#components/vendor_search.svelte';
   import { router } from '@inertiajs/svelte'
   import { page } from '@inertiajs/svelte'
   import { onDestroy } from 'svelte'
@@ -62,6 +63,13 @@
   const showForm = $derived($showNewProjectForm);
   let processing = $state(false);
   let errors = $state<Record<string, string>>({});
+
+  // Vendor discovery state — selected listing UUIDs are preserved through project creation
+  // and attached via POST /api/projects/:projectUuid/vendors after the project is created.
+  let showVendorSearch = $state(false);
+  let pendingVendorListingUuids = $state<string[]>([]);
+  let attachingVendors = $state(false);
+  let attachVendorError = $state('');
   let currentStep = $state<number>(typeof draft.currentStep === 'number' ? draft.currentStep : 0);
 
   let title = $state<string>(draft.title ?? '');
@@ -168,6 +176,7 @@
   function submitProject() {
     processing = true;
     errors = {};
+    attachVendorError = '';
 
     router.post('/projects', buildPayload(), {
       onFinish: () => {
@@ -176,9 +185,43 @@
       onError: (formErrors) => {
         errors = formErrors || {};
       },
-      onSuccess: () => {
+      onSuccess: async (page) => {
+        // The server redirects to /projects/:uuid after creation.
+        // Inertia follows the redirect internally so page.url is the final URL.
+        // Parse the UUID from it rather than expecting a prop that doesn't exist.
+        const targetUrl = page.url ?? '';
+        const uuidMatch = targetUrl.match(/\/projects\/([^/?#]+)/);
+        const projectUuid = uuidMatch ? uuidMatch[1] : null;
+
+        // Attach any vendor listings selected during new-project creation
+        if (projectUuid && pendingVendorListingUuids.length > 0) {
+          attachingVendors = true;
+          try {
+            const res = await fetch(`/api/projects/${projectUuid}/vendors`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ vendorListingUuids: pendingVendorListingUuids }),
+            });
+            if (!res.ok) {
+              attachVendorError = 'Project created, but vendors could not be added. You can retry from the project page.';
+            }
+          } catch {
+            attachVendorError = 'Project created, but vendors could not be added due to a network error.';
+          }
+          attachingVendors = false;
+        }
+
         resetForm();
+        pendingVendorListingUuids = [];
         showNewProjectForm.set(false);
+
+        // Explicitly navigate to the project page. Inertia may have already
+        // followed the redirect, but this ensures the browser URL and view are
+        // in sync even when they aren't (prevents the "page doesn't change" bug).
+        const destination = projectUuid ? `/projects/${projectUuid}` : '/dashboard';
+        if (typeof window !== 'undefined' && window.location.pathname !== destination) {
+          router.visit(destination);
+        }
       },
     });
   }
@@ -267,6 +310,33 @@
                 </label>
               </div>
             </section>
+            <!-- Vendor discovery (optional) -->
+            <div class="border-t border-surface-200-800 pt-4">
+              <button
+                type="button"
+                class="btn btn-sm {showVendorSearch ? 'preset-filled-primary-500' : 'preset-tonal'} w-full"
+                onclick={() => { showVendorSearch = !showVendorSearch; }}
+                aria-expanded={showVendorSearch}
+              >
+                🔍 {showVendorSearch ? 'Hide vendor search' : 'Find vendors to add'}
+                {#if pendingVendorListingUuids.length > 0}
+                  <span class="ml-1 text-xs bg-white/20 rounded-full px-2 py-0.5">{pendingVendorListingUuids.length} selected</span>
+                {/if}
+              </button>
+              {#if showVendorSearch}
+                <div class="mt-3">
+                  <VendorSearch
+                    context="new-project"
+                    onClose={() => { showVendorSearch = false; }}
+                    onAttached={(uuids) => {
+                      pendingVendorListingUuids = [...new Set([...pendingVendorListingUuids, ...uuids])];
+                      showVendorSearch = false;
+                    }}
+                  />
+                </div>
+              {/if}
+            </div>
+
             <footer class="flex justify-between items-center pt-2">
               <button class="btn preset-tonal" type="button" onclick={closeForm}>Cancel</button>
               <button class="btn preset-filled-primary-500" type="button" onclick={nextStep}>Continue</button>
@@ -357,10 +427,19 @@
                 {#if errors.goals}<p class="text-error-500 text-sm">{errors.goals}</p>{/if}
               </label>
             </section>
+            {#if attachVendorError}
+              <aside class="card preset-tonal-warning p-3 text-sm">{attachVendorError}</aside>
+            {/if}
             <footer class="flex justify-between items-center pt-2">
               <button class="btn preset-tonal" type="button" onclick={() => { errors = {}; currentStep -= 1; }}>Back</button>
-              <button class="btn preset-filled-primary-500" type="button" onclick={submitProject} disabled={processing}>
-                {processing ? 'Creating...' : 'Create project'}
+              <button class="btn preset-filled-primary-500" type="button" onclick={submitProject} disabled={processing || attachingVendors}>
+                {#if attachingVendors}
+                  Adding vendors…
+                {:else if processing}
+                  Creating…
+                {:else}
+                  Create project{pendingVendorListingUuids.length > 0 ? ` + ${pendingVendorListingUuids.length} vendor${pendingVendorListingUuids.length !== 1 ? 's' : ''}` : ''}
+                {/if}
               </button>
             </footer>
           </Steps.Content>
