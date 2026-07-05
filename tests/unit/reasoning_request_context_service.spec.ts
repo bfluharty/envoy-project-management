@@ -135,13 +135,6 @@ test.group('ReasoningRequestContextService', (group) => {
           contents: {
             userPrompt: 'Legacy user message',
             modelResponse: 'Legacy assistant response',
-            actionExecutions: [
-              {
-                action: 'GET_PROJECT_DETAILS',
-                success: false,
-                error: 'Project missing details',
-              },
-            ],
           },
         },
       ],

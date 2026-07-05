@@ -1,7 +1,6 @@
-import axios, { type AxiosResponse } from 'axios'
+import axios from 'axios'
 import { DateTime } from 'luxon'
 import logger from '@adonisjs/core/services/logger'
-import env from '#start/env'
 import OutreachDraft from '#models/outreach_draft'
 import Message from '#models/message'
 import Project from '#models/project'
@@ -10,12 +9,14 @@ import User from '#models/user'
 import UserInboxConnection from '#models/user_inbox_connection'
 import VendorConversation from '#models/vendor_conversation'
 import ProjectPromptService from '#services/project_prompt_service'
-import ProjectService from '#services/project_service'
 import ReasoningRequestContextService from '#services/reasoning_request_context_service'
 import { getReasoningChatUrl } from '#utils/reasoning_engine_urls'
 import { safeError } from '#utils/safe_error'
-import type { ActionExecution, Turn } from '../../types/turn.js'
-import type { ReasoningAgentResponse, ReasoningRequest } from '../../types/request.js'
+import type {
+  ReasoningAgentResponse,
+  ReasoningRecentTurn,
+  ReasoningRequest,
+} from '../../types/request.js'
 import { getOrCreateEmailCommunicationForProjectVendor } from './email_communication_context.js'
 import {
   getGmailMessageDirect,
@@ -75,6 +76,7 @@ const ACTIVE_INBOX_REQUIRED_MESSAGE =
   'An active connected email account is required before sending outreach'
 const OUTBOUND_RECONCILIATION_WINDOW_MINUTES = 15
 const INITIAL_OUTREACH_CONCURRENCY = 3
+const OUTREACH_TRANSCRIPT_MESSAGE_LIMIT = 10
 
 function firstNonEmptyString(...values: Array<string | null | undefined>) {
   for (const value of values) {
@@ -99,37 +101,6 @@ function parseEmailList(header?: string | null): string[] {
     .split(/[;,]/)
     .map((entry) => parseEmailFromHeader(entry))
     .filter(Boolean)
-}
-
-function parseStructuredModelResponse<T extends object>(
-  modelResponse: string | null | undefined
-): T | null {
-  const trimmed = modelResponse?.trim()
-  if (!trimmed) {
-    return null
-  }
-
-  const candidates = [trimmed]
-  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fencedMatch?.[1]) {
-    candidates.push(fencedMatch[1].trim())
-  }
-
-  const firstBraceIndex = trimmed.indexOf('{')
-  const lastBraceIndex = trimmed.lastIndexOf('}')
-  if (firstBraceIndex >= 0 && lastBraceIndex > firstBraceIndex) {
-    candidates.push(trimmed.slice(firstBraceIndex, lastBraceIndex + 1).trim())
-  }
-
-  for (const candidate of candidates) {
-    try {
-      return JSON.parse(candidate) as T
-    } catch {
-      continue
-    }
-  }
-
-  return null
 }
 
 function getAxiosErrorMessage(error: unknown, fallback: string) {
@@ -1059,9 +1030,105 @@ function buildVendorPromptData(projectVendor: ProjectVendor) {
     uuid: projectVendor.uuid,
     name: listing.name,
     email: listing.email ?? 'N/A',
-    category: listing.categories?.[0] ?? null,
-    website: listing.website ?? null,
+    contactName: 'N/A',
+    contactRole: 'N/A',
+    category: listing.categories?.[0] ?? 'N/A',
+    website: listing.website ?? 'N/A',
+    notes: 'N/A',
   }
+}
+
+function formatThreadMessageForTranscript(message: Message): string {
+  const author = message.direction === 'inbound' ? 'Vendor' : 'Envoy'
+  const subject = message.subject?.trim() || '(no subject)'
+  const body = message.body?.trim() || '(no body)'
+
+  return `${author} - Subject: ${subject}\n${body}`
+}
+
+async function buildOutreachTranscript(
+  conversationUuid?: string | null
+): Promise<ReasoningRecentTurn[]> {
+  if (!conversationUuid) {
+    return []
+  }
+
+  const messages = await Message.query()
+    .where('vendor_conversation_uuid', conversationUuid)
+    .orderBy('sent_timestamp', 'desc')
+    .orderBy('id', 'desc')
+    .limit(OUTREACH_TRANSCRIPT_MESSAGE_LIMIT)
+
+  return messages.reverse().map((message) => {
+    const transcriptEntry = formatThreadMessageForTranscript(message)
+
+    return {
+      agentId: 'OUTREACH',
+      userPrompt: message.direction === 'inbound' ? transcriptEntry : '',
+      modelResponse: message.direction === 'outbound' ? transcriptEntry : '',
+      timestamp: message.sentTimestamp.toISO() ?? new Date().toISOString(),
+    }
+  })
+}
+
+async function getOutreachPromptData(projectUuid: string): Promise<Record<string, unknown>> {
+  const outreachPromptData = await ProjectPromptService.getLatestPromptData(projectUuid, 'OUTREACH')
+  if (!outreachPromptData) {
+    throw new Error('Outreach prompt data is missing')
+  }
+
+  return outreachPromptData
+}
+
+async function buildOutreachRequestContext(
+  user: User,
+  project: Project,
+  conversationUuid?: string | null
+) {
+  const [projectContext, projectInsights, recentTurns] = await Promise.all([
+    ReasoningRequestContextService.buildProjectContext(project),
+    ReasoningRequestContextService.getProjectInsights(project.uuid),
+    buildOutreachTranscript(conversationUuid),
+  ])
+
+  return {
+    stakeholderDetails: ReasoningRequestContextService.getStakeholderDetails(user),
+    projectContext,
+    projectInsights,
+    recentTurns,
+  }
+}
+
+function parseOutreachDraftResponse(agentResponse: ReasoningAgentResponse): {
+  subject: string | null
+  body: string
+} {
+  if (agentResponse.agentId !== 'OUTREACH') {
+    throw new Error('Reasoning engine returned the wrong agent response')
+  }
+
+  const data = agentResponse.data
+  const subject =
+    typeof data?.subject === 'string' && data.subject.trim() ? data.subject.trim() : null
+  const body = typeof data?.body === 'string' ? data.body.trim() : ''
+
+  if (!body) {
+    throw new Error('Reasoning engine did not return an outreach draft body')
+  }
+
+  return { subject, body }
+}
+
+async function requestOutreachDraft(
+  request: ReasoningRequest
+): Promise<{ subject: string | null; body: string }> {
+  const response = await axios.post(getReasoningChatUrl(), request)
+
+  if (response.status !== 200) {
+    throw new Error('Reasoning engine error')
+  }
+
+  return parseOutreachDraftResponse(response.data as ReasoningAgentResponse)
 }
 
 async function mapWithConcurrency<T, R>(
@@ -1159,27 +1226,6 @@ async function saveInitialDraftFailure(user: User, projectVendor: ProjectVendor,
   })
 }
 
-async function requestInitialOutreachDraft(
-  request: ReasoningRequest
-): Promise<{ subject: string | null; body: string }> {
-  const response = await axios.post(getReasoningChatUrl(), request)
-
-  if (response.status !== 200) {
-    throw new Error('Reasoning engine error')
-  }
-
-  const agentResponse = response.data as ReasoningAgentResponse
-  const data = agentResponse.data
-  const subject = typeof data?.subject === 'string' ? data.subject : null
-  const body = typeof data?.body === 'string' ? data.body.trim() : ''
-
-  if (!body) {
-    throw new Error('Reasoning engine did not return an outreach draft body')
-  }
-
-  return { subject, body }
-}
-
 export async function generateInitialOutreachDrafts(
   userUuid: string,
   projectUuid: string
@@ -1203,9 +1249,7 @@ export async function generateInitialOutreachDrafts(
     .where('is_active', true)
     .preload('vendor', (q) => q.preload('vendorListing'))
 
-  const projectContext = await ReasoningRequestContextService.buildProjectContext(project)
-  const projectInsights = await ReasoningRequestContextService.getProjectInsights(projectUuid)
-  const stakeholderDetails = ReasoningRequestContextService.getStakeholderDetails(user)
+  const outreachContext = await buildOutreachRequestContext(user, project)
   const successful: InitialOutreachDraftGenerationResult['successful'] = []
   const failed: InitialOutreachDraftGenerationResult['failed'] = []
 
@@ -1228,14 +1272,12 @@ export async function generateInitialOutreachDrafts(
         },
         revisionInstructions: 'N/A',
       },
-      stakeholderDetails,
-      projectContext,
-      projectInsights,
+      ...outreachContext,
       recentTurns: [],
     }
 
     try {
-      const draft = await retryOnce(() => requestInitialOutreachDraft(reasoningRequest))
+      const draft = await retryOnce(() => requestOutreachDraft(reasoningRequest))
       const savedDraft = await saveInitialDraft(user, projectVendor, draft)
       successful.push({ projectVendorUuid: projectVendor.uuid, draftUuid: savedDraft.uuid })
     } catch (error) {
@@ -1452,7 +1494,7 @@ export async function syncProjectOutreach(user: User, projectUuid: string) {
       })
 
       // When a vendor replies, automatically draft a response for the user to review.
-      // Fire-and-forget — a drafting failure must never interrupt inbox sync.
+      // Fire-and-forget; a drafting failure must never interrupt inbox sync.
       if (direction === 'inbound') {
         draftReplyForInboundMessage(projectUuid, conversation, {
           subject: detail.subject,
@@ -1557,35 +1599,33 @@ export async function reviseOutreachDraft(
     draftUuid
   )
   const project = await getProjectOrFail(user.uuid, projectUuid)
-  const projectWithConversations = await ProjectService.getProjectWithConversations(
-    user.uuid,
-    projectUuid
-  )
-  const reasoningContext = await ReasoningRequestContextService.buildContext(
-    projectUuid,
-    projectWithConversations.conversations[0].uuid
+  const outreachPromptData = await getOutreachPromptData(projectUuid)
+  const outreachContext = await buildOutreachRequestContext(
+    user,
+    project,
+    draft.vendorConversationUuid
   )
   const currentSubject = overrides?.subject?.trim() || draft.subject
   const currentBody = overrides?.body?.trim() || draft.body
-  const prompt = [
-    'Return only valid JSON with keys "subject" and "body".',
-    'Revise the outreach email draft using the user instructions.',
-    `Project title: ${project.title}`,
-    `Vendor: ${projectVendor.vendor.vendorListing.name} <${projectVendor.vendor.vendorListing.email}>`,
-    `Current subject: ${currentSubject}`,
-    `Current body:\n${currentBody}`,
-    `Revision instructions:\n${instructions}`,
-  ].join('\n\n')
+  const reasoningRequest: ReasoningRequest = {
+    agentId: 'OUTREACH',
+    promptData: {
+      ...outreachPromptData,
+      mode: 'revision',
+      vendor: buildVendorPromptData(projectVendor),
+      latestVendorReply: null,
+      draft: {
+        subject: currentSubject || null,
+        body: currentBody || 'N/A',
+      },
+      revisionInstructions: instructions,
+    },
+    ...outreachContext,
+  }
 
-  let response: AxiosResponse
+  let revisedDraft: { subject: string | null; body: string }
   try {
-    response = await axios.post(getReasoningChatUrl(), {
-      agentId: 'envoy-reasoning-agent-001',
-      prompt,
-      variables: { context: 'INITIAL_OUTREACH' },
-      projectUuid,
-      ...reasoningContext,
-    })
+    revisedDraft = await requestOutreachDraft(reasoningRequest)
   } catch (error) {
     logger.error(
       { err: safeError(error), projectUuid, draftUuid },
@@ -1594,22 +1634,8 @@ export async function reviseOutreachDraft(
     throw new Error(getAxiosErrorMessage(error, 'Failed to revise outreach draft'))
   }
 
-  const turn = response.data as Turn
-  let subject = currentSubject
-  let body = currentBody
-
-  const parsed = parseStructuredModelResponse<{ subject?: string; body?: string }>(
-    turn.modelResponse
-  )
-  if (!parsed) {
-    throw new Error('AI revision did not return a valid draft payload')
-  }
-
-  if (parsed.subject?.trim()) subject = parsed.subject.trim()
-  if (parsed.body?.trim()) body = parsed.body.trim()
-
-  draft.subject = subject
-  draft.body = body
+  draft.subject = revisedDraft.subject ?? currentSubject
+  draft.body = revisedDraft.body
   draft.status = 'draft'
   draft.lastError = null
   await draft.save()
@@ -1685,64 +1711,39 @@ export async function reviseThreadReply(
   currentBody: string
 ) {
   const project = await getProjectOrFail(user.uuid, projectUuid)
-  const projectWithConversations = await ProjectService.getProjectWithConversations(
-    user.uuid,
-    projectUuid
-  )
-  const reasoningContext = await ReasoningRequestContextService.buildContext(
-    projectUuid,
-    projectWithConversations.conversations[0].uuid
-  )
   const conversation = await getConversationForProjectOrFail(user.uuid, projectUuid, threadUuid)
   const projectVendor = await getProjectVendorOrFail(
     user.uuid,
     projectUuid,
     conversation.projectVendorUuid!
   )
+  const outreachPromptData = await getOutreachPromptData(projectUuid)
+  const outreachContext = await buildOutreachRequestContext(user, project, conversation.uuid)
   const trimmedCurrentBody = currentBody.trim()
-  const recentMessages = await Message.query()
+  const latestMessage = await Message.query()
     .where('vendor_conversation_uuid', conversation.uuid)
     .orderBy('sent_timestamp', 'desc')
     .orderBy('id', 'desc')
-    .limit(6)
-  const threadContext = recentMessages
-    .reverse()
-    .map((message) => {
-      const direction = message.direction === 'inbound' ? 'Vendor' : 'You'
-      const subject = message.subject?.trim() || '(no subject)'
-      const body = message.body?.trim() || '(no body)'
+    .first()
+  const reasoningRequest: ReasoningRequest = {
+    agentId: 'OUTREACH',
+    promptData: {
+      ...outreachPromptData,
+      mode: 'revision',
+      vendor: buildVendorPromptData(projectVendor),
+      latestVendorReply: null,
+      draft: {
+        subject: latestMessage?.subject?.trim() || null,
+        body: trimmedCurrentBody || 'N/A',
+      },
+      revisionInstructions: instructions,
+    },
+    ...outreachContext,
+  }
 
-      return `${direction} - Subject: ${subject}\n${body}`
-    })
-    .join('\n\n---\n\n')
-  const prompt = [
-    'Return only valid JSON with key "body".',
-    trimmedCurrentBody
-      ? 'Revise the email reply body using the user instructions.'
-      : 'Write a new email reply body using the user instructions and the thread context.',
-    trimmedCurrentBody
-      ? 'Treat the revision instructions as natural-language feedback and produce only the revised reply body, not an explanation of changes.'
-      : 'Produce only the reply body, not an explanation of changes.',
-    `Project title: ${project.title}`,
-    `Vendor: ${projectVendor.vendor.vendorListing.name} <${projectVendor.vendor.vendorListing.email}>`,
-    threadContext
-      ? `Recent thread messages:\n${threadContext}`
-      : 'Recent thread messages:\n[none available]',
-    trimmedCurrentBody
-      ? `Current reply body:\n${trimmedCurrentBody}`
-      : 'Current reply body:\n[none provided]',
-    `Revision instructions:\n${instructions}`,
-  ].join('\n\n')
-
-  let response: AxiosResponse
+  let revisedDraft: { subject: string | null; body: string }
   try {
-    response = await axios.post(getReasoningChatUrl(), {
-      agentId: 'envoy-reasoning-agent-001',
-      prompt,
-      variables: { context: 'HANDLE_VENDOR_RESPONSE' },
-      projectUuid,
-      ...reasoningContext,
-    })
+    revisedDraft = await requestOutreachDraft(reasoningRequest)
   } catch (error) {
     logger.error(
       { err: safeError(error), projectUuid, threadUuid },
@@ -1751,54 +1752,29 @@ export async function reviseThreadReply(
     throw new Error(getAxiosErrorMessage(error, 'Failed to revise reply'))
   }
 
-  const turn = response.data as Turn
-  let revisedBody = currentBody.trim()
-
-  const parsed = parseStructuredModelResponse<{ body?: string }>(turn.modelResponse)
-  if (parsed?.body?.trim()) {
-    revisedBody = parsed.body.trim()
-  } else if (turn.modelResponse?.trim()) {
-    revisedBody = turn.modelResponse
-      .replace(/```(?:json)?/gi, '')
-      .replace(/```/g, '')
-      .trim()
-  }
-
-  if (!revisedBody) {
-    logger.warn(
-      {
-        projectUuid,
-        threadUuid,
-        modelResponse: turn.modelResponse,
-      },
-      'Reply revision returned no usable body'
-    )
-    throw new Error('AI revision did not return a usable reply body')
-  }
-
   const outreach = await getProjectOutreach(user.uuid, projectUuid)
   return {
     ...outreach,
     revisedThreadUuid: threadUuid,
-    revisedReplyBody: revisedBody,
+    revisedReplyBody: revisedDraft.body,
   }
 }
 
 /**
  * Called after a new inbound message is recorded during inbox sync.
  * Guards against creating duplicate drafts, then asks the reasoning engine
- * (HANDLE_VENDOR_RESPONSE) to draft a reply and saves it to the existing
+ * to draft a reply and saves it to the existing
  * conversation thread so the user can review and send it from the Outreach tab.
  *
- * This is intentionally fire-and-forget — callers should .catch() errors so
+ * This is intentionally fire-and-forget; callers should .catch() errors so
  * a drafting failure never breaks the inbox sync.
  */
-async function draftReplyForInboundMessage(
+export async function draftReplyForInboundMessage(
   projectUuid: string,
   conversation: VendorConversation,
   inboundMessage: { subject: string; body: string }
 ): Promise<void> {
-  // Skip if a draft already exists for this thread — avoid duplicate pending drafts.
+  // Skip if a draft already exists for this thread to avoid duplicate pending drafts.
   const existingDraft = await OutreachDraft.query()
     .where('vendor_conversation_uuid', conversation.uuid)
     .first()
@@ -1816,27 +1792,30 @@ async function draftReplyForInboundMessage(
     return
   }
 
-  // Load the project and all its active vendors to build the projectContext
-  // the reasoning engine needs for DRAFT_OUTREACH_EMAILS.
   const project = await Project.query().where('uuid', projectUuid).where('is_active', true).first()
   if (!project) {
     return
   }
 
-  const allProjectVendors = await ProjectVendor.query()
+  const user = await User.query().where('uuid', project.userUuid).where('is_active', true).first()
+  if (!user || !conversation.projectVendorUuid) {
+    return
+  }
+
+  const projectVendor = await ProjectVendor.query()
+    .where('uuid', conversation.projectVendorUuid)
     .where('project_uuid', projectUuid)
     .where('is_active', true)
     .preload('vendor', (q) => q.preload('vendorListing'))
+    .first()
 
-  const projectContext = {
-    uuid: project.uuid,
-    name: project.title,
-    description: project.description ?? null,
-    goals: project.goals ?? null,
-    vendors: allProjectVendors.map((pv) => ({
-      name: pv.vendor.vendorListing.name,
-      email: pv.vendor.vendorListing.email ?? null,
-    })),
+  if (!projectVendor) {
+    return
+  }
+
+  const latestVendorReply = firstNonEmptyString(inboundMessage.body, inboundMessage.subject)
+  if (!latestVendorReply) {
+    return
   }
 
   logger.info(
@@ -1844,183 +1823,52 @@ async function draftReplyForInboundMessage(
     'Inbox sync: auto-drafting reply for inbound message'
   )
 
-  const reasoningResponse = await axios.post(env.get('REASONING_ENGINE_URL', ''), {
-    agentId: 'envoy-reasoning-agent-001',
-    prompt: inboundMessage.body || inboundMessage.subject,
-    variables: { context: 'HANDLE_VENDOR_RESPONSE' },
-    projectUuid,
-    projectContext,
+  const outreachPromptData = await getOutreachPromptData(projectUuid)
+  const outreachContext = await buildOutreachRequestContext(user, project, conversation.uuid)
+  const draft = await requestOutreachDraft({
+    agentId: 'OUTREACH',
+    promptData: {
+      ...outreachPromptData,
+      mode: 'vendor_reply',
+      vendor: buildVendorPromptData(projectVendor),
+      latestVendorReply,
+      draft: {
+        subject: null,
+        body: 'N/A',
+      },
+      revisionInstructions: 'N/A',
+    },
+    ...outreachContext,
   })
 
-  const turn = reasoningResponse.data as Turn
+  const subject = draft.subject ?? inboundMessage.subject.trim()
 
-  // Extract drafts from DRAFT_OUTREACH_EMAILS action executions and save them
-  // to the *existing* conversation so the reply appears inline with the thread.
-  for (const ae of turn.actionExecutions ?? []) {
-    if (ae.action?.toUpperCase() !== 'DRAFT_OUTREACH_EMAILS' || !ae.success) {
-      continue
-    }
-
-    const drafts: Array<{ vendorEmail?: string; subject?: string; body?: string }> =
-      ae.data?.drafts ?? []
-
-    for (const draft of drafts) {
-      if (!draft.subject?.trim() || !draft.body?.trim()) {
-        continue
-      }
-
-      if (existingDraft) {
-        existingDraft.merge({
-          projectVendorUuid: conversation.projectVendorUuid!,
-          subject: draft.subject.trim(),
-          body: draft.body.trim(),
-          status: 'draft',
-          sentTimestamp: null,
-          sentMessageUuid: null,
-          lastError: null,
-        })
-        await existingDraft.save()
-      } else {
-        await OutreachDraft.create({
-          projectVendorUuid: conversation.projectVendorUuid!,
-          vendorConversationUuid: conversation.uuid,
-          subject: draft.subject.trim(),
-          body: draft.body.trim(),
-          status: 'draft',
-          sentTimestamp: null,
-          sentMessageUuid: null,
-          lastError: null,
-        })
-      }
-
-      logger.info(
-        { projectUuid, conversationUuid: conversation.uuid },
-        'Inbox sync: auto-reply draft saved'
-      )
-      // One draft per inbound message is enough.
-      return
-    }
+  if (existingDraft) {
+    existingDraft.merge({
+      projectVendorUuid: conversation.projectVendorUuid,
+      subject,
+      body: draft.body,
+      status: 'draft',
+      sentTimestamp: null,
+      sentMessageUuid: null,
+      lastError: null,
+    })
+    await existingDraft.save()
+  } else {
+    await OutreachDraft.create({
+      projectVendorUuid: conversation.projectVendorUuid,
+      vendorConversationUuid: conversation.uuid,
+      subject,
+      body: draft.body,
+      status: 'draft',
+      sentTimestamp: null,
+      sentMessageUuid: null,
+      lastError: null,
+    })
   }
 
   logger.info(
     { projectUuid, conversationUuid: conversation.uuid },
-    'Inbox sync: reasoning engine did not produce a draft (may need more context)'
+    'Inbox sync: auto-reply draft saved'
   )
-}
-
-export async function applyOutreachActions(
-  projectUuid: string,
-  actions: ActionExecution[] | undefined
-) {
-  if (!actions?.length) {
-    return
-  }
-
-  const project = await Project.query().where('uuid', projectUuid).where('is_active', true).first()
-  if (!project) {
-    return
-  }
-
-  const user = await User.query().where('uuid', project.userUuid).first()
-  if (!user) {
-    return
-  }
-
-  const projectVendors = await ProjectVendor.query()
-    .where('project_uuid', projectUuid)
-    .where('is_active', true)
-    .preload('vendor', (q) => q.preload('vendorListing'))
-
-  const byProjectVendorUuid = new Map(
-    projectVendors.map((projectVendor) => [projectVendor.uuid, projectVendor])
-  )
-  const byVendorUuid = new Map(
-    projectVendors.map((projectVendor) => [projectVendor.vendorUuid, projectVendor])
-  )
-  const byVendorEmail = new Map(
-    projectVendors.flatMap((projectVendor) => {
-      const email = projectVendor.vendor.vendorListing.email
-      return email ? [[email.toLowerCase(), projectVendor] as const] : []
-    })
-  )
-
-  for (const action of actions) {
-    if (!action.success) {
-      continue
-    }
-
-    const normalizedAction = action.action?.toLowerCase()
-    if (
-      normalizedAction !== 'draft_outreach_emails' &&
-      normalizedAction !== 'revise_outreach_draft'
-    ) {
-      continue
-    }
-
-    const actionData = action.data as
-      | {
-          projectVendorUuid?: string
-          vendorUuid?: string
-          vendorEmail?: string
-          subject?: string
-          body?: string
-          draftUuid?: string
-          drafts?: Array<{
-            projectVendorUuid?: string
-            vendorUuid?: string
-            vendorEmail?: string
-            subject?: string
-            body?: string
-            draftUuid?: string
-          }>
-        }
-      | undefined
-
-    const candidates = actionData?.drafts?.length
-      ? actionData.drafts
-      : actionData
-        ? [actionData]
-        : []
-
-    for (const candidate of candidates) {
-      const projectVendor =
-        (candidate.projectVendorUuid
-          ? byProjectVendorUuid.get(candidate.projectVendorUuid)
-          : null) ??
-        (candidate.vendorUuid ? byVendorUuid.get(candidate.vendorUuid) : null) ??
-        (candidate.vendorEmail ? byVendorEmail.get(candidate.vendorEmail.toLowerCase()) : null)
-
-      if (!projectVendor || !candidate.subject?.trim() || !candidate.body?.trim()) {
-        continue
-      }
-
-      const existing = candidate.draftUuid
-        ? await OutreachDraft.query()
-            .where('uuid', candidate.draftUuid)
-            .where('project_vendor_uuid', projectVendor.uuid)
-            .where('status', 'draft')
-            .first()
-        : null
-
-      if (existing) {
-        existing.subject = candidate.subject.trim()
-        existing.body = candidate.body.trim()
-        await existing.save()
-        continue
-      }
-
-      const conversation = await createProjectConversation(user, projectVendor)
-
-      await OutreachDraft.create({
-        projectVendorUuid: projectVendor.uuid,
-        vendorConversationUuid: conversation.uuid,
-        subject: candidate.subject.trim(),
-        body: candidate.body.trim(),
-        status: 'draft',
-        sentTimestamp: null,
-        sentMessageUuid: null,
-        lastError: null,
-      })
-    }
-  }
 }
