@@ -4,6 +4,7 @@ import { BaseModel, column, belongsTo, hasMany, beforeCreate } from '@adonisjs/l
 import { v4 as uuidv4 } from 'uuid'
 import Conversation from './conversation.js'
 import Currency from './currency.js'
+import ProjectPrompt from './project_prompt.js'
 import User from './user.js'
 
 export default class Project extends BaseModel {
@@ -66,6 +67,9 @@ export default class Project extends BaseModel {
 
   @hasMany(() => Conversation, { foreignKey: 'projectUuid', localKey: 'uuid' })
   declare conversations: HasMany<typeof Conversation>
+
+  @hasMany(() => ProjectPrompt, { foreignKey: 'projectUuid', localKey: 'uuid' })
+  declare prompts: HasMany<typeof ProjectPrompt>
 
   @column({ columnName: 'is_active' })
   declare isActive: boolean
