@@ -3,6 +3,7 @@ import { strict as assert } from 'node:assert'
 import ConvoController from '#controllers/web/projects/convo_controller'
 import ProjectVendor from '#models/project_vendor'
 import ProjectService from '#services/project_service'
+import ProjectReasoningWorkflowService from '#services/project_reasoning_workflow_service'
 import ReasoningEngineService from '#services/reasoning_engine_service'
 import ReasoningRequestContextService from '#services/reasoning_request_context_service'
 
@@ -56,13 +57,32 @@ test.group('ConvoController reasoning request assembly', (group) => {
         ],
         recentTurns: [
           {
-            user_message: 'Earlier question',
-            assistant_response: 'Earlier answer',
-            action_metadata: [{ action: 'GET_PROJECT_DETAILS', success: true, error: null }],
+            agentId: 'PLANNING',
+            userPrompt: 'Earlier question',
+            modelResponse: 'Earlier answer',
+            timestamp: '2026-07-05T12:00:00.000Z',
           },
         ],
       }
     }) as typeof ReasoningRequestContextService.buildContext
+  }
+
+  function stubPlanningPromptData() {
+    const originalEnsurePlanningPromptData =
+      ProjectReasoningWorkflowService.ensurePlanningPromptData
+    restores.push(() => {
+      ProjectReasoningWorkflowService.ensurePlanningPromptData = originalEnsurePlanningPromptData
+    })
+
+    ProjectReasoningWorkflowService.ensurePlanningPromptData = (async () => ({
+      planningAgent: {
+        title: 'Office Planning PM',
+        description: 'Plans office renovation outreach.',
+        goals: ['Confirm vendor needs'],
+        questions: ['Which vendors should we contact?'],
+        risks: ['Schedule delays'],
+      },
+    })) as typeof ProjectReasoningWorkflowService.ensurePlanningPromptData
   }
 
   function stubEmptyProjectVendors() {
@@ -116,10 +136,11 @@ test.group('ConvoController reasoning request assembly', (group) => {
     stubProjectService(project)
     stubReasoningContext(contextCalls)
     stubEmptyProjectVendors()
+    stubPlanningPromptData()
     stubReasoningEngine(reasoningCalls)
 
     await controller.chat({
-      auth: { getUserOrFail: () => ({ uuid: 'user-1' }) },
+      auth: { getUserOrFail: () => ({ uuid: 'user-1', fullName: 'Alice Example' }) },
       request: {
         params: () => ({ uuid: projectUuid }),
         validateUsing: async () => ({ prompt: 'What should we do next?', variables: {} }),
@@ -140,13 +161,22 @@ test.group('ConvoController reasoning request assembly', (group) => {
     ])
     assert.deepEqual(reasoningCalls[0].reasoningRequest.recentTurns, [
       {
-        user_message: 'Earlier question',
-        assistant_response: 'Earlier answer',
-        action_metadata: [{ action: 'GET_PROJECT_DETAILS', success: true, error: null }],
+        agentId: 'PLANNING',
+        userPrompt: 'Earlier question',
+        modelResponse: 'Earlier answer',
+        timestamp: '2026-07-05T12:00:00.000Z',
       },
     ])
     assert.equal('pastConversationTurns' in reasoningCalls[0].reasoningRequest, false)
-    assert.equal(reasoningCalls[0].reasoningRequest.prompt, 'What should we do next?')
+    assert.equal(reasoningCalls[0].reasoningRequest.agentId, 'PLANNING')
+    assert.equal(reasoningCalls[0].reasoningRequest.promptData.prompt, 'What should we do next?')
+    assert.deepEqual(reasoningCalls[0].reasoningRequest.stakeholderDetails, {
+      name: 'Alice Example',
+    })
+    assert.equal(
+      reasoningCalls[0].reasoningRequest.promptData.planningAgent.title,
+      'Office Planning PM'
+    )
   })
 
   test('greeting also includes the lean reasoning context', async () => {
@@ -166,10 +196,11 @@ test.group('ConvoController reasoning request assembly', (group) => {
     stubProjectService(project)
     stubReasoningContext(contextCalls)
     stubEmptyProjectVendors()
+    stubPlanningPromptData()
     stubReasoningEngine(reasoningCalls)
 
     await controller.greeting({
-      auth: { getUserOrFail: () => ({ uuid: 'user-1' }) },
+      auth: { getUserOrFail: () => ({ uuid: 'user-1', fullName: 'Alice Example' }) },
       request: {
         params: () => ({ uuid: projectUuid }),
       },
@@ -179,11 +210,13 @@ test.group('ConvoController reasoning request assembly', (group) => {
     assert.deepEqual(contextCalls, [{ projectUuid, conversationUuid: 'conversation-1' }])
     assert.deepEqual(reasoningCalls[0].reasoningRequest.recentTurns, [
       {
-        user_message: 'Earlier question',
-        assistant_response: 'Earlier answer',
-        action_metadata: [{ action: 'GET_PROJECT_DETAILS', success: true, error: null }],
+        agentId: 'PLANNING',
+        userPrompt: 'Earlier question',
+        modelResponse: 'Earlier answer',
+        timestamp: '2026-07-05T12:00:00.000Z',
       },
     ])
+    assert.equal(reasoningCalls[0].reasoningRequest.agentId, 'PLANNING')
     assert.deepEqual(reasoningCalls[0].options, { saveToHistory: false })
   })
 })

@@ -1,5 +1,7 @@
 import { DateTime } from 'luxon'
 
+export type AgentId = 'INTAKE' | 'PLANNING' | 'OUTREACH'
+
 export interface ProjectRequest {
   title?: string
   description?: string
@@ -25,7 +27,18 @@ export interface ProjectContext {
   budgetAmount?: number | null
   budgetCurrency?: string | null
   goals?: string | null
-  vendors?: { name: string; email?: string | null }[]
+  vendors?: {
+    uuid?: string
+    name: string
+    email?: string | null
+    contactName?: string | null
+    contactRole?: string | null
+    category?: string | null
+    website?: string | null
+    notes?: string | null
+  }[]
+  existingDrafts?: { draftUuid: string; vendorEmail: string | null; subject: string }[]
+  details?: Record<string, unknown>
 }
 
 export interface ReasoningProjectInsight {
@@ -43,24 +56,32 @@ export interface ReasoningActionMetadata {
 }
 
 export interface ReasoningRecentTurn {
-  user_message: string
-  assistant_response: string
-  action_metadata: ReasoningActionMetadata[]
+  agentId: AgentId
+  userPrompt: string
+  modelResponse: string
+  timestamp: string
+}
+
+export interface StakeholderDetails {
+  name: string
 }
 
 export interface ReasoningRequest {
-  agentId: string
-  prompt: string
-  variables: Variables
-  projectUuid: string
-  projectContext: ProjectContext
-  projectInsights: ReasoningProjectInsight[]
-  recentTurns: ReasoningRecentTurn[]
+  agentId: AgentId
+  promptData?: Record<string, unknown>
+  stakeholderDetails?: StakeholderDetails
+  projectContext?: ProjectContext
+  projectInsights?: ReasoningProjectInsight[]
+  recentTurns?: ReasoningRecentTurn[]
 }
 
-export interface Variables {
-  context?: string
-  assistantGreeting?: string
+export interface ReasoningAgentResponse {
+  agentId: AgentId
+  message: string | null
+  data: Record<string, unknown> | null
+  readyForNextStep: boolean
+  missingFields: string[]
+  turn: import('./turn.js').Turn
 }
 
 export interface VendorRequest {

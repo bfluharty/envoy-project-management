@@ -9,11 +9,13 @@ import ProjectVendor from '#models/project_vendor'
 import User from '#models/user'
 import UserInboxConnection from '#models/user_inbox_connection'
 import VendorConversation from '#models/vendor_conversation'
+import ProjectPromptService from '#services/project_prompt_service'
 import ProjectService from '#services/project_service'
 import ReasoningRequestContextService from '#services/reasoning_request_context_service'
 import { getReasoningChatUrl } from '#utils/reasoning_engine_urls'
 import { safeError } from '#utils/safe_error'
 import type { ActionExecution, Turn } from '../../types/turn.js'
+import type { ReasoningAgentResponse, ReasoningRequest } from '../../types/request.js'
 import { getOrCreateEmailCommunicationForProjectVendor } from './email_communication_context.js'
 import {
   getGmailMessageDirect,
@@ -72,6 +74,7 @@ export type ConversationSelectionCandidate = Pick<VendorConversation, 'uuid' | '
 const ACTIVE_INBOX_REQUIRED_MESSAGE =
   'An active connected email account is required before sending outreach'
 const OUTBOUND_RECONCILIATION_WINDOW_MINUTES = 15
+const INITIAL_OUTREACH_CONCURRENCY = 3
 
 function firstNonEmptyString(...values: Array<string | null | undefined>) {
   for (const value of values) {
@@ -1034,6 +1037,219 @@ export async function createOutreachDraft(
     ...outreach,
     createdThreadUuid: conversation.uuid,
   }
+}
+
+export interface InitialOutreachDraftGenerationResult {
+  successful: Array<{ projectVendorUuid: string; draftUuid: string }>
+  failed: Array<{ projectVendorUuid: string; vendorName: string; error: string }>
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim()
+  }
+
+  return fallback
+}
+
+function buildVendorPromptData(projectVendor: ProjectVendor) {
+  const listing = projectVendor.vendor.vendorListing
+
+  return {
+    uuid: projectVendor.uuid,
+    name: listing.name,
+    email: listing.email ?? 'N/A',
+    category: listing.categories?.[0] ?? null,
+    website: listing.website ?? null,
+  }
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  mapper: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = []
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex
+      nextIndex += 1
+      results[currentIndex] = await mapper(items[currentIndex])
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()))
+
+  return results
+}
+
+async function retryOnce<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation()
+  } catch (firstError) {
+    logger.warn({ err: safeError(firstError) }, 'Initial outreach draft attempt failed; retrying')
+    return operation()
+  }
+}
+
+async function findEditableInitialDraft(projectVendorUuid: string) {
+  return OutreachDraft.query()
+    .where('project_vendor_uuid', projectVendorUuid)
+    .whereIn('status', ['draft', 'error'])
+    .orderBy('modified_timestamp', 'desc')
+    .orderBy('id', 'desc')
+    .first()
+}
+
+async function saveInitialDraft(
+  user: User,
+  projectVendor: ProjectVendor,
+  draft: { subject: string | null; body: string }
+) {
+  const existing = await findEditableInitialDraft(projectVendor.uuid)
+  const subject = draft.subject?.trim() ?? ''
+  const body = draft.body.trim()
+
+  if (existing) {
+    existing.subject = subject
+    existing.body = body
+    existing.status = 'draft'
+    existing.sentTimestamp = null
+    existing.sentMessageUuid = null
+    existing.lastError = null
+    await existing.save()
+    return existing
+  }
+
+  const conversation = await createProjectConversation(user, projectVendor)
+  return OutreachDraft.create({
+    projectVendorUuid: projectVendor.uuid,
+    vendorConversationUuid: conversation.uuid,
+    subject,
+    body,
+    status: 'draft',
+    sentTimestamp: null,
+    sentMessageUuid: null,
+    lastError: null,
+  })
+}
+
+async function saveInitialDraftFailure(user: User, projectVendor: ProjectVendor, error: string) {
+  const existing = await findEditableInitialDraft(projectVendor.uuid)
+
+  if (existing) {
+    existing.status = 'error'
+    existing.lastError = error
+    await existing.save()
+    return existing
+  }
+
+  const conversation = await createProjectConversation(user, projectVendor)
+  return OutreachDraft.create({
+    projectVendorUuid: projectVendor.uuid,
+    vendorConversationUuid: conversation.uuid,
+    subject: '',
+    body: '',
+    status: 'error',
+    sentTimestamp: null,
+    sentMessageUuid: null,
+    lastError: error,
+  })
+}
+
+async function requestInitialOutreachDraft(
+  request: ReasoningRequest
+): Promise<{ subject: string | null; body: string }> {
+  const response = await axios.post(getReasoningChatUrl(), request)
+
+  if (response.status !== 200) {
+    throw new Error('Reasoning engine error')
+  }
+
+  const agentResponse = response.data as ReasoningAgentResponse
+  const data = agentResponse.data
+  const subject = typeof data?.subject === 'string' ? data.subject : null
+  const body = typeof data?.body === 'string' ? data.body.trim() : ''
+
+  if (!body) {
+    throw new Error('Reasoning engine did not return an outreach draft body')
+  }
+
+  return { subject, body }
+}
+
+export async function generateInitialOutreachDrafts(
+  userUuid: string,
+  projectUuid: string
+): Promise<InitialOutreachDraftGenerationResult> {
+  const [user, project] = await Promise.all([
+    User.query().where('uuid', userUuid).where('is_active', true).first(),
+    getProjectOrFail(userUuid, projectUuid),
+  ])
+
+  if (!user) {
+    throw new Error('User not found')
+  }
+
+  const outreachPromptData = await ProjectPromptService.getLatestPromptData(projectUuid, 'OUTREACH')
+  if (!outreachPromptData) {
+    throw new Error('Outreach prompt data is missing')
+  }
+
+  const projectVendors = await ProjectVendor.query()
+    .where('project_uuid', projectUuid)
+    .where('is_active', true)
+    .preload('vendor', (q) => q.preload('vendorListing'))
+
+  const projectContext = await ReasoningRequestContextService.buildProjectContext(project)
+  const projectInsights = await ReasoningRequestContextService.getProjectInsights(projectUuid)
+  const stakeholderDetails = ReasoningRequestContextService.getStakeholderDetails(user)
+  const successful: InitialOutreachDraftGenerationResult['successful'] = []
+  const failed: InitialOutreachDraftGenerationResult['failed'] = []
+
+  await mapWithConcurrency(projectVendors, INITIAL_OUTREACH_CONCURRENCY, async (projectVendor) => {
+    const vendorName = projectVendor.vendor.vendorListing.name?.trim()
+    if (!vendorName) {
+      return
+    }
+
+    const reasoningRequest: ReasoningRequest = {
+      agentId: 'OUTREACH',
+      promptData: {
+        ...outreachPromptData,
+        mode: 'initial_outreach',
+        vendor: buildVendorPromptData(projectVendor),
+        latestVendorReply: null,
+        draft: {
+          subject: null,
+          body: 'N/A',
+        },
+        revisionInstructions: 'N/A',
+      },
+      stakeholderDetails,
+      projectContext,
+      projectInsights,
+      recentTurns: [],
+    }
+
+    try {
+      const draft = await retryOnce(() => requestInitialOutreachDraft(reasoningRequest))
+      const savedDraft = await saveInitialDraft(user, projectVendor, draft)
+      successful.push({ projectVendorUuid: projectVendor.uuid, draftUuid: savedDraft.uuid })
+    } catch (error) {
+      const message = getErrorMessage(error, 'Failed to generate outreach draft')
+      await saveInitialDraftFailure(user, projectVendor, message)
+      failed.push({
+        projectVendorUuid: projectVendor.uuid,
+        vendorName,
+        error: message,
+      })
+    }
+  })
+
+  return { successful, failed }
 }
 
 export async function cancelOutreachDraft(

@@ -1,6 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
 import ProjectService from '#services/project_service'
+import ProjectReasoningWorkflowService from '#services/project_reasoning_workflow_service'
 import { ProjectRequest } from '../../../../types/request.js'
 import {
   createProjectValidator,
@@ -105,10 +106,19 @@ export default class ProjectsController {
         user.uuid,
         validatedRequest as ProjectRequest
       )
-      if (errors?.length) {
+      const intakeResult = await ProjectReasoningWorkflowService.runIntakeForProject(
+        combinedProject.uuid,
+        user.uuid
+      )
+      const allErrors = [
+        ...(errors ?? []),
+        ...(intakeResult.success ? [] : [intakeResult.error ?? 'Project intake failed']),
+      ]
+
+      if (allErrors.length) {
         logger.warn('Project created with errors:')
-        logger.warn(errors)
-        session.flash('partial_success', 'Project created with errors: ' + errors.join('; '))
+        logger.warn(allErrors)
+        session.flash('partial_success', 'Project created with errors: ' + allErrors.join('; '))
         return response.redirect().toPath(`/projects/${combinedProject.uuid}`)
       }
       session.flash('success', 'Project created successfully!')

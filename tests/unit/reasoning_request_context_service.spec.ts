@@ -111,27 +111,30 @@ test.group('ReasoningRequestContextService', (group) => {
     ])
   })
 
-  test('fetches the previous 5 turns and returns them in chronological lean form', async () => {
+  test('fetches previous turns and returns new agent turns in chronological form', async () => {
     const calls: Call[] = []
     stubConversationTurns(
       [
         {
           contents: {
+            agentId: 'PLANNING',
             userPrompt: 'Newest user message',
             modelResponse: 'Newest assistant response',
-            actionExecutions: [
-              {
-                action: 'DRAFT_OUTREACH_EMAILS',
-                success: true,
-                data: { large: 'omitted from recent turn metadata' },
-              },
-            ],
+            timestamp: '2026-07-05T12:05:00.000Z',
           },
         },
         {
           contents: {
+            agentId: 'PLANNING',
             userPrompt: 'Older user message',
             modelResponse: 'Older assistant response',
+            timestamp: '2026-07-05T12:00:00.000Z',
+          },
+        },
+        {
+          contents: {
+            userPrompt: 'Legacy user message',
+            modelResponse: 'Legacy assistant response',
             actionExecutions: [
               {
                 action: 'GET_PROJECT_DETAILS',
@@ -155,26 +158,16 @@ test.group('ReasoningRequestContextService', (group) => {
     ])
     assert.deepEqual(payload, [
       {
-        user_message: 'Older user message',
-        assistant_response: 'Older assistant response',
-        action_metadata: [
-          {
-            action: 'GET_PROJECT_DETAILS',
-            success: false,
-            error: 'Project missing details',
-          },
-        ],
+        agentId: 'PLANNING',
+        userPrompt: 'Older user message',
+        modelResponse: 'Older assistant response',
+        timestamp: '2026-07-05T12:00:00.000Z',
       },
       {
-        user_message: 'Newest user message',
-        assistant_response: 'Newest assistant response',
-        action_metadata: [
-          {
-            action: 'DRAFT_OUTREACH_EMAILS',
-            success: true,
-            error: null,
-          },
-        ],
+        agentId: 'PLANNING',
+        userPrompt: 'Newest user message',
+        modelResponse: 'Newest assistant response',
+        timestamp: '2026-07-05T12:05:00.000Z',
       },
     ])
   })

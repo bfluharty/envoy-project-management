@@ -110,7 +110,14 @@ export default class OnboardingProjectController {
       }
 
       if (result.status === 'CREATED') {
-        session.flash('success', 'Project created successfully!')
+        if (result.errors?.length) {
+          session.flash(
+            'partial_success',
+            'Project created with errors: ' + result.errors.join('; ')
+          )
+        } else {
+          session.flash('success', 'Project created successfully!')
+        }
       }
       return response.redirect(`/projects/${result.projectUuid}`)
     } catch (error) {
