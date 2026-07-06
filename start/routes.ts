@@ -170,6 +170,8 @@ router
 
         router.post('/:uuid/vendors', [ProjectsAPIController, 'attachVendors'])
 
+        router.post('/:uuid/intake/retry', [ProjectsAPIController, 'retryIntake'])
+
         router.post('/:uuid/chat', [ProjectsAPIController, 'chat'])
       })
       .prefix('/projects')

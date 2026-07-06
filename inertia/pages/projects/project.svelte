@@ -20,7 +20,6 @@ interface ChatMessage {
     isTyping?: boolean;
     isError?: boolean;
     retryPrompt?: string;
-    retryVariables?: Record<string, any>;
 }
 
 interface Vendor {
@@ -177,7 +176,7 @@ onMount(async () => {
 });
 
 
-async function sendChat(prompt: string, variables: Record<string, any> = {}) {
+async function sendChat(prompt: string) {
     isLoading = true;
     const typingId = idCounter++;
     messages = [...messages, { id: typingId, role: 'assistant', content: '', isTyping: true }];
@@ -186,7 +185,7 @@ async function sendChat(prompt: string, variables: Record<string, any> = {}) {
         const res = await fetch(`/projects/${project.uuid}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, variables }),
+            body: JSON.stringify({ prompt }),
         });
 
         if (!res.ok) throw new Error(`Server error: ${res.status}`);
@@ -205,7 +204,6 @@ async function sendChat(prompt: string, variables: Record<string, any> = {}) {
                 content: 'Something went wrong. Please try again.',
                 isError: true,
                 retryPrompt: prompt,
-                retryVariables: variables,
             },
         ];
     } finally {
@@ -217,17 +215,15 @@ function sendMessage(event: Event) {
     event.preventDefault();
     if (!input.trim() || isLoading) return;
     const prompt = input.trim();
-    const isFirstMessage = !hasPriorConversation && !messages.some((m) => m.role === 'user');
     input = '';
     messages = [...messages, { id: idCounter++, role: 'user', content: prompt }];
-    const vars = (isFirstMessage && initialGreeting) ? { assistantGreeting: initialGreeting } : {};
-    sendChat(prompt, vars);
+    sendChat(prompt);
 }
 
-function retryMessage(retryPrompt: string, retryVariables: Record<string, any> = {}) {
+function retryMessage(retryPrompt: string) {
     if (isLoading) return;
     messages = messages.filter((m) => !m.isError);
-    sendChat(retryPrompt, retryVariables);
+    sendChat(retryPrompt);
 }
 
 // Outreach state
@@ -923,7 +919,7 @@ onDestroy(() => {
                                 <p>{msg.content}</p>
                                 <button
                                     class="btn btn-sm preset-filled-error-500 mt-2"
-                                    onclick={() => retryMessage(msg.retryPrompt!, msg.retryVariables ?? {})}>
+                                    onclick={() => retryMessage(msg.retryPrompt!)}>
                                     Retry
                                 </button>
                             </div>

@@ -1,5 +1,7 @@
 # Project-Scoped Insights Generator Specification
 
+Status note: the insight storage and extraction concepts in this document remain relevant, but any runtime references to reasoning-engine topic/action routing are superseded by `docs/deterministic-agent-routing-spec.md` in the reasoning-engine repo. Current extraction input uses deterministic `agent_id`, the current user/vendor message, the assistant response, active insights, and lean recent turns.
+
 ## 1. Executive Summary
 
 The application currently stores full conversation history and injects prior messages into future reasoning-engine prompts. This preserves context, but prompt size grows as each project accumulates user messages, assistant responses, action results, and turn metadata.

@@ -12,7 +12,7 @@ export default class CreateProjectsPrompts extends BaseSchema {
         .inTable('envoy_schema.projects')
         .onDelete('CASCADE')
       table.string('agent_type', 32).notNullable()
-      table.jsonb('data').notNullable()
+      table.jsonb('data').notNullable().defaultTo('{}')
       table
         .uuid('created_by_user_uuid')
         .nullable()

@@ -143,7 +143,7 @@ test.group('ConvoController reasoning request assembly', (group) => {
       auth: { getUserOrFail: () => ({ uuid: 'user-1', fullName: 'Alice Example' }) },
       request: {
         params: () => ({ uuid: projectUuid }),
-        validateUsing: async () => ({ prompt: 'What should we do next?', variables: {} }),
+        validateUsing: async () => ({ prompt: 'What should we do next?' }),
       },
       response: makeResponse(),
     } as any)

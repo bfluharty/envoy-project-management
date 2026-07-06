@@ -242,6 +242,38 @@ export default class ProjectsAPIController {
   }
 
   /**
+   * Retry project intake and planning prompt-data generation.
+   */
+  async retryIntake({ request, response }: HttpContext) {
+    // Validate user
+    const userId = request.header('x-user-id') || ''
+    try {
+      const isValidUser = await validateUser(userId)
+      if (!isValidUser) {
+        return response.status(403).json({
+          error: 'User is not authorized',
+          developerText: 'User is not active or does not exist',
+        })
+      }
+    } catch (error) {
+      return response.status(401).json({ error: error.message })
+    }
+
+    const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
+
+    const result = await ProjectReasoningWorkflowService.runIntakeForProject(projectUuid, userId)
+    if (!result.success) {
+      const statusCode = result.error === 'Project not found' ? 404 : 502
+      return response.status(statusCode).json({
+        success: false,
+        error: result.error ?? 'Project intake failed',
+      })
+    }
+
+    return response.status(200).json({ success: true })
+  }
+
+  /**
    * Chat with reasoning engine about a project
    */
   async chat({ request, response }: HttpContext) {

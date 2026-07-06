@@ -49,12 +49,6 @@ export interface ReasoningProjectInsight {
   confidence: number | null
 }
 
-export interface ReasoningActionMetadata {
-  action: string
-  success: boolean
-  error?: string | null
-}
-
 export interface ReasoningRecentTurn {
   agentId: AgentId
   userPrompt: string
