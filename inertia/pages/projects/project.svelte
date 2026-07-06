@@ -235,6 +235,7 @@ let outreachInitialLoadAttempted = $state(false);
 let outreachError = $state<string | null>(null);
 let outreachSenderMode = $state<'connected_inbox' | 'unavailable'>('unavailable');
 let sendingDraftUuid = $state<string | null>(null);
+let retryingDraftUuid = $state<string | null>(null);
 let creatingDraftProjectVendorUuid = $state<string | null>(null);
 let revisingDraftUuid = $state<string | null>(null);
 let reviseDraftUuid = $state<string | null>(null);
@@ -527,7 +528,36 @@ async function reviseDraft(card: OutreachCard) {
         outreachError = error instanceof Error ? error.message : 'Failed to revise outreach draft.';
     } finally {
         revisingDraftUuid = null;
-  }
+    }
+}
+
+async function retryDraft(card: OutreachCard) {
+    if (!card.draftUuid || retryingDraftUuid) return;
+    retryingDraftUuid = card.draftUuid;
+    outreachError = null;
+
+    try {
+        await requestOutreach(`/api/projects/${project.uuid}/outreach/drafts/${card.draftUuid}/retry`, {
+            method: 'POST',
+        });
+        outreachPane = 'create';
+        reviseDraftUuid = null;
+        reviseInstructions = '';
+        setOperationSuccess('Draft regenerated.');
+    } catch (error) {
+        outreachError = error instanceof Error ? error.message : 'Failed to retry outreach draft.';
+        outreachCards = outreachCards.map((entry) =>
+            entry.draftUuid === card.draftUuid
+                ? {
+                    ...entry,
+                    status: 'error',
+                    lastError: outreachError,
+                }
+                : entry
+        );
+    } finally {
+        retryingDraftUuid = null;
+    }
 }
 
 async function cancelDraft(card: OutreachCard) {
@@ -1020,6 +1050,7 @@ onDestroy(() => {
                 newThreadVendorUuid={newThreadVendorUuid}
                 creatingDraftProjectVendorUuid={creatingDraftProjectVendorUuid}
                 sendingDraftUuid={sendingDraftUuid}
+                retryingDraftUuid={retryingDraftUuid}
                 revisingDraftUuid={revisingDraftUuid}
                 reviseDraftUuid={reviseDraftUuid}
                 reviseInstructions={reviseInstructions}
@@ -1037,6 +1068,7 @@ onDestroy(() => {
                 onCreateDraftForVendorUuid={createDraftForVendorUuid}
                 onUpdateDraftField={updateDraftField}
                 onSendDraft={sendDraft}
+                onRetryDraft={retryDraft}
                 onCancelDraft={cancelDraft}
                 onToggleRevise={(card) => {
                     reviseDraftUuid = reviseDraftUuid === card.draftUuid ? null : card.draftUuid;

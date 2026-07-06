@@ -306,6 +306,8 @@ AI-driven draft creation:
 
 - `generateInitialOutreachDrafts` creates one `OUTREACH` reasoning request per
   project vendor and stores successful responses as local `OutreachDraft` rows.
+- Failed generated drafts remain local `error` drafts and can be retried for the
+  same vendor through the Outreach tab.
 - Draft and reply revisions call the `OUTREACH` agent directly and parse
   `data.subject` and `data.body` from the response envelope.
 - `draftReplyForInboundMessage` can create a local reply draft after inbound

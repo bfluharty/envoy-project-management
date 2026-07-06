@@ -228,6 +228,10 @@ router
       ProjectOutreachApiController,
       'sendDraft',
     ])
+    router.post('/:uuid/outreach/drafts/:draftUuid/retry', [
+      ProjectOutreachApiController,
+      'retryDraft',
+    ])
     router.post('/:uuid/outreach/drafts/:draftUuid/revise', [
       ProjectOutreachApiController,
       'reviseDraft',

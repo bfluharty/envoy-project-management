@@ -11,7 +11,10 @@ import ReasoningRequestContextService from '#services/reasoning_request_context_
 import User from '#models/user'
 import UserEntitlement from '#models/user_entitlement'
 import VendorService from '#services/vendor_service'
-import { generateInitialOutreachDrafts } from '#services/project_outreach_service'
+import {
+  generateInitialOutreachDrafts,
+  retryInitialOutreachDraft,
+} from '#services/project_outreach_service'
 
 const PASSWORD = 'Password123!'
 
@@ -188,5 +191,99 @@ test.group('initial outreach generation', (group) => {
     assert.match(successDraft?.body ?? '', /Can you share availability/)
     assert.equal(failedDraft?.status, 'error')
     assert.equal(failedDraft?.lastError, 'Reasoning engine did not return an outreach draft body')
+  })
+
+  test('manually retries a failed initial outreach draft for the same vendor', async () => {
+    const user = await createConsumer()
+    const project = await Project.create({
+      title: 'Manual Retry Outreach Project',
+      description: 'Coordinate contractor availability.',
+      userUuid: user.uuid,
+      isActive: true,
+    })
+    const projectVendor = await attachVendor(
+      user,
+      project,
+      'Retryable HVAC',
+      'retryable@example.com'
+    )
+    await ProjectPromptService.savePromptData({
+      projectUuid: project.uuid,
+      agentType: 'OUTREACH',
+      data: {
+        outreachAgent: {
+          title: 'Contractor Outreach Agent',
+          description: 'Collects availability from project vendors.',
+          goals: ['Confirm availability'],
+          risks: ['Vendor delays'],
+          successCriteria: ['Vendor responds'],
+          priorities: ['Availability first'],
+          requiredFactsToCollect: ['Availability'],
+          checklistDefinitionOfDone: ['Availability known'],
+        },
+      },
+      userUuid: user.uuid,
+    })
+    stubProjectInsights()
+
+    const originalPost = axios.post
+    const calls: any[] = []
+    restores.push(() => {
+      axios.post = originalPost
+    })
+
+    axios.post = (async (_url: string, payload: any) => {
+      calls.push(payload)
+      return {
+        status: 200,
+        data: {
+          agentId: 'OUTREACH',
+          data: {
+            subject: 'Invalid failed attempt',
+            body: '',
+          },
+        },
+      }
+    }) as typeof axios.post
+
+    const failedResult = await generateInitialOutreachDrafts(user.uuid, project.uuid)
+    assert.deepEqual(
+      failedResult.failed.map((failure) => failure.projectVendorUuid),
+      [projectVendor.uuid]
+    )
+
+    const failedDraft = await OutreachDraft.query()
+      .where('project_vendor_uuid', projectVendor.uuid)
+      .firstOrFail()
+    assert.equal(failedDraft.status, 'error')
+
+    axios.post = (async (_url: string, payload: any) => {
+      calls.push(payload)
+      return {
+        status: 200,
+        data: {
+          agentId: 'OUTREACH',
+          data: {
+            subject: 'Retryable HVAC availability',
+            body: 'Hi Retryable HVAC,\n\nCan you share availability?\n\nThanks,\nInitial Outreach User',
+          },
+        },
+      }
+    }) as typeof axios.post
+
+    const state = await retryInitialOutreachDraft(user, project.uuid, failedDraft.uuid)
+
+    await failedDraft.refresh()
+    assert.equal(failedDraft.status, 'draft')
+    assert.equal(failedDraft.subject, 'Retryable HVAC availability')
+    assert.match(failedDraft.body, /Can you share availability/)
+    assert.equal(failedDraft.lastError, null)
+    assert.equal(state.cards.find((card) => card.draftUuid === failedDraft.uuid)?.status, 'draft')
+
+    const retryCall = calls[calls.length - 1]
+    assert.equal(retryCall.agentId, 'OUTREACH')
+    assert.equal(retryCall.promptData.mode, 'initial_outreach')
+    assert.equal(retryCall.promptData.vendor.name, 'Retryable HVAC')
+    assert.equal(retryCall.stakeholderDetails.name, 'Initial Outreach User')
   })
 })

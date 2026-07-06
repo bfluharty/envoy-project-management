@@ -1294,6 +1294,54 @@ export async function generateInitialOutreachDrafts(
   return { successful, failed }
 }
 
+export async function retryInitialOutreachDraft(
+  user: User,
+  projectUuid: string,
+  draftUuid: string
+) {
+  const { draft, projectVendor } = await getDraftWithProjectVendorOrFail(
+    user.uuid,
+    projectUuid,
+    draftUuid
+  )
+
+  if (draft.status !== 'error') {
+    throw new Error('Draft is not in a retryable error state')
+  }
+
+  const project = await getProjectOrFail(user.uuid, projectUuid)
+  const outreachPromptData = await getOutreachPromptData(projectUuid)
+  const outreachContext = await buildOutreachRequestContext(user, project)
+  const reasoningRequest: ReasoningRequest = {
+    agentId: 'OUTREACH',
+    promptData: {
+      ...outreachPromptData,
+      mode: 'initial_outreach',
+      vendor: buildVendorPromptData(projectVendor),
+      latestVendorReply: null,
+      draft: {
+        subject: null,
+        body: 'N/A',
+      },
+      revisionInstructions: 'N/A',
+    },
+    ...outreachContext,
+    recentTurns: [],
+  }
+
+  try {
+    const generatedDraft = await requestOutreachDraft(reasoningRequest)
+    await saveInitialDraft(user, projectVendor, generatedDraft)
+  } catch (error) {
+    draft.status = 'error'
+    draft.lastError = getErrorMessage(error, 'Failed to generate outreach draft')
+    await draft.save()
+    throw new Error(draft.lastError)
+  }
+
+  return getProjectOutreach(user.uuid, projectUuid)
+}
+
 export async function cancelOutreachDraft(
   userUuid: string,
   projectUuid: string,

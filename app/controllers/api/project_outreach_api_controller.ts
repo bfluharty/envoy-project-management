@@ -4,6 +4,7 @@ import {
   cancelOutreachDraft,
   createOutreachDraft,
   getProjectOutreach,
+  retryInitialOutreachDraft,
   reviseThreadReply,
   reviseOutreachDraft,
   sendOutreachDraft,
@@ -167,6 +168,40 @@ export default class ProjectOutreachApiController {
       const message = error instanceof Error ? error.message : 'Failed to send outreach draft'
       if (message === 'Project not found' || message === 'Draft not found') {
         return response.notFound({ error: message })
+      }
+
+      return response.internalServerError({ error: message })
+    }
+  }
+
+  async retryDraft({ auth, request, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+    const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
+    const { draftUuid } = await outreachDraftParamsValidator.validate(request.params())
+    const rateLimitResponse = await rejectWhenRateLimited(
+      request,
+      response,
+      outreachAiRevisionRateLimitRules({
+        userUuid: user.uuid,
+        projectUuid,
+        ip: getClientIp(request),
+      })
+    )
+    if (rateLimitResponse) return rateLimitResponse
+
+    try {
+      return response.ok(await retryInitialOutreachDraft(user, projectUuid, draftUuid))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to retry outreach draft'
+      if (
+        message === 'Project not found' ||
+        message === 'Draft not found' ||
+        message === 'Project contact not found'
+      ) {
+        return response.notFound({ error: message })
+      }
+      if (message === 'Draft is not in a retryable error state') {
+        return response.badRequest({ error: message })
       }
 
       return response.internalServerError({ error: message })
