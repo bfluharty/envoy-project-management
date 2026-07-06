@@ -1,6 +1,7 @@
 import { test } from '@japa/runner'
 import { strict as assert } from 'node:assert'
 import axios from 'axios'
+import { DateTime } from 'luxon'
 import { v4 as uuidv4 } from 'uuid'
 import testUtils from '@adonisjs/core/services/test_utils'
 import OutreachDraft from '#models/outreach_draft'
@@ -10,6 +11,11 @@ import ProjectVendor from '#models/project_vendor'
 import ReasoningRequestContextService from '#services/reasoning_request_context_service'
 import User from '#models/user'
 import UserEntitlement from '#models/user_entitlement'
+import UserInboxConnection from '#models/user_inbox_connection'
+import {
+  encryptOauthToken,
+  OAUTH_TOKEN_ENCRYPTION_VERSION,
+} from '#services/oauth_token_encryption_service'
 import VendorService from '#services/vendor_service'
 import {
   generateInitialOutreachDrafts,
@@ -36,6 +42,24 @@ test.group('initial outreach generation', (group) => {
       password: PASSWORD,
       entitlementId: entitlement.id,
       isActive: true,
+    })
+  }
+
+  async function createActivePrimaryInbox(user: User) {
+    return UserInboxConnection.create({
+      userUuid: user.uuid,
+      provider: 'gmail',
+      email: user.email,
+      accessToken: encryptOauthToken('access-token'),
+      refreshToken: encryptOauthToken('refresh-token'),
+      accessTokenExpiresAt: DateTime.utc().plus({ hour: 1 }),
+      scopes:
+        'openid https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send',
+      status: 'active',
+      isPrimary: true,
+      providerUserId: `google-${user.uuid}`,
+      tokenEncryptionVersion: OAUTH_TOKEN_ENCRYPTION_VERSION,
+      watchStatus: 'not_configured',
     })
   }
 
@@ -285,5 +309,101 @@ test.group('initial outreach generation', (group) => {
     assert.equal(retryCall.promptData.mode, 'initial_outreach')
     assert.equal(retryCall.promptData.vendor.name, 'Retryable HVAC')
     assert.equal(retryCall.stakeholderDetails.name, 'Initial Outreach User')
+  })
+
+  test('retry endpoint regenerates a failed initial outreach draft', async ({ client }) => {
+    const user = await createConsumer()
+    await createActivePrimaryInbox(user)
+    const project = await Project.create({
+      title: 'Endpoint Retry Outreach Project',
+      description: 'Coordinate contractor availability.',
+      userUuid: user.uuid,
+      isActive: true,
+    })
+    const projectVendor = await attachVendor(
+      user,
+      project,
+      'Endpoint Retry Electric',
+      'endpoint-retry@example.com'
+    )
+    await ProjectPromptService.savePromptData({
+      projectUuid: project.uuid,
+      agentType: 'OUTREACH',
+      data: {
+        outreachAgent: {
+          title: 'Contractor Outreach Agent',
+          description: 'Collects availability from project vendors.',
+          goals: ['Confirm availability'],
+          risks: ['Vendor delays'],
+          successCriteria: ['Vendor responds'],
+          priorities: ['Availability first'],
+          requiredFactsToCollect: ['Availability'],
+          checklistDefinitionOfDone: ['Availability known'],
+        },
+      },
+      userUuid: user.uuid,
+    })
+    stubProjectInsights()
+
+    const originalPost = axios.post
+    const calls: any[] = []
+    restores.push(() => {
+      axios.post = originalPost
+    })
+
+    axios.post = (async (_url: string, payload: any) => {
+      calls.push(payload)
+      return {
+        status: 200,
+        data: {
+          agentId: 'OUTREACH',
+          data: {
+            subject: 'Invalid failed attempt',
+            body: '',
+          },
+        },
+      }
+    }) as typeof axios.post
+
+    await generateInitialOutreachDrafts(user.uuid, project.uuid)
+    const failedDraft = await OutreachDraft.query()
+      .where('project_vendor_uuid', projectVendor.uuid)
+      .firstOrFail()
+    assert.equal(failedDraft.status, 'error')
+
+    axios.post = (async (_url: string, payload: any) => {
+      calls.push(payload)
+      return {
+        status: 200,
+        data: {
+          agentId: 'OUTREACH',
+          data: {
+            subject: 'Endpoint Retry Electric availability',
+            body: 'Hi Endpoint Retry Electric,\n\nCan you share availability?\n\nThanks,\nInitial Outreach User',
+          },
+        },
+      }
+    }) as typeof axios.post
+
+    const response = await client
+      .post(`/api/projects/${project.uuid}/outreach/drafts/${failedDraft.uuid}/retry`)
+      .loginAs(user)
+
+    response.assertStatus(200)
+    await failedDraft.refresh()
+    assert.equal(failedDraft.status, 'draft')
+    assert.equal(failedDraft.subject, 'Endpoint Retry Electric availability')
+    assert.equal(failedDraft.lastError, null)
+    assert.equal(
+      response
+        .body()
+        .cards.find((card: { draftUuid: string }) => card.draftUuid === failedDraft.uuid)?.status,
+      'draft'
+    )
+
+    const retryCall = calls[calls.length - 1]
+    assert.equal(retryCall.agentId, 'OUTREACH')
+    assert.equal(retryCall.promptData.mode, 'initial_outreach')
+    assert.equal(retryCall.promptData.vendor.name, 'Endpoint Retry Electric')
   })
 })
