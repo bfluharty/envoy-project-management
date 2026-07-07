@@ -183,6 +183,71 @@ test.describe('outreach interactions', () => {
     await expect(page.getByText(/Sent/).first()).toBeVisible()
   })
 
+  test('failed generated drafts can be retried from the outreach tab', async ({ page }) => {
+    await login(page)
+    await goToProject(page)
+
+    const failedCard = buildThreadCard({
+      threadUuid: 'thread-retry',
+      draftUuid: 'draft-retry',
+      status: 'error',
+      subject: '',
+      body: '',
+      sentAt: null,
+      lastActivityAt: '2026-04-01T10:00:00.000Z',
+      lastError: 'Reasoning engine did not return an outreach draft body',
+      thread: { uuid: 'thread-retry', messages: [] },
+    })
+
+    await page.route(`/api/projects/${PROJECT_ALPHA_UUID}/outreach/sync`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          senderMode: 'connected_inbox',
+          cards: [failedCard],
+        }),
+      })
+    })
+
+    let retryCalled = false
+    await page.route(
+      `/api/projects/${PROJECT_ALPHA_UUID}/outreach/drafts/draft-retry/retry`,
+      async (route) => {
+        retryCalled = true
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            senderMode: 'connected_inbox',
+            cards: [
+              buildThreadCard({
+                ...failedCard,
+                status: 'draft',
+                subject: 'Acme availability',
+                body: 'Hi Acme Corp,\n\nCan you share availability?\n\nThanks,\nAlice',
+                lastError: null,
+              }),
+            ],
+          }),
+        })
+      }
+    )
+
+    await page.getByRole('radio', { name: 'outreach' }).click({ force: true })
+    await expect(
+      page.getByText('Reasoning engine did not return an outreach draft body')
+    ).toBeVisible()
+    await page.getByRole('button', { name: 'Retry draft generation' }).click()
+
+    expect(retryCalled).toBe(true)
+    await expect(page.locator('input').nth(0)).toHaveValue('Acme availability')
+    await expect(page.locator('textarea').nth(0)).toHaveValue(/Can you share availability/)
+    await expect(
+      page.getByText('Reasoning engine did not return an outreach draft body')
+    ).not.toBeVisible()
+  })
+
   test('new message creates a new thread for the same contact', async ({ page }) => {
     await login(page)
     await goToProject(page)

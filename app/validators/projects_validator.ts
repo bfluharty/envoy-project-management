@@ -93,6 +93,5 @@ export const updateProjectValidator = vine.compile(
 export const chatProjectValidator = vine.compile(
   vine.object({
     prompt: vine.string().trim().minLength(1),
-    variables: vine.object({}).allowUnknownProperties().optional(),
   })
 )

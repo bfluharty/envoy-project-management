@@ -13,10 +13,10 @@ import {
 import ReasoningEngineService from '#services/reasoning_engine_service'
 import ReasoningRequestContextService from '#services/reasoning_request_context_service'
 import { isOnlyActivatingRecord, validateUser } from '../../utils/controller_utils.js'
-import ProjectVendor from '#models/project_vendor'
 import ProjectVendorAttachmentService, {
   ProjectVendorAttachmentError,
 } from '#services/project_vendor_attachment_service'
+import ProjectReasoningWorkflowService from '#services/project_reasoning_workflow_service'
 import UserRoleService from '#services/user_role_service'
 import {
   getClientIp,
@@ -163,12 +163,21 @@ export default class ProjectsAPIController {
         userId,
         validatedRequest as ProjectRequest
       )
-      if (errors?.length) {
+      const intakeResult = await ProjectReasoningWorkflowService.runIntakeForProject(
+        combinedProject.uuid,
+        userId
+      )
+      const allErrors = [
+        ...(errors ?? []),
+        ...(intakeResult.success ? [] : [intakeResult.error ?? 'Project intake failed']),
+      ]
+
+      if (allErrors.length) {
         logger.warn('Project created with errors:')
-        logger.warn(errors)
+        logger.warn(allErrors)
         return response.status(203).json({
           project: combinedProject,
-          errors,
+          errors: allErrors,
         })
       }
       return response.status(201).json({ combinedProject })
@@ -233,6 +242,38 @@ export default class ProjectsAPIController {
   }
 
   /**
+   * Retry project intake and planning prompt-data generation.
+   */
+  async retryIntake({ request, response }: HttpContext) {
+    // Validate user
+    const userId = request.header('x-user-id') || ''
+    try {
+      const isValidUser = await validateUser(userId)
+      if (!isValidUser) {
+        return response.status(403).json({
+          error: 'User is not authorized',
+          developerText: 'User is not active or does not exist',
+        })
+      }
+    } catch (error) {
+      return response.status(401).json({ error: error.message })
+    }
+
+    const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
+
+    const result = await ProjectReasoningWorkflowService.runIntakeForProject(projectUuid, userId)
+    if (!result.success) {
+      const statusCode = result.error === 'Project not found' ? 404 : 502
+      return response.status(statusCode).json({
+        success: false,
+        error: result.error ?? 'Project intake failed',
+      })
+    }
+
+    return response.status(200).json({ success: true })
+  }
+
+  /**
    * Chat with reasoning engine about a project
    */
   async chat({ request, response }: HttpContext) {
@@ -252,7 +293,7 @@ export default class ProjectsAPIController {
 
     // Validate request
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
-    const { prompt, variables } = await request.validateUsing(chatProjectValidator)
+    const { prompt } = await request.validateUsing(chatProjectValidator)
     const rateLimitResponse = await rejectWhenRateLimited(
       request,
       response,
@@ -260,43 +301,34 @@ export default class ProjectsAPIController {
     )
     if (rateLimitResponse) return rateLimitResponse
 
-    // Build reasoning request
-    const agentId = 'envoy-reasoning-agent-001' // Placeholder agent ID
     try {
       const project = await ProjectService.getProjectWithConversations(userId, projectUuid)
       const reasoningContext = await ReasoningRequestContextService.buildContext(
         projectUuid,
         project.conversations[0].uuid
       )
-
-      const projectVendors = await ProjectVendor.query()
-        .where('project_uuid', projectUuid)
-        .where('is_active', true)
-        .preload('vendor', (q) => q.preload('vendorListing'))
-
-      const reasoningRequest: ReasoningRequest = {
-        agentId,
-        prompt,
-        variables: variables ?? {},
-        projectUuid,
-        ...reasoningContext,
-        projectContext: {
-          uuid: project.uuid,
-          name: project.title,
-          description: project.description ?? null,
-          location: project.location ?? null,
-          startDate: project.startDate?.toISODate() ?? null,
-          endDate: project.endDate?.toISODate() ?? null,
-          deadline: project.deadline?.toISODate() ?? null,
-          budgetAmount: project.budgetAmount ?? null,
-          budgetCurrency: null,
-          goals: project.goals ?? null,
-          vendors: projectVendors.map((pv) => ({
-            name: pv.vendor.vendorListing.name,
-            email: pv.vendor.vendorListing.email ?? null,
-          })),
-        },
+      const user = await validateUser(userId)
+      if (!user) {
+        return response.status(403).json({
+          error: 'User is not authorized',
+          developerText: 'User is not active or does not exist',
+        })
       }
+      const planningPromptData = await ProjectReasoningWorkflowService.ensurePlanningPromptData(
+        project,
+        userId
+      )
+      const projectContext = await ReasoningRequestContextService.buildProjectContext(project)
+
+      const reasoningRequest: ReasoningRequest =
+        ProjectReasoningWorkflowService.buildPlanningRequest({
+          project,
+          user,
+          prompt,
+          promptData: planningPromptData,
+          context: reasoningContext,
+          projectContext,
+        })
 
       // Send request
       return await ReasoningEngineService.handleReasoningChat(reasoningRequest, project, response)

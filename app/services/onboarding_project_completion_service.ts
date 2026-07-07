@@ -2,6 +2,7 @@ import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
 import AnonymousOnboardingDraft from '#models/anonymous_onboarding_draft'
+import ProjectReasoningWorkflowService from '#services/project_reasoning_workflow_service'
 import ProjectService from '#services/project_service'
 import ProjectVendorAttachmentService from '#services/project_vendor_attachment_service'
 import type { ProjectRequest } from '../../types/request.js'
@@ -21,6 +22,7 @@ export type OnboardingProjectCompletionResult =
       status: 'CREATED' | 'ALREADY_CONSUMED'
       projectUuid: string
       linkedVendorCount: number
+      errors?: string[]
     }
   | {
       status: 'EXPIRED'
@@ -33,7 +35,7 @@ export default class OnboardingProjectCompletionService {
     userUuid: string,
     projectRequest: ProjectRequest
   ): Promise<OnboardingProjectCompletionResult> {
-    return db.transaction(async (trx) => {
+    const result = await db.transaction<OnboardingProjectCompletionResult>(async (trx) => {
       const draft = await AnonymousOnboardingDraft.query()
         .useTransaction(trx)
         .where('registered_user_uuid', userUuid)
@@ -110,5 +112,23 @@ export default class OnboardingProjectCompletionService {
         linkedVendorCount: attachment.vendors.length,
       }
     })
+
+    if (result.status !== 'CREATED') {
+      return result
+    }
+
+    const intakeResult = await ProjectReasoningWorkflowService.runIntakeForProject(
+      result.projectUuid,
+      userUuid
+    )
+
+    if (intakeResult.success) {
+      return result
+    }
+
+    return {
+      ...result,
+      errors: [intakeResult.error ?? 'Project intake failed'],
+    }
   }
 }

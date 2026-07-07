@@ -20,7 +20,6 @@ interface ChatMessage {
     isTyping?: boolean;
     isError?: boolean;
     retryPrompt?: string;
-    retryVariables?: Record<string, any>;
 }
 
 interface Vendor {
@@ -177,7 +176,7 @@ onMount(async () => {
 });
 
 
-async function sendChat(prompt: string, variables: Record<string, any> = {}) {
+async function sendChat(prompt: string) {
     isLoading = true;
     const typingId = idCounter++;
     messages = [...messages, { id: typingId, role: 'assistant', content: '', isTyping: true }];
@@ -186,7 +185,7 @@ async function sendChat(prompt: string, variables: Record<string, any> = {}) {
         const res = await fetch(`/projects/${project.uuid}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, variables }),
+            body: JSON.stringify({ prompt }),
         });
 
         if (!res.ok) throw new Error(`Server error: ${res.status}`);
@@ -205,7 +204,6 @@ async function sendChat(prompt: string, variables: Record<string, any> = {}) {
                 content: 'Something went wrong. Please try again.',
                 isError: true,
                 retryPrompt: prompt,
-                retryVariables: variables,
             },
         ];
     } finally {
@@ -217,17 +215,15 @@ function sendMessage(event: Event) {
     event.preventDefault();
     if (!input.trim() || isLoading) return;
     const prompt = input.trim();
-    const isFirstMessage = !hasPriorConversation && !messages.some((m) => m.role === 'user');
     input = '';
     messages = [...messages, { id: idCounter++, role: 'user', content: prompt }];
-    const vars = (isFirstMessage && initialGreeting) ? { assistantGreeting: initialGreeting } : {};
-    sendChat(prompt, vars);
+    sendChat(prompt);
 }
 
-function retryMessage(retryPrompt: string, retryVariables: Record<string, any> = {}) {
+function retryMessage(retryPrompt: string) {
     if (isLoading) return;
     messages = messages.filter((m) => !m.isError);
-    sendChat(retryPrompt, retryVariables);
+    sendChat(retryPrompt);
 }
 
 // Outreach state
@@ -239,6 +235,7 @@ let outreachInitialLoadAttempted = $state(false);
 let outreachError = $state<string | null>(null);
 let outreachSenderMode = $state<'connected_inbox' | 'unavailable'>('unavailable');
 let sendingDraftUuid = $state<string | null>(null);
+let retryingDraftUuid = $state<string | null>(null);
 let creatingDraftProjectVendorUuid = $state<string | null>(null);
 let revisingDraftUuid = $state<string | null>(null);
 let reviseDraftUuid = $state<string | null>(null);
@@ -531,7 +528,36 @@ async function reviseDraft(card: OutreachCard) {
         outreachError = error instanceof Error ? error.message : 'Failed to revise outreach draft.';
     } finally {
         revisingDraftUuid = null;
-  }
+    }
+}
+
+async function retryDraft(card: OutreachCard) {
+    if (!card.draftUuid || retryingDraftUuid) return;
+    retryingDraftUuid = card.draftUuid;
+    outreachError = null;
+
+    try {
+        await requestOutreach(`/api/projects/${project.uuid}/outreach/drafts/${card.draftUuid}/retry`, {
+            method: 'POST',
+        });
+        outreachPane = 'create';
+        reviseDraftUuid = null;
+        reviseInstructions = '';
+        setOperationSuccess('Draft regenerated.');
+    } catch (error) {
+        outreachError = error instanceof Error ? error.message : 'Failed to retry outreach draft.';
+        outreachCards = outreachCards.map((entry) =>
+            entry.draftUuid === card.draftUuid
+                ? {
+                    ...entry,
+                    status: 'error',
+                    lastError: outreachError,
+                }
+                : entry
+        );
+    } finally {
+        retryingDraftUuid = null;
+    }
 }
 
 async function cancelDraft(card: OutreachCard) {
@@ -923,7 +949,7 @@ onDestroy(() => {
                                 <p>{msg.content}</p>
                                 <button
                                     class="btn btn-sm preset-filled-error-500 mt-2"
-                                    onclick={() => retryMessage(msg.retryPrompt!, msg.retryVariables ?? {})}>
+                                    onclick={() => retryMessage(msg.retryPrompt!)}>
                                     Retry
                                 </button>
                             </div>
@@ -1024,6 +1050,7 @@ onDestroy(() => {
                 newThreadVendorUuid={newThreadVendorUuid}
                 creatingDraftProjectVendorUuid={creatingDraftProjectVendorUuid}
                 sendingDraftUuid={sendingDraftUuid}
+                retryingDraftUuid={retryingDraftUuid}
                 revisingDraftUuid={revisingDraftUuid}
                 reviseDraftUuid={reviseDraftUuid}
                 reviseInstructions={reviseInstructions}
@@ -1041,6 +1068,7 @@ onDestroy(() => {
                 onCreateDraftForVendorUuid={createDraftForVendorUuid}
                 onUpdateDraftField={updateDraftField}
                 onSendDraft={sendDraft}
+                onRetryDraft={retryDraft}
                 onCancelDraft={cancelDraft}
                 onToggleRevise={(card) => {
                     reviseDraftUuid = reviseDraftUuid === card.draftUuid ? null : card.draftUuid;

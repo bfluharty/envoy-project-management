@@ -1,12 +1,17 @@
 import ConversationTurn from '#models/conversation_turn'
+import OutreachDraft from '#models/outreach_draft'
+import Project from '#models/project'
 import ProjectInsight from '#models/project_insight'
+import ProjectVendor from '#models/project_vendor'
 import ProjectInsightService from '#services/project_insight_service'
+import type User from '#models/user'
 import {
-  ReasoningActionMetadata,
+  AgentId,
+  ProjectContext,
   ReasoningProjectInsight,
   ReasoningRecentTurn,
+  StakeholderDetails,
 } from '../../types/request.js'
-import { ActionExecution } from '../../types/turn.js'
 
 export default class ReasoningRequestContextService {
   public static readonly ACTIVE_INSIGHT_LIMIT = 30
@@ -21,6 +26,66 @@ export default class ReasoningRequestContextService {
     return {
       projectInsights,
       recentTurns,
+    }
+  }
+
+  public static getStakeholderDetails(user: Pick<User, 'fullName'>): StakeholderDetails {
+    return {
+      name: user.fullName?.trim() || 'N/A',
+    }
+  }
+
+  public static async buildProjectContext(
+    project: Project,
+    options: { descriptionFallback?: string | null } = {}
+  ): Promise<ProjectContext> {
+    const projectVendors = await ProjectVendor.query()
+      .where('project_uuid', project.uuid)
+      .where('is_active', true)
+      .preload('vendor', (q) => q.preload('vendorListing'))
+
+    const projectVendorUuids = projectVendors.map((pv) => pv.uuid)
+    const existingDrafts = projectVendorUuids.length
+      ? await OutreachDraft.query()
+          .whereIn('project_vendor_uuid', projectVendorUuids)
+          .where('status', 'draft')
+      : []
+
+    const vendorEmailByPvUuid = new Map(
+      projectVendors.map((pv) => [pv.uuid, pv.vendor.vendorListing.email ?? null])
+    )
+
+    return {
+      uuid: project.uuid,
+      name: project.title,
+      description: project.description ?? options.descriptionFallback ?? null,
+      location: project.location ?? null,
+      startDate: project.startDate?.toISODate() ?? null,
+      endDate: project.endDate?.toISODate() ?? null,
+      deadline: project.deadline?.toISODate() ?? null,
+      budgetAmount: project.budgetAmount ?? null,
+      budgetCurrency: null,
+      goals: project.goals ?? null,
+      vendors: projectVendors.map((pv) => ({
+        uuid: pv.uuid,
+        name: pv.vendor.vendorListing.name,
+        email: pv.vendor.vendorListing.email ?? null,
+        category: pv.vendor.vendorListing.categories?.[0] ?? null,
+        website: pv.vendor.vendorListing.website ?? null,
+      })),
+      existingDrafts: existingDrafts.map((draft) => ({
+        draftUuid: draft.uuid,
+        vendorEmail: vendorEmailByPvUuid.get(draft.projectVendorUuid) ?? null,
+        subject: draft.subject,
+      })),
+      details: {
+        location: project.location ?? 'N/A',
+        startDate: project.startDate?.toISODate() ?? 'N/A',
+        endDate: project.endDate?.toISODate() ?? 'N/A',
+        deadline: project.deadline?.toISODate() ?? 'N/A',
+        budgetAmount: project.budgetAmount ?? 'N/A',
+        goals: project.goals ?? 'N/A',
+      },
     }
   }
 
@@ -40,13 +105,15 @@ export default class ReasoningRequestContextService {
       .orderBy('id', 'desc')
       .limit(this.RECENT_TURN_LIMIT)
 
-    return turns.reverse().map((turn) => ({
-      user_message: turn.contents?.userPrompt ?? '',
-      assistant_response: turn.contents?.modelResponse ?? '',
-      action_metadata: (turn.contents?.actionExecutions ?? []).map((actionExecution) =>
-        this.toActionMetadata(actionExecution)
-      ),
-    }))
+    return turns
+      .reverse()
+      .filter((turn) => this.isAgentId(turn.contents?.agentId))
+      .map((turn) => ({
+        agentId: turn.contents.agentId,
+        userPrompt: turn.contents.userPrompt ?? '',
+        modelResponse: turn.contents.modelResponse ?? '',
+        timestamp: turn.contents.timestamp ?? turn.timestamp.toISO() ?? new Date().toISOString(),
+      }))
   }
 
   private static toProjectInsightPayload(insight: ProjectInsight): ReasoningProjectInsight {
@@ -62,11 +129,7 @@ export default class ReasoningRequestContextService {
     }
   }
 
-  private static toActionMetadata(actionExecution: ActionExecution): ReasoningActionMetadata {
-    return {
-      action: actionExecution.action,
-      success: actionExecution.success,
-      error: actionExecution.error ?? null,
-    }
+  private static isAgentId(value: unknown): value is AgentId {
+    return value === 'INTAKE' || value === 'PLANNING' || value === 'OUTREACH'
   }
 }

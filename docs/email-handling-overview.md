@@ -304,8 +304,12 @@ The flow:
 
 AI-driven draft creation:
 
-- `applyOutreachActions` creates `OutreachDraft` rows from reasoning-engine
-  `DRAFT_OUTREACH_EMAILS` or `REVISE_OUTREACH_DRAFT` action data.
+- `generateInitialOutreachDrafts` creates one `OUTREACH` reasoning request per
+  project vendor and stores successful responses as local `OutreachDraft` rows.
+- Failed generated drafts remain local `error` drafts and can be retried for the
+  same vendor through the Outreach tab.
+- Draft and reply revisions call the `OUTREACH` agent directly and parse
+  `data.subject` and `data.body` from the response envelope.
 - `draftReplyForInboundMessage` can create a local reply draft after inbound
   email sync when the thread already has prior outbound mail.
 

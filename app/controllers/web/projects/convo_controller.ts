@@ -5,9 +5,7 @@ import { ReasoningRequest } from '../../../../types/request.js'
 import { chatProjectValidator, requestParamsValidator } from '#validators/projects_validator'
 import ReasoningEngineService from '#services/reasoning_engine_service'
 import ReasoningRequestContextService from '#services/reasoning_request_context_service'
-import ProjectVendor from '#models/project_vendor'
-import OutreachDraft from '#models/outreach_draft'
-import Project from '#models/project'
+import ProjectReasoningWorkflowService from '#services/project_reasoning_workflow_service'
 import {
   getClientIp,
   projectChatRateLimitRules,
@@ -15,53 +13,13 @@ import {
 } from '#utils/rate_limit_utils'
 
 export default class ConvoController {
-  private async buildProjectContext(project: Project, projectUuid: string) {
-    const projectVendors = await ProjectVendor.query()
-      .where('project_uuid', projectUuid)
-      .where('is_active', true)
-      .preload('vendor', (q) => q.preload('vendorListing'))
-
-    const projectVendorUuids = projectVendors.map((pv) => pv.uuid)
-    const existingDrafts = projectVendorUuids.length
-      ? await OutreachDraft.query()
-          .whereIn('project_vendor_uuid', projectVendorUuids)
-          .where('status', 'draft')
-      : []
-
-    const vendorEmailByPvUuid = new Map(
-      projectVendors.map((pv) => [pv.uuid, pv.vendor.vendorListing.email ?? null])
-    )
-
-    return {
-      uuid: project.uuid,
-      name: project.title,
-      description: project.description ?? null,
-      location: project.location ?? null,
-      startDate: project.startDate?.toISODate() ?? null,
-      endDate: project.endDate?.toISODate() ?? null,
-      deadline: project.deadline?.toISODate() ?? null,
-      budgetAmount: project.budgetAmount ?? null,
-      budgetCurrency: null,
-      goals: project.goals ?? null,
-      vendors: projectVendors.map((pv) => ({
-        name: pv.vendor.vendorListing.name,
-        email: pv.vendor.vendorListing.email ?? null,
-      })),
-      existingDrafts: existingDrafts.map((d) => ({
-        draftUuid: d.uuid,
-        vendorEmail: vendorEmailByPvUuid.get(d.projectVendorUuid) ?? null,
-        subject: d.subject,
-      })),
-    }
-  }
-
   /**
    * Chat with reasoning engine about a project
    */
   async chat({ request, response, auth }: HttpContext) {
     const user = auth.getUserOrFail()
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
-    const { prompt, variables } = await request.validateUsing(chatProjectValidator)
+    const { prompt } = await request.validateUsing(chatProjectValidator)
     const rateLimitResponse = await rejectWhenRateLimited(
       request,
       response,
@@ -75,15 +33,21 @@ export default class ConvoController {
         projectUuid,
         project.conversations[0].uuid
       )
+      const planningPromptData = await ProjectReasoningWorkflowService.ensurePlanningPromptData(
+        project,
+        user.uuid
+      )
+      const projectContext = await ReasoningRequestContextService.buildProjectContext(project)
 
-      const reasoningRequest: ReasoningRequest = {
-        agentId: 'envoy-reasoning-agent-001',
-        prompt,
-        variables: variables ?? {},
-        projectUuid,
-        ...reasoningContext,
-        projectContext: await this.buildProjectContext(project, projectUuid),
-      }
+      const reasoningRequest: ReasoningRequest =
+        ProjectReasoningWorkflowService.buildPlanningRequest({
+          project,
+          user,
+          prompt,
+          promptData: planningPromptData,
+          context: reasoningContext,
+          projectContext,
+        })
 
       return await ReasoningEngineService.handleReasoningChat(reasoningRequest, project, response)
     } catch (error) {
@@ -117,15 +81,21 @@ export default class ConvoController {
         projectUuid,
         project.conversations[0].uuid
       )
+      const planningPromptData = await ProjectReasoningWorkflowService.ensurePlanningPromptData(
+        project,
+        user.uuid
+      )
+      const projectContext = await ReasoningRequestContextService.buildProjectContext(project)
 
-      const reasoningRequest: ReasoningRequest = {
-        agentId: 'envoy-reasoning-agent-001',
-        prompt,
-        variables: { context: 'PROJECT_SETUP' },
-        projectUuid,
-        ...reasoningContext,
-        projectContext: await this.buildProjectContext(project, projectUuid),
-      }
+      const reasoningRequest: ReasoningRequest =
+        ProjectReasoningWorkflowService.buildPlanningRequest({
+          project,
+          user,
+          prompt,
+          promptData: planningPromptData,
+          context: reasoningContext,
+          projectContext,
+        })
 
       return await ReasoningEngineService.handleReasoningChat(reasoningRequest, project, response, {
         saveToHistory: false,
