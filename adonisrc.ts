@@ -54,9 +54,21 @@ export default defineConfig({
     () => import('@adonisjs/auth/auth_provider'),
     () => import('@adonisjs/mail/mail_provider'),
     () => import('@adonisjs/inertia/inertia_provider'),
-    () => import('@adonisjs/vite/vite_provider'),
+    {
+      file: () => import('@adonisjs/vite/vite_provider'),
+      environment: ['web', 'console', 'repl'],
+    },
+    {
+      file: () => import('#providers/test_vite_provider'),
+      environment: ['test'],
+    },
     () => import('@adonisjs/core/providers/edge_provider'),
     () => import('@adonisjs/static/static_provider'),
+    () => import('@adonisjs/ally/ally_provider'),
+    {
+      file: () => import('#providers/email_sync_worker_provider'),
+      environment: ['web'],
+    },
   ],
 
   /*

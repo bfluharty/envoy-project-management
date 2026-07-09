@@ -39,14 +39,20 @@ export default class User extends compose(BaseModel, AuthFinder) {
   @column({ serializeAs: null })
   declare password: string
 
-  @column({ columnName: 'google_id' })
-  declare googleId: string | null
+  @column({ columnName: 'provider_id' })
+  declare providerId: string | null
 
   @column({ columnName: 'google_avatar_url' })
   declare googleAvatarUrl: string | null
 
   @column({ columnName: 'uploaded_avatar_path' })
   declare uploadedAvatarPath: string | null
+
+  @column({ columnName: 'vendor_approval_status' })
+  declare vendorApprovalStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | null
+
+  @column.dateTime({ columnName: 'vendor_approved_at' })
+  declare vendorApprovedAt: DateTime | null
 
   @column.dateTime({ columnName: 'created_timestamp', autoCreate: true })
   declare createdTimestamp: DateTime

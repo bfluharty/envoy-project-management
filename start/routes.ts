@@ -22,14 +22,12 @@ const AuthController = () => import('#controllers/web/auth_controller')
 const DashboardController = () => import('#controllers/web/dashboard_controller')
 const InboxController = () => import('#controllers/web/inbox_controller')
 const AccountController = () => import('#controllers/web/account_controller')
+const OnboardingController = () => import('#controllers/web/onboarding_controller')
+const OnboardingProjectController = () => import('#controllers/web/onboarding_project_controller')
+const VendorOnboardingController = () => import('#controllers/web/vendor_onboarding_controller')
 
 // Public landing page (no auth required)
-router
-  .get('/', ({ inertia }) => {
-    return inertia.render('landing')
-  })
-  .as('landing')
-  .middleware(middleware.silentAuth())
+router.get('/', [OnboardingController, 'show']).as('landing').middleware(middleware.silentAuth())
 
 router
   .get('/privacy', ({ inertia }) => {
@@ -52,6 +50,19 @@ router
   .as('contact')
   .middleware(middleware.silentAuth())
 
+router.post('/onboarding/draft/restore', [OnboardingController, 'restoreDraft'])
+router.post('/onboarding/vendor-search', [OnboardingController, 'searchVendors'])
+router.patch('/onboarding/vendor-selection', [OnboardingController, 'updateSelection'])
+router.post('/onboarding/registration-handoff', [OnboardingController, 'registrationHandoff'])
+router
+  .get('/onboarding/project', [OnboardingProjectController, 'show'])
+  .as('onboarding.project.show')
+  .middleware(middleware.auth())
+router
+  .post('/onboarding/project', [OnboardingProjectController, 'store'])
+  .as('onboarding.project.store')
+  .middleware(middleware.auth())
+
 // Auth routes (guest only)
 router
   .group(() => {
@@ -59,10 +70,10 @@ router
     router.post('/login', [AuthController, 'login'])
     router.get('/register', [AuthController, 'showRegister']).as('auth.register')
     router.post('/register', [AuthController, 'register'])
-    router.get('/auth/google', [AuthController, 'googleRedirect']).as('auth.google')
+    router.get('/auth/:provider', [AuthController, 'socialRedirect']).as('auth.social')
     router
-      .get('/auth/google/callback', [AuthController, 'googleCallback'])
-      .as('auth.google.callback')
+      .get('/auth/:provider/callback', [AuthController, 'socialCallback'])
+      .as('auth.social.callback')
   })
   .middleware(middleware.guest())
 
@@ -86,7 +97,7 @@ router
 router
   .get('/dashboard', [DashboardController, 'show'])
   .as('dashboard')
-  .middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.activeInbox()])
 router.get('/account', [AccountController, 'show']).as('account').middleware(middleware.auth())
 router
   .get('/account/avatar/google', [AccountController, 'googleAvatar'])
@@ -100,6 +111,9 @@ router
   .post('/account/password/setup-email', [AccountController, 'sendPasswordSetupEmail'])
   .middleware(middleware.auth())
 router.post('/logout', [AuthController, 'logout']).as('auth.logout').middleware(middleware.auth())
+
+router.get('/vendor/pending', [VendorOnboardingController, 'pending']).middleware(middleware.auth())
+router.get('/vendor/listing', [VendorOnboardingController, 'listing']).middleware(middleware.auth())
 
 // Inbox (connect customer inbox to listen and reply to vendors)
 router
@@ -122,7 +136,7 @@ router
     router.delete('/:uuid', [ContactsController, 'destroy'])
   })
   .prefix('/contacts')
-  .middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.activeInbox()])
 
 // UI routes for projects
 router
@@ -139,7 +153,7 @@ router
     router.post('/:uuid/chat', [ConvoController, 'chat'])
   })
   .prefix('/projects')
-  .middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.activeInbox()])
 
 // API routes for projects
 router
@@ -154,6 +168,10 @@ router
 
         router.patch('/:uuid', [ProjectsAPIController, 'update'])
 
+        router.post('/:uuid/vendors', [ProjectsAPIController, 'attachVendors'])
+
+        router.post('/:uuid/intake/retry', [ProjectsAPIController, 'retryIntake'])
+
         router.post('/:uuid/chat', [ProjectsAPIController, 'chat'])
       })
       .prefix('/projects')
@@ -167,6 +185,14 @@ router
       .group(() => {
         router.get('/', [VendorsAPIController, 'getAll'])
 
+        router.get('/available', [VendorsAPIController, 'getAvailable'])
+
+        router.get('/trusted-matches', [VendorsAPIController, 'getTrustedMatches'])
+
+        router.post('/search', [VendorsAPIController, 'search'])
+
+        router.post('/:uuid/select', [VendorsAPIController, 'selectAvailable'])
+
         router.get('/:uuid', [VendorsAPIController, 'getByUuid'])
 
         router.post('/', [VendorsAPIController, 'create'])
@@ -176,74 +202,6 @@ router
       .prefix('/vendors')
   })
   .prefix('/api')
-
-// TODO: remove — stub for SCRUM-178 vendor search (replace with real SCRUM-177 implementation)
-router
-  .post('/api/vendors/search', ({ response }) => {
-    return response.json({
-      vendors: [
-        {
-          vendorListingUuid: 'stub-uuid-1',
-          name: 'Bloom & Co Florals',
-          categories: ['Florist', 'Event Decor'],
-          location: 'New York, NY',
-          hasEmail: true,
-          onboardedToEnvoy: true,
-          consumerOwned: false,
-          inContacts: false,
-          contactMappingUuid: null,
-        },
-        {
-          vendorListingUuid: 'stub-uuid-2',
-          name: 'Peak Catering',
-          categories: ['Catering', 'Bar Service'],
-          location: 'Brooklyn, NY',
-          hasEmail: false,
-          onboardedToEnvoy: false,
-          consumerOwned: false,
-          inContacts: false,
-          contactMappingUuid: null,
-        },
-        {
-          vendorListingUuid: 'stub-uuid-3',
-          name: "John's Photography",
-          categories: ['Photography', 'Videography'],
-          location: 'Hoboken, NJ',
-          hasEmail: true,
-          onboardedToEnvoy: false,
-          consumerOwned: true,
-          inContacts: true,
-          contactMappingUuid: 'stub-mapping-uuid-3',
-        },
-        {
-          vendorListingUuid: 'stub-uuid-4',
-          name: 'Golden Hour Venues',
-          categories: ['Venue'],
-          location: 'Manhattan, NY',
-          hasEmail: true,
-          onboardedToEnvoy: true,
-          consumerOwned: false,
-          inContacts: false,
-          contactMappingUuid: null,
-        },
-      ],
-    })
-  })
-  .middleware(middleware.auth())
-
-// TODO: remove — stub for SCRUM-178 save-to-contacts (replace with real SCRUM-177 implementation)
-router
-  .post('/api/vendors/:vendorListingUuid/select', ({ response }) => {
-    return response.json({ success: true })
-  })
-  .middleware(middleware.auth())
-
-// TODO: remove — stub for SCRUM-178 attach vendors to project (replace with real SCRUM-177 implementation)
-router
-  .post('/api/projects/:projectUuid/vendors', ({ response }) => {
-    return response.json({ success: true })
-  })
-  .middleware(middleware.auth())
 
 // API routes for inbox (authenticated)
 const InboxAPIController = () => import('#controllers/api/inbox_api_controller')
@@ -255,7 +213,7 @@ router
     router.post('/reply', [InboxAPIController, 'sendReply'])
   })
   .prefix('/api/inbox')
-  .middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.activeInbox()])
 
 router
   .group(() => {
@@ -269,6 +227,10 @@ router
     router.post('/:uuid/outreach/drafts/:draftUuid/send', [
       ProjectOutreachApiController,
       'sendDraft',
+    ])
+    router.post('/:uuid/outreach/drafts/:draftUuid/retry', [
+      ProjectOutreachApiController,
+      'retryDraft',
     ])
     router.post('/:uuid/outreach/drafts/:draftUuid/revise', [
       ProjectOutreachApiController,
@@ -284,7 +246,7 @@ router
     ])
   })
   .prefix('/api/projects')
-  .middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.activeInbox()])
 
 // Internal API routes for reasoning-engine callbacks
 router

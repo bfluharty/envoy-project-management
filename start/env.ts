@@ -36,6 +36,7 @@ export default await Env.create(new URL('../', import.meta.url), {
   |----------------------------------------------------------
   */
   SESSION_DRIVER: Env.schema.enum(['cookie', 'memory'] as const),
+  PASSWORD_AUTH_ENABLED: Env.schema.boolean.optional(),
 
   /*
   |----------------------------------------------------------
@@ -48,11 +49,17 @@ export default await Env.create(new URL('../', import.meta.url), {
   APP_URL: Env.schema.string.optional(),
   MAIL_FROM_ADDRESS: Env.schema.string.optional(),
   MAIL_FROM_NAME: Env.schema.string.optional(),
-  RESEND_API_KEY: Env.schema.string.optional(),
+  // RESEND_API_KEY: Env.schema.string.optional(),
+  FOURSQUARE_PLACES_API_KEY: Env.schema.string.optional(),
 
   /* Email service (inbox list/message, send-on-behalf) — base URL, no trailing slash */
   EMAIL_SERVICE_URL: Env.schema.string.optional(),
   EMAIL_SERVICE_API_KEY: Env.schema.string.optional(),
+  EMAIL_SYNC_QUEUE_URL: Env.schema.string.optional(),
+  EMAIL_SYNC_DLQ_URL: Env.schema.string.optional(),
+  EMAIL_SYNC_WORKER_ENABLED: Env.schema.boolean.optional(),
+  EMAIL_SYNC_WORKER_INTERVAL_SECONDS: Env.schema.number.optional(),
+  EMAIL_TERMS_VERSION: Env.schema.string.optional(),
 
   /* Inbox OAuth (customer grants access; we listen and reply on their behalf) */
   GOOGLE_CLIENT_ID: Env.schema.string.optional(),

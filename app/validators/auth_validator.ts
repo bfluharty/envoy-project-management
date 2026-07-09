@@ -14,6 +14,11 @@ export const registerValidator = vine.compile(
     email: vine.string().email(),
     password: vine.string().minLength(8).maxLength(255),
     passwordConfirmation: vine.string().confirmed({ confirmationField: 'password' }),
+    accountType: vine.enum(['consumer', 'vendor']).optional(),
+    onboardingToken: vine
+      .string()
+      .uuid({ version: [4] })
+      .optional(),
   })
 )
 registerValidator.messagesProvider = new SimpleMessagesProvider({

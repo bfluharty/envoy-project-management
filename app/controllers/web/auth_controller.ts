@@ -2,6 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
 import env from '#start/env'
 import User from '#models/user'
+import UserInboxConnection from '#models/user_inbox_connection'
 import PasswordResetToken from '#models/password_reset_token'
 import {
   forgotPasswordValidator,
@@ -9,11 +10,220 @@ import {
   registerValidator,
   resetPasswordValidator,
 } from '#validators/auth_validator'
-import { randomBytes } from 'node:crypto'
 import { DateTime } from 'luxon'
-import { getGoogleAuthUrl, getGoogleUser } from '#services/google_auth_service'
 import { sendPasswordResetLink } from '#services/password_reset_service'
-import UserInboxConnection from '#models/user_inbox_connection'
+import EntitlementService from '#services/entitlement_service'
+import {
+  buildEmailAuthorizationState,
+  consumeEmailAuthorizationState,
+  type EmailAuthorizationAccountType,
+  type EmailAuthorizationFlow,
+} from '#services/email_authorization_state_service'
+import {
+  completeEmailAuthorization,
+  EmailAuthorizationCompletionError,
+  type NormalizedEmailAuthorizationTokens,
+} from '#services/email_authorization_completion_service'
+import { setupEmailWatch, stopEmailWatch } from '#services/email_watch_service'
+import OnboardingDraftService, {
+  ONBOARDING_TOKEN_SESSION_KEY,
+  OnboardingDraftError,
+  isUuidV4,
+} from '#services/onboarding_draft_service'
+import { safeError } from '#utils/safe_error'
+
+const SOCIAL_AUTH_PROVIDERS = ['google', 'microsoft'] as const
+type SocialAuthProvider = (typeof SOCIAL_AUTH_PROVIDERS)[number]
+
+interface SocialAuthOption {
+  provider: SocialAuthProvider
+  label: string
+  href: string
+}
+
+interface NormalizedSocialUser {
+  provider: SocialAuthProvider
+  providerUserId: string
+  email: string
+  fullName: string
+  avatarUrl: string | null
+  emailVerificationState: 'verified' | 'unverified' | 'unsupported'
+}
+
+const SOCIAL_AUTH_PROVIDER_LABELS: Record<SocialAuthProvider, string> = {
+  google: 'Google',
+  microsoft: 'Microsoft',
+}
+
+const REQUIRED_MAIL_SCOPES: Record<SocialAuthProvider, string[]> = {
+  google: [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.send',
+  ],
+  microsoft: ['Mail.Read', 'Mail.Send'],
+}
+
+export function passwordAuthEnabled(): boolean {
+  return env.get('PASSWORD_AUTH_ENABLED', false)
+}
+
+function isSocialAuthProvider(provider: unknown): provider is SocialAuthProvider {
+  return (
+    typeof provider === 'string' && SOCIAL_AUTH_PROVIDERS.includes(provider as SocialAuthProvider)
+  )
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+}
+
+function emailLocalPart(email: string): string {
+  return email.split('@')[0] || email
+}
+
+function normalizeAccountType(value: unknown): EmailAuthorizationAccountType {
+  return value === 'vendor' ? 'vendor' : 'consumer'
+}
+
+function normalizeAuthorizationFlow(value: unknown): EmailAuthorizationFlow {
+  if (value === 'registration' || value === 'reauth') {
+    return value
+  }
+
+  return 'login'
+}
+
+function getOauthTokenValue(token: Record<string, unknown>): string | null {
+  return typeof token.token === 'string' && token.token.length > 0 ? token.token : null
+}
+
+function normalizeOauthScopes(token: Record<string, unknown>, fallbackScopes: string[]): string {
+  if (Array.isArray(token.grantedScopes)) {
+    return token.grantedScopes
+      .filter((scope): scope is string => typeof scope === 'string')
+      .join(' ')
+  }
+
+  if (Array.isArray(token.scope)) {
+    return token.scope.filter((scope): scope is string => typeof scope === 'string').join(' ')
+  }
+
+  if (typeof token.scope === 'string' && token.scope.trim().length > 0) {
+    return token.scope.trim()
+  }
+
+  return fallbackScopes.join(' ')
+}
+
+function scopeSet(scopes: string) {
+  return new Set(scopes.split(/\s+/).filter(Boolean))
+}
+
+function assertMailScopesGranted(provider: SocialAuthProvider, scopes: string) {
+  const grantedScopes = scopeSet(scopes)
+  const missingScopes = REQUIRED_MAIL_SCOPES[provider].filter((scope) => !grantedScopes.has(scope))
+
+  if (missingScopes.length > 0) {
+    throw new Error(`Missing required email scopes: ${missingScopes.join(', ')}`)
+  }
+}
+
+function normalizeSocialTokens(
+  provider: SocialAuthProvider,
+  rawSocialUser: unknown
+): NormalizedEmailAuthorizationTokens {
+  const socialUser =
+    rawSocialUser && typeof rawSocialUser === 'object'
+      ? (rawSocialUser as Record<string, unknown>)
+      : {}
+  const token =
+    socialUser.token && typeof socialUser.token === 'object'
+      ? (socialUser.token as Record<string, unknown>)
+      : {}
+  const accessToken = getOauthTokenValue(token)
+
+  if (!accessToken) {
+    throw new Error('Provider did not return an access token')
+  }
+
+  const refreshToken =
+    typeof token.refreshToken === 'string' && token.refreshToken.length > 0
+      ? token.refreshToken
+      : null
+
+  let expiresAt: Date | null = null
+  if (token.expiresAt instanceof Date) {
+    expiresAt = token.expiresAt
+  } else if (typeof token.expiresAt === 'string' || typeof token.expiresAt === 'number') {
+    const parsedExpiresAt = new Date(token.expiresAt)
+    expiresAt = Number.isNaN(parsedExpiresAt.getTime()) ? null : parsedExpiresAt
+  } else if (typeof token.expiresIn === 'number') {
+    expiresAt = new Date(Date.now() + token.expiresIn * 1000)
+  }
+
+  const fallbackScopes =
+    provider === 'google'
+      ? ['openid', 'userinfo.email', 'userinfo.profile', ...REQUIRED_MAIL_SCOPES.google]
+      : ['openid', 'profile', 'email', 'User.Read', ...REQUIRED_MAIL_SCOPES.microsoft]
+
+  const scopes = normalizeOauthScopes(token, fallbackScopes)
+  assertMailScopesGranted(provider, scopes)
+
+  return {
+    accessToken,
+    refreshToken,
+    expiresAt,
+    scopes,
+  }
+}
+
+export function normalizeSocialUser(
+  provider: SocialAuthProvider,
+  rawUser: unknown
+): NormalizedSocialUser {
+  const user = rawUser && typeof rawUser === 'object' ? (rawUser as Record<string, unknown>) : {}
+
+  if (provider === 'google') {
+    const providerUserId = nonEmptyString(user.id)
+    const email = nonEmptyString(user.email)
+    if (!providerUserId || !email) {
+      throw new Error('Google did not return a usable profile')
+    }
+
+    const emailVerificationState =
+      user.emailVerificationState === 'verified' || user.emailVerificationState === 'unverified'
+        ? user.emailVerificationState
+        : 'unsupported'
+
+    return {
+      provider,
+      providerUserId,
+      email,
+      fullName: nonEmptyString(user.name) ?? emailLocalPart(email),
+      avatarUrl: nonEmptyString(user.avatarUrl),
+      emailVerificationState,
+    }
+  }
+
+  const providerUserId = nonEmptyString(user.id)
+  const email =
+    nonEmptyString(user.mail) ??
+    nonEmptyString(user.userPrincipalName) ??
+    nonEmptyString(user.email)
+  if (!providerUserId || !email) {
+    throw new Error('Microsoft did not return a usable profile')
+  }
+
+  return {
+    provider,
+    providerUserId,
+    email,
+    fullName:
+      nonEmptyString(user.displayName) ?? nonEmptyString(user.name) ?? emailLocalPart(email),
+    avatarUrl: null,
+    emailVerificationState: 'unsupported',
+  }
+}
 
 export function resolvePostLoginRedirect(intendedUrl: unknown): string | null {
   if (typeof intendedUrl !== 'string' || intendedUrl.length === 0) {
@@ -29,6 +239,56 @@ export function resolvePostLoginRedirect(intendedUrl: unknown): string | null {
 }
 
 export default class AuthController {
+  private getFlashMessage(session: HttpContext['session']) {
+    const successMessage = session.flashMessages.get('success')
+    if (typeof successMessage === 'string') {
+      return { type: 'success' as const, message: successMessage }
+    }
+
+    const errorMessage = session.flashMessages.get('error')
+    if (typeof errorMessage === 'string') {
+      return { type: 'error' as const, message: errorMessage }
+    }
+
+    return null
+  }
+
+  private isSocialAuthProviderConfigured(provider: SocialAuthProvider): boolean {
+    if (provider === 'google') {
+      return Boolean(env.get('GOOGLE_CLIENT_ID') && env.get('GOOGLE_CLIENT_SECRET'))
+    }
+
+    return Boolean(env.get('MICROSOFT_CLIENT_ID') && env.get('MICROSOFT_CLIENT_SECRET'))
+  }
+
+  private getSocialAuthOptions(
+    input: {
+      flow?: EmailAuthorizationFlow
+      accountType?: EmailAuthorizationAccountType
+      emailTermsAccepted?: boolean
+    } = {}
+  ): SocialAuthOption[] {
+    const params = new URLSearchParams()
+    if (input.flow) {
+      params.set('flow', input.flow)
+    }
+    if (input.accountType) {
+      params.set('accountType', input.accountType)
+    }
+    if (input.emailTermsAccepted) {
+      params.set('emailTermsAccepted', '1')
+    }
+    const query = params.toString()
+
+    return SOCIAL_AUTH_PROVIDERS.filter((provider) =>
+      this.isSocialAuthProviderConfigured(provider)
+    ).map((provider) => ({
+      provider,
+      label: SOCIAL_AUTH_PROVIDER_LABELS[provider],
+      href: query ? `/auth/${provider}?${query}` : `/auth/${provider}`,
+    }))
+  }
+
   private consumePostLoginRedirect(session: HttpContext['session']) {
     const intendedUrl = session.get('auth.intended_url')
     session.forget('auth.intended_url')
@@ -36,14 +296,39 @@ export default class AuthController {
     return resolvePostLoginRedirect(intendedUrl)
   }
 
+  private getSessionOnboardingToken(session: HttpContext['session']) {
+    const sessionToken = session.get(ONBOARDING_TOKEN_SESSION_KEY)
+    return isUuidV4(sessionToken) ? sessionToken : null
+  }
+
+  private async associateOnboardingDraftForUser(
+    token: string,
+    userUuid: string,
+    session: HttpContext['session']
+  ) {
+    try {
+      await OnboardingDraftService.associateDraftToUser(token, userUuid)
+      session.forget(ONBOARDING_TOKEN_SESSION_KEY)
+      return true
+    } catch (error) {
+      session.forget(ONBOARDING_TOKEN_SESSION_KEY)
+
+      if (!(error instanceof OnboardingDraftError && error.statusCode === 404)) {
+        logger.warn(error, 'Failed to associate onboarding draft during registration')
+      }
+
+      return false
+    }
+  }
+
   /**
    * Show the login form
    */
   async showLogin({ inertia, session }: HttpContext) {
     return inertia.render('auth/login', {
-      flashMessage:
-        session.flashMessages.get('success') ?? session.flashMessages.get('error') ?? null,
-      googleAuthAvailable: Boolean(env.get('GOOGLE_CLIENT_ID') && env.get('GOOGLE_CLIENT_SECRET')),
+      flashMessage: this.getFlashMessage(session),
+      socialAuthProviders: this.getSocialAuthOptions(),
+      passwordAuthEnabled: passwordAuthEnabled(),
     })
   }
 
@@ -51,6 +336,11 @@ export default class AuthController {
    * Handle login request
    */
   async login({ auth, request, response, session, inertia }: HttpContext) {
+    if (!passwordAuthEnabled()) {
+      session.flash('error', 'Email and password sign-in is not available right now.')
+      return response.redirect().toRoute('auth.login')
+    }
+
     const { email, password } = await request.validateUsing(loginValidator)
 
     try {
@@ -71,6 +361,8 @@ export default class AuthController {
       return inertia.render('auth/login', {
         flashMessage: { type: 'error', message: 'Invalid email or password' },
         errors: { email: ['Invalid credentials'] },
+        socialAuthProviders: this.getSocialAuthOptions(),
+        passwordAuthEnabled: passwordAuthEnabled(),
       })
     }
   }
@@ -78,43 +370,76 @@ export default class AuthController {
   /**
    * Show the registration form
    */
-  async showRegister({ inertia, session }: HttpContext) {
-    const successMsg = session.flashMessages.get('success')
-    const errorMsg = session.flashMessages.get('error')
-    const flashMessage = successMsg
-      ? { type: 'success' as const, message: successMsg }
-      : errorMsg
-        ? { type: 'error' as const, message: errorMsg }
-        : null
+  async showRegister({ inertia, request, session }: HttpContext) {
+    const requestedAccountType = request.input('accountType')
+    const accountType = requestedAccountType === 'vendor' ? 'vendor' : 'consumer'
+
     return inertia.render('auth/register', {
-      flashMessage,
-      googleAuthAvailable: Boolean(env.get('GOOGLE_CLIENT_ID') && env.get('GOOGLE_CLIENT_SECRET')),
+      flashMessage: this.getFlashMessage(session),
+      socialAuthProviders: this.getSocialAuthOptions({
+        flow: 'registration',
+        accountType,
+        emailTermsAccepted: true,
+      }),
+      passwordAuthEnabled: passwordAuthEnabled(),
+      accountType,
     })
   }
 
   /**
    * Handle registration request
    */
-  async register({ request, response, session, inertia }: HttpContext) {
-    const data = await request.validateUsing(registerValidator)
+  async register({ auth, request, response, session, inertia }: HttpContext) {
+    if (!passwordAuthEnabled()) {
+      session.flash('error', 'Email and password registration is not available right now.')
+      return response.redirect().toRoute('auth.register')
+    }
 
-    const googleAuthAvailable = Boolean(
-      env.get('GOOGLE_CLIENT_ID') && env.get('GOOGLE_CLIENT_SECRET')
-    )
+    const body = request.body()
+
+    if (body.onboardingToken !== undefined && !isUuidV4(body.onboardingToken)) {
+      return response.status(422).send({
+        errors: {
+          onboardingToken: ['The onboarding token must be a UUID v4.'],
+        },
+      })
+    }
+
+    const data = await registerValidator.validate(body)
 
     try {
-      await User.create({
+      const accountType = data.accountType ?? 'consumer'
+      const entitlementId = await EntitlementService.getIdByCanonicalName(
+        accountType === 'vendor' ? 'VENDOR' : 'CONSUMER'
+      )
+
+      const user = await User.create({
         fullName: data.fullName,
         email: data.email,
         password: data.password,
-        entitlementId: 1, // Default to user entitlement (ID 1)
+        entitlementId,
+        vendorApprovalStatus: accountType === 'vendor' ? 'PENDING' : null,
         isActive: true,
       })
 
-      session.flash('success', 'Account created successfully! Please log in.')
-      return response.redirect().toRoute('auth.login')
+      await auth.use('web').login(user)
+      session.put('auth.login_method', 'password')
+      session.flash('success', 'Welcome!')
+
+      if (accountType === 'vendor') {
+        return response.redirect('/vendor/pending')
+      }
+
+      const onboardingToken = data.onboardingToken ?? this.getSessionOnboardingToken(session)
+      if (
+        onboardingToken &&
+        (await this.associateOnboardingDraftForUser(onboardingToken, user.uuid, session))
+      ) {
+        return response.redirect('/onboarding/project')
+      }
+
+      return response.redirect().toRoute('dashboard')
     } catch (error: unknown) {
-      logger.error(error, 'Registration failed')
       if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
         return inertia.render('auth/register', {
           flashMessage: {
@@ -122,12 +447,15 @@ export default class AuthController {
             message: 'An account with that email already exists. Try signing in instead.',
           },
           errors: { email: 'An account with this email already exists.' },
-          googleAuthAvailable,
+          socialAuthProviders: this.getSocialAuthOptions(),
+          passwordAuthEnabled: passwordAuthEnabled(),
         })
       }
+      logger.error(error, 'Registration failed')
       return inertia.render('auth/register', {
         flashMessage: { type: 'error', message: 'Something went wrong. Please try again.' },
-        googleAuthAvailable,
+        socialAuthProviders: this.getSocialAuthOptions(),
+        passwordAuthEnabled: passwordAuthEnabled(),
       })
     }
   }
@@ -143,85 +471,162 @@ export default class AuthController {
   }
 
   /**
-   * Redirect to Google OAuth consent screen
+   * Redirect to the selected social provider via Ally.
    */
-  async googleRedirect({ response, session }: HttpContext) {
-    try {
-      const url = getGoogleAuthUrl()
-      return response.redirect(url)
-    } catch (error) {
-      logger.error(error, 'Google OAuth redirect failed')
-      session.flash('error', 'Google sign-in is not configured right now. Please try email login.')
+  async socialRedirect({ ally, request, response, session }: HttpContext) {
+    const provider = request.params().provider
+    if (!isSocialAuthProvider(provider)) {
+      session.flash('error', 'That sign-in provider is not supported.')
       return response.redirect().toRoute('auth.login')
     }
+
+    if (!this.isSocialAuthProviderConfigured(provider)) {
+      session.flash(
+        'error',
+        `${SOCIAL_AUTH_PROVIDER_LABELS[provider]} sign-in is not configured right now. Please try email login.`
+      )
+      return response.redirect().toRoute('auth.login')
+    }
+
+    const flow = normalizeAuthorizationFlow(request.input('flow'))
+    const accountType = normalizeAccountType(request.input('accountType'))
+    const termsAccepted = request.input('emailTermsAccepted') === '1'
+
+    if (flow === 'registration' && !termsAccepted) {
+      session.flash('error', 'You must accept email authorization before creating an account.')
+      return response.redirect().toRoute('auth.register')
+    }
+
+    const state = buildEmailAuthorizationState(session, {
+      provider,
+      flow,
+      termsAccepted,
+      accountType,
+      returnPath: request.input('returnTo') ?? session.get('auth.intended_url'),
+    })
+
+    session.put('redirect.previousUrl', flow === 'registration' ? '/register' : '/login')
+    return ally
+      .use(provider)
+      .stateless()
+      .redirect((redirectRequest) => {
+        redirectRequest.param('state', state)
+      })
   }
 
   /**
-   * Handle Google OAuth callback
+   * Handle a social provider callback via Ally.
    */
-  async googleCallback({ auth, request, response, session }: HttpContext) {
-    const code = request.input('code')
-    if (!code) {
-      session.flash('error', 'Google authentication failed. Please try again.')
+  async socialCallback({ ally, auth, request, response, session }: HttpContext) {
+    const provider = request.params().provider
+    if (!isSocialAuthProvider(provider)) {
+      session.flash('error', 'That sign-in provider is not supported.')
       return response.redirect().toRoute('auth.login')
     }
 
+    let emailAuthState: ReturnType<typeof consumeEmailAuthorizationState>
     try {
-      const googleProfile = await getGoogleUser(code)
-
-      // Try to find existing user by googleId or email
-      let user = await User.findBy('googleId', googleProfile.googleId)
-      if (!user) {
-        user = await User.findBy('email', googleProfile.email)
-      }
-
-      if (user) {
-        // Link Google ID if not already set
-        if (!user.googleId) {
-          user.googleId = googleProfile.googleId
-        }
-        user.googleAvatarUrl = googleProfile.picture
-        await user.save()
-      } else {
-        // Create new user
-        user = await User.create({
-          fullName: googleProfile.fullName,
-          email: googleProfile.email,
-          googleId: googleProfile.googleId,
-          googleAvatarUrl: googleProfile.picture,
-          password: randomBytes(32).toString('hex'),
-          entitlementId: 1,
-          isActive: true,
-        })
-      }
-
-      // Sync Gmail inbox connection
-      await UserInboxConnection.updateOrCreate(
-        { userUuid: user.uuid, provider: 'gmail', email: googleProfile.email },
-        {
-          accessToken: googleProfile.accessToken,
-          refreshToken: googleProfile.refreshToken,
-          accessTokenExpiresAt: googleProfile.expiresAt
-            ? DateTime.fromJSDate(googleProfile.expiresAt)
-            : null,
-          scopes: googleProfile.scopes,
-        }
+      emailAuthState = consumeEmailAuthorizationState(session, provider, request.input('state'))
+    } catch (error) {
+      logger.warn(
+        { err: safeError(error), provider },
+        'Social auth callback state validation failed'
       )
+      session.flash('error', 'Sign-in could not be verified. Please try again.')
+      return response.redirect().toRoute('auth.login')
+    }
 
+    const driver = ally.use(provider).stateless()
+    const providerLabel = SOCIAL_AUTH_PROVIDER_LABELS[provider]
+    const failureRoute =
+      emailAuthState.flow === 'registration' || emailAuthState.flow === 'reauth'
+        ? 'auth.register'
+        : 'auth.login'
+
+    if (driver.accessDenied()) {
+      session.flash('error', `${providerLabel} authorization was cancelled.`)
+      return response.redirect().toRoute(failureRoute)
+    }
+
+    if (driver.stateMisMatch()) {
+      session.flash('error', `${providerLabel} sign-in could not be verified. Please try again.`)
+      return response.redirect().toRoute(failureRoute)
+    }
+
+    if (driver.hasError()) {
+      logger.warn({ provider, error: driver.getError() }, 'Social auth provider returned an error')
+      session.flash('error', `${providerLabel} authentication failed. Please try again.`)
+      return response.redirect().toRoute(failureRoute)
+    }
+
+    try {
+      const socialUser = await driver.user()
+      const socialProfile = normalizeSocialUser(provider, socialUser)
+      const socialTokens = normalizeSocialTokens(provider, socialUser)
+
+      if (socialProfile.emailVerificationState === 'unverified') {
+        session.flash(
+          'error',
+          `${providerLabel} has not verified that email address. Please use another sign-in method.`
+        )
+        return response.redirect().toRoute(failureRoute)
+      }
+
+      const { user, connection, replacedConnectionIds } = await completeEmailAuthorization({
+        profile: socialProfile,
+        tokens: socialTokens,
+        flow: emailAuthState.flow,
+        accountType: emailAuthState.accountType,
+        termsAccepted: emailAuthState.termsAccepted,
+        termsVersion: emailAuthState.termsVersion,
+        ipAddress: request.ip(),
+        userAgent: request.header('user-agent') ?? null,
+      })
+
+      for (const connectionId of replacedConnectionIds) {
+        const replacedConnection = await UserInboxConnection.find(connectionId)
+        if (replacedConnection) {
+          await stopEmailWatch(replacedConnection)
+          replacedConnection.merge({
+            isPrimary: false,
+            status: 'disconnected',
+            disconnectedAt: DateTime.utc(),
+          })
+          await replacedConnection.save()
+        }
+      }
+      await setupEmailWatch(connection)
       await auth.use('web').login(user)
-      session.put('auth.login_method', 'google')
+      session.put('auth.login_method', provider)
       session.flash('success', 'Welcome!')
+
+      const onboardingToken = this.getSessionOnboardingToken(session)
+      if (
+        onboardingToken &&
+        (await this.associateOnboardingDraftForUser(onboardingToken, user.uuid, session))
+      ) {
+        return response.redirect('/onboarding/project')
+      }
 
       const intendedUrl = this.consumePostLoginRedirect(session)
       if (intendedUrl) {
         return response.redirect(intendedUrl)
       }
 
+      if (emailAuthState.returnPath) {
+        return response.redirect(emailAuthState.returnPath)
+      }
+
       return response.redirect().toRoute('dashboard')
     } catch (error) {
-      logger.error(error, 'Google OAuth callback failed')
-      session.flash('error', 'Google authentication failed. Please try again.')
-      return response.redirect().toRoute('auth.login')
+      logger.error({ err: safeError(error), provider }, 'Social auth callback failed')
+      session.flash(
+        'error',
+        error instanceof EmailAuthorizationCompletionError
+          ? error.message
+          : `${providerLabel} authentication failed. Please try again.`
+      )
+      return response.redirect().toRoute(failureRoute)
     }
   }
 

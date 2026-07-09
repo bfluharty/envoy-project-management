@@ -1,15 +1,8 @@
-export interface ActionExecution {
-  action: string
-  timestamp: Date
-  success: boolean
-  data?: any
-  error?: string
-}
+import type { AgentId } from './request.js'
 
 export interface Turn {
+  agentId: AgentId
   userPrompt: string
-  topic: string
-  actionExecutions: ActionExecution[]
   modelResponse: string
-  timestamp: Date
+  timestamp: string
 }

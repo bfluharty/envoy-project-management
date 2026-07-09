@@ -39,7 +39,7 @@
         <h2 class="text-3xl font-bold">Forgot your password?</h2>
         <p class="mt-2 text-surface-600-400">
           Enter your email and we'll send you a link to reset it. If you originally signed in
-          with Google, you can use this to set up password login too.
+          with Google or Microsoft, you can use this to set up password login too.
           <a href="/login" class="text-primary-500 hover:text-primary-400 block mt-2">Back to sign in</a>
         </p>
       </div>

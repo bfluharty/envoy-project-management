@@ -7,9 +7,9 @@ services:
     environment:
       - DB_HOST=postgres
       - HOST=0.0.0.0
-      - REASONING_ENGINE_URL_LOCAL=http://reasoning-engine:8081/reasoning/chat
-      - REASONING_ENGINE_URL_DEV=http://reasoning-engine:8081/reasoning/chat
-      - EMAIL_SERVICE_URL=http://email-service:3000
+      - REASONING_ENGINE_URL_LOCAL=http://reasoning-engine:8081
+      - REASONING_ENGINE_URL_DEV=http://reasoning-engine:8081
+      - EMAIL_SERVICE_URL=http://email-service:8083
       - CHOKIDAR_USEPOLLING=true
     ports:
       - '8080:8080'
@@ -28,9 +28,16 @@ services:
       dockerfile: Dockerfile.dev
     image: envoy-email-service:latest
     ports:
-      - '3000:3000'
+      - '8083:8083'
+    env_file:
+      - .env
     environment:
       - EMAIL_SERVICE_API_KEY=${EMAIL_SERVICE_API_KEY}
+      - EMAIL_SYNC_QUEUE_URL=${EMAIL_SYNC_QUEUE_URL}
+      - GMAIL_PUBSUB_TOPIC=${GMAIL_PUBSUB_TOPIC}
+      - MICROSOFT_GRAPH_NOTIFICATION_URL=${MICROSOFT_GRAPH_NOTIFICATION_URL}
+      - MICROSOFT_GRAPH_LIFECYCLE_URL=${MICROSOFT_GRAPH_LIFECYCLE_URL}
+      - MICROSOFT_GRAPH_CLIENT_STATE_SECRET=${MICROSOFT_GRAPH_CLIENT_STATE_SECRET}
 
   reasoning-engine:
     build:

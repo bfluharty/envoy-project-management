@@ -1,5 +1,5 @@
 <script lang="ts">
-import { ArrowLeftIcon, CheckIcon, PlusIcon, SendIcon, SparklesIcon } from '@lucide/svelte';
+import { ArrowLeftIcon, CheckIcon, PlusIcon, RefreshCwIcon, SendIcon, SparklesIcon } from '@lucide/svelte';
 import { Combobox } from '@skeletonlabs/skeleton-svelte';
 import { collection } from '@zag-js/combobox';
 import { DateTime } from 'luxon';
@@ -53,6 +53,7 @@ const {
     newThreadVendorUuid,
     creatingDraftProjectVendorUuid,
     sendingDraftUuid,
+    retryingDraftUuid,
     revisingDraftUuid,
     reviseDraftUuid,
     reviseInstructions,
@@ -70,6 +71,7 @@ const {
     onCreateDraftForVendorUuid,
     onUpdateDraftField,
     onSendDraft,
+    onRetryDraft,
     onCancelDraft,
     onToggleRevise,
     onReviseDraft,
@@ -97,6 +99,7 @@ const {
     newThreadVendorUuid: string;
     creatingDraftProjectVendorUuid: string | null;
     sendingDraftUuid: string | null;
+    retryingDraftUuid: string | null;
     revisingDraftUuid: string | null;
     reviseDraftUuid: string | null;
     reviseInstructions: string;
@@ -114,6 +117,7 @@ const {
     onCreateDraftForVendorUuid: (vendorUuid: string) => void | Promise<void>;
     onUpdateDraftField: (draftUuid: string, field: 'subject' | 'body', value: string) => void;
     onSendDraft: (card: OutreachCard) => void | Promise<void>;
+    onRetryDraft: (card: OutreachCard) => void | Promise<void>;
     onCancelDraft: (card: OutreachCard) => void | Promise<void>;
     onToggleRevise: (card: OutreachCard) => void;
     onReviseDraft: (card: OutreachCard) => void | Promise<void>;
@@ -399,6 +403,17 @@ function getSelectedContact(contactUuid: string) {
                             <p class="text-sm text-error-500">{composeCard.lastError}</p>
                         {/if}
                         <div class="flex flex-wrap gap-2">
+                            {#if composeCard.status === 'error'}
+                                <button
+                                    type="button"
+                                    class="btn btn-sm preset-filled-primary-500"
+                                    disabled={retryingDraftUuid === composeCard.draftUuid}
+                                    onclick={() => onRetryDraft(composeCard)}
+                                >
+                                    <RefreshCwIcon class="size-4 shrink-0" />
+                                    <span>{retryingDraftUuid === composeCard.draftUuid ? 'Retrying...' : 'Retry draft generation'}</span>
+                                </button>
+                            {/if}
                             <button
                                 type="button"
                                 class="btn btn-sm preset-filled-primary-500"

@@ -1,14 +1,58 @@
 import axios from 'axios'
 import logger from '@adonisjs/core/services/logger'
 import ProjectService from '#services/project_service'
-import { applyOutreachActions } from '#services/project_outreach_service'
-import { Turn } from '../../types/turn.js'
-import { ReasoningRequest } from '../../types/request.js'
+import { generateInitialOutreachDrafts } from '#services/project_outreach_service'
+import ProjectPromptService from '#services/project_prompt_service'
+import { ReasoningAgentResponse, ReasoningRequest } from '../../types/request.js'
 import Project from '#models/project'
 import { HttpContext } from '@adonisjs/core/http'
-import env from '#start/env'
+import { getReasoningChatUrl, getVendorDiscoveryUrl } from '#utils/reasoning_engine_urls'
+
+const OUTREACH_DRAFTING_NOTICE =
+  'I am generating draft emails for all vendors attached to this project, and you can review them in the Outreach tab.'
 
 export default class ReasoningEngineService {
+  public static async requestVendorDiscovery(input: { projectDescription: string }) {
+    let reasoningResponse
+
+    logger.info(
+      { projectDescriptionLength: input.projectDescription.length },
+      'Requesting vendor discovery from reasoning engine'
+    )
+
+    try {
+      reasoningResponse = await axios.post(getVendorDiscoveryUrl(), input)
+    } catch (error) {
+      logger.error({ err: error }, 'Error calling reasoning engine vendor discovery')
+      throw error
+    }
+
+    logger.info(
+      { status: reasoningResponse.status },
+      'Reasoning engine vendor discovery response received'
+    )
+
+    if (reasoningResponse.status !== 200) {
+      logger.error(
+        { status: reasoningResponse.status, body: reasoningResponse.data },
+        'Reasoning engine vendor discovery returned error'
+      )
+      throw new Error('Reasoning engine vendor discovery error')
+    }
+
+    logger.debug(
+      {
+        responseKeys:
+          reasoningResponse.data && typeof reasoningResponse.data === 'object'
+            ? Object.keys(reasoningResponse.data)
+            : [],
+      },
+      'Reasoning engine vendor discovery response shape'
+    )
+
+    return reasoningResponse.data
+  }
+
   public static async handleReasoningChat(
     reasoningRequest: ReasoningRequest,
     project: Project,
@@ -17,27 +61,15 @@ export default class ReasoningEngineService {
   ) {
     const { saveToHistory = true } = options
     try {
-      const reasoningResponse = await axios.post(
-        env.get('REASONING_ENGINE_URL', ''),
-        reasoningRequest
-      )
-      if (reasoningResponse.status !== 200) {
-        logger.error('Reasoning engine returned error:')
-        logger.error(reasoningResponse.data)
-        return response
-          .status(500)
-          .json({ error: 'Reasoning engine error', developerText: reasoningResponse.data })
-      }
-
-      const turn: Turn = reasoningResponse.data
-      await applyOutreachActions(project.uuid, turn.actionExecutions)
+      const agentResponse = await this.requestAgent(reasoningRequest)
 
       if (saveToHistory) {
-        ProjectService.saveConversationTurn(project.conversations[0].uuid, turn)
-        return response.status(reasoningResponse.status).json(turn.modelResponse)
+        await ProjectService.saveConversationTurn(project.conversations[0].uuid, agentResponse.turn)
+        const message = await this.handlePostPlanningResponse(agentResponse, project)
+        return response.status(200).json(message)
       }
 
-      return response.status(200).send(turn.modelResponse)
+      return response.status(200).send(agentResponse.message ?? agentResponse.turn.modelResponse)
     } catch (error) {
       logger.error('Error calling reasoning engine:')
       logger.error(error)
@@ -45,5 +77,61 @@ export default class ReasoningEngineService {
         .status(500)
         .json({ error: 'Failed to call reasoning engine', developerText: error.message })
     }
+  }
+
+  public static async requestAgent(
+    reasoningRequest: ReasoningRequest
+  ): Promise<ReasoningAgentResponse> {
+    const reasoningResponse = await axios.post(getReasoningChatUrl(), reasoningRequest)
+
+    if (reasoningResponse.status !== 200) {
+      logger.error('Reasoning engine returned error:')
+      logger.error(reasoningResponse.data)
+      throw new Error('Reasoning engine error')
+    }
+
+    return reasoningResponse.data as ReasoningAgentResponse
+  }
+
+  private static async handlePostPlanningResponse(
+    agentResponse: ReasoningAgentResponse,
+    project: Project
+  ): Promise<string> {
+    let message = agentResponse.message ?? agentResponse.turn.modelResponse
+
+    if (agentResponse.agentId !== 'PLANNING' || !agentResponse.readyForNextStep) {
+      return message
+    }
+
+    if (agentResponse.data) {
+      await ProjectPromptService.savePromptData({
+        projectUuid: project.uuid,
+        agentType: 'OUTREACH',
+        data: agentResponse.data,
+        userUuid: project.userUuid,
+      })
+    }
+
+    const draftResult = await generateInitialOutreachDrafts(project.userUuid, project.uuid)
+    message = this.ensureDraftingNotice(message)
+
+    if (draftResult.failed.length > 0) {
+      message += ` ${draftResult.failed.length} vendor draft${
+        draftResult.failed.length === 1 ? '' : 's'
+      } could not be generated; check the Outreach tab to retry or edit the failed draft${
+        draftResult.failed.length === 1 ? '' : 's'
+      }.`
+    }
+
+    return message
+  }
+
+  private static ensureDraftingNotice(message: string): string {
+    const lower = message.toLowerCase()
+    if (lower.includes('draft') && lower.includes('outreach tab')) {
+      return message
+    }
+
+    return `${message.trim()} ${OUTREACH_DRAFTING_NOTICE}`
   }
 }

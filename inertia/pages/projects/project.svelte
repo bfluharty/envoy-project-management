@@ -21,11 +21,12 @@ interface ChatMessage {
     isTyping?: boolean;
     isError?: boolean;
     retryPrompt?: string;
-    retryVariables?: Record<string, any>;
 }
 
 interface Vendor {
     uuid: string;
+    vendorUuid?: string | null;
+    vendorListingUuid?: string | null;
     name: string;
     email: string;
     vendorListingUuid?: string | null;
@@ -78,10 +79,11 @@ interface OutreachCard {
 
 interface OutreachStateResponse {
     cards?: OutreachCard[];
-    senderMode?: 'connected_inbox' | 'envoy_system';
+    senderMode?: 'connected_inbox' | 'unavailable';
     createdThreadUuid?: string;
     revisedReplyBody?: string;
     revisedThreadUuid?: string;
+    syncQueued?: boolean;
 }
 
 interface SharedUser {
@@ -176,7 +178,7 @@ onMount(async () => {
 });
 
 
-async function sendChat(prompt: string, variables: Record<string, any> = {}) {
+async function sendChat(prompt: string) {
     isLoading = true;
     const typingId = idCounter++;
     messages = [...messages, { id: typingId, role: 'assistant', content: '', isTyping: true }];
@@ -185,7 +187,7 @@ async function sendChat(prompt: string, variables: Record<string, any> = {}) {
         const res = await fetch(`/projects/${project.uuid}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, variables }),
+            body: JSON.stringify({ prompt }),
         });
 
         if (!res.ok) throw new Error(`Server error: ${res.status}`);
@@ -204,7 +206,6 @@ async function sendChat(prompt: string, variables: Record<string, any> = {}) {
                 content: 'Something went wrong. Please try again.',
                 isError: true,
                 retryPrompt: prompt,
-                retryVariables: variables,
             },
         ];
     } finally {
@@ -216,17 +217,15 @@ function sendMessage(event: Event) {
     event.preventDefault();
     if (!input.trim() || isLoading) return;
     const prompt = input.trim();
-    const isFirstMessage = !hasPriorConversation && !messages.some((m) => m.role === 'user');
     input = '';
     messages = [...messages, { id: idCounter++, role: 'user', content: prompt }];
-    const vars = (isFirstMessage && initialGreeting) ? { assistantGreeting: initialGreeting } : {};
-    sendChat(prompt, vars);
+    sendChat(prompt);
 }
 
-function retryMessage(retryPrompt: string, retryVariables: Record<string, any> = {}) {
+function retryMessage(retryPrompt: string) {
     if (isLoading) return;
     messages = messages.filter((m) => !m.isError);
-    sendChat(retryPrompt, retryVariables);
+    sendChat(retryPrompt);
 }
 
 // Outreach state
@@ -236,8 +235,9 @@ let outreachLoading = $state(false);
 let outreachSyncing = $state(false);
 let outreachInitialLoadAttempted = $state(false);
 let outreachError = $state<string | null>(null);
-let outreachSenderMode = $state<'connected_inbox' | 'envoy_system'>('envoy_system');
+let outreachSenderMode = $state<'connected_inbox' | 'unavailable'>('unavailable');
 let sendingDraftUuid = $state<string | null>(null);
+let retryingDraftUuid = $state<string | null>(null);
 let creatingDraftProjectVendorUuid = $state<string | null>(null);
 let revisingDraftUuid = $state<string | null>(null);
 let reviseDraftUuid = $state<string | null>(null);
@@ -303,7 +303,7 @@ function selectOutreachCard(card: OutreachCard) {
 
 function applyOutreachState(data: OutreachStateResponse) {
     outreachCards = data.cards ?? [];
-    outreachSenderMode = data.senderMode ?? 'envoy_system';
+    outreachSenderMode = data.senderMode ?? 'unavailable';
     outreachLoaded = true;
 
 
@@ -393,12 +393,15 @@ async function loadOutreach(sync = false) {
     }
 
     try {
-        await requestOutreach(
+        const data = await requestOutreach(
             sync
                 ? `/api/projects/${project.uuid}/outreach/sync`
                 : `/api/projects/${project.uuid}/outreach`,
             sync ? { method: 'POST' } : undefined
         );
+        if (sync && data.syncQueued) {
+            setOperationSuccess('Inbox refresh queued.');
+        }
     } catch (error) {
         outreachError = error instanceof Error ? error.message : 'Failed to load outreach.';
     } finally {
@@ -491,6 +494,15 @@ async function sendDraft(card: OutreachCard) {
         setOperationSuccess('Outreach email sent.');
     } catch (error) {
         outreachError = error instanceof Error ? error.message : 'Failed to send outreach email.';
+        outreachCards = outreachCards.map((entry) =>
+            entry.draftUuid === card.draftUuid
+                ? {
+                    ...entry,
+                    status: 'error',
+                    lastError: outreachError,
+                }
+                : entry
+        );
     } finally {
         sendingDraftUuid = null;
     }
@@ -518,7 +530,36 @@ async function reviseDraft(card: OutreachCard) {
         outreachError = error instanceof Error ? error.message : 'Failed to revise outreach draft.';
     } finally {
         revisingDraftUuid = null;
-  }
+    }
+}
+
+async function retryDraft(card: OutreachCard) {
+    if (!card.draftUuid || retryingDraftUuid) return;
+    retryingDraftUuid = card.draftUuid;
+    outreachError = null;
+
+    try {
+        await requestOutreach(`/api/projects/${project.uuid}/outreach/drafts/${card.draftUuid}/retry`, {
+            method: 'POST',
+        });
+        outreachPane = 'create';
+        reviseDraftUuid = null;
+        reviseInstructions = '';
+        setOperationSuccess('Draft regenerated.');
+    } catch (error) {
+        outreachError = error instanceof Error ? error.message : 'Failed to retry outreach draft.';
+        outreachCards = outreachCards.map((entry) =>
+            entry.draftUuid === card.draftUuid
+                ? {
+                    ...entry,
+                    status: 'error',
+                    lastError: outreachError,
+                }
+                : entry
+        );
+    } finally {
+        retryingDraftUuid = null;
+    }
 }
 
 async function cancelDraft(card: OutreachCard) {
@@ -832,18 +873,26 @@ async function createAndAttachContact(e: Event) {
             return;
         }
         const { contact } = await createRes.json();
-        const newList = [...localLinked.map((v) => v.uuid), contact.uuid];
+        const contactVendorUuid = contact.vendorUuid ?? contact.uuid;
+        const linkedContact = {
+            uuid: contactVendorUuid,
+            vendorUuid: contactVendorUuid,
+            vendorListingUuid: contact.vendorListingUuid ?? contact.uuid,
+            name: contact.name,
+            email: contact.email,
+        };
+        const newList = [...localLinked.map((v) => v.uuid), contactVendorUuid];
         const patchRes = await patchProject({ vendors: newList });
         if (patchRes.ok) {
-            localLinked = [...localLinked, contact];
-            localAllVendors = [...localAllVendors, contact];
+            localLinked = [...localLinked, linkedContact];
+            localAllVendors = [...localAllVendors, linkedContact];
             newContactName = '';
             newContactEmail = '';
             activeContactPanel = null;
             setOperationSuccess('Contact created and attached.');
         } else {
             // Contact was created but linking failed — surface it in the dropdown
-            localAllVendors = [...localAllVendors, contact];
+            localAllVendors = [...localAllVendors, linkedContact];
             contactSearchQuery = contact.name;
             activeContactPanel = 'attach';
             vendorError = 'Contact created but could not be attached. Select them from the dropdown and click Attach.';
@@ -907,7 +956,7 @@ onDestroy(() => {
                                 <p>{msg.content}</p>
                                 <button
                                     class="btn btn-sm preset-filled-error-500 mt-2"
-                                    onclick={() => retryMessage(msg.retryPrompt!, msg.retryVariables ?? {})}>
+                                    onclick={() => retryMessage(msg.retryPrompt!)}>
                                     Retry
                                 </button>
                             </div>
@@ -970,9 +1019,6 @@ onDestroy(() => {
         sectionLabel="Outreach"
         projectName={project.name}
         description="Review drafts, send outreach, and reply to vendor threads without leaving this project."
-        note={outreachSenderMode === 'connected_inbox'
-            ? 'Envoy will send from your connected inbox by default.'
-            : 'No inbox connected. Envoy will send from the system mailbox until you connect one in Account.'}
     >
         {#snippet actions()}
 
@@ -1011,6 +1057,7 @@ onDestroy(() => {
                 newThreadVendorUuid={newThreadVendorUuid}
                 creatingDraftProjectVendorUuid={creatingDraftProjectVendorUuid}
                 sendingDraftUuid={sendingDraftUuid}
+                retryingDraftUuid={retryingDraftUuid}
                 revisingDraftUuid={revisingDraftUuid}
                 reviseDraftUuid={reviseDraftUuid}
                 reviseInstructions={reviseInstructions}
@@ -1028,6 +1075,7 @@ onDestroy(() => {
                 onCreateDraftForVendorUuid={createDraftForVendorUuid}
                 onUpdateDraftField={updateDraftField}
                 onSendDraft={sendDraft}
+                onRetryDraft={retryDraft}
                 onCancelDraft={cancelDraft}
                 onToggleRevise={(card) => {
                     reviseDraftUuid = reviseDraftUuid === card.draftUuid ? null : card.draftUuid;
