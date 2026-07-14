@@ -15,6 +15,7 @@ import OnboardingDraftService from '#services/onboarding_draft_service'
 import OnboardingProjectCompletionService from '#services/onboarding_project_completion_service'
 import ProjectService from '#services/project_service'
 import ProjectVendorAttachmentService from '#services/project_vendor_attachment_service'
+import ProjectReasoningWorkflowService from '#services/project_reasoning_workflow_service'
 import VendorService from '#services/vendor_service'
 
 const PASSWORD = 'Password123!'
@@ -277,6 +278,65 @@ test.group('onboarding project completion', (group) => {
         .first(),
       null
     )
+  })
+
+  test('skips unavailable selections and commits the remaining project links with a warning', async () => {
+    const consumer = await createUser('CONSUMER')
+    const availableListing = await createSearchListing('available-partial@example.com')
+    const unavailableListing = await createSearchListing('unavailable-partial@example.com')
+    const draft = await createAssociatedDraft(consumer, [availableListing, unavailableListing])
+    unavailableListing.isActive = false
+    await unavailableListing.save()
+
+    const result = await OnboardingProjectCompletionService.completeProject(
+      consumer.uuid,
+      validProjectRequest
+    )
+
+    assert.equal(result.status, 'CREATED')
+    if (result.status !== 'CREATED') return
+    assert.equal(result.linkedVendorCount, 1)
+    assert.deepEqual(result.unavailableVendorListingUuids, [unavailableListing.uuid])
+    assert.equal(result.warnings?.length, 1)
+    await draft.refresh()
+    assert.equal(draft.status, 'CONSUMED')
+    assert.ok(draft.consumedProjectUuid)
+    assert.ok(
+      await Vendor.query()
+        .where('user_uuid', consumer.uuid)
+        .where('vendor_listing_uuid', availableListing.uuid)
+        .first()
+    )
+    assert.equal(
+      await Vendor.query()
+        .where('user_uuid', consumer.uuid)
+        .where('vendor_listing_uuid', unavailableListing.uuid)
+        .first(),
+      null
+    )
+  })
+
+  test('performs no reasoning or other external intake work during completion', async () => {
+    const consumer = await createUser('CONSUMER')
+    const listing = await createSearchListing('no-external-work@example.com')
+    await createAssociatedDraft(consumer, [listing])
+    const originalRunIntake = ProjectReasoningWorkflowService.runIntakeForProject
+    let callCount = 0
+    ProjectReasoningWorkflowService.runIntakeForProject = (async () => {
+      callCount += 1
+      throw new Error('onboarding completion must not call reasoning')
+    }) as typeof ProjectReasoningWorkflowService.runIntakeForProject
+
+    try {
+      const result = await OnboardingProjectCompletionService.completeProject(
+        consumer.uuid,
+        validProjectRequest
+      )
+      assert.equal(result.status, 'CREATED')
+      assert.equal(callCount, 0)
+    } finally {
+      ProjectReasoningWorkflowService.runIntakeForProject = originalRunIntake
+    }
   })
 
   test('passes the project transaction client to the shared attachment service', async () => {

@@ -30,7 +30,7 @@ test.group('vendor availability API', (group) => {
 
     const response = await client
       .get('/api/vendors/available?limit=10000&offset=0')
-      .header('x-user-id', consumer.uuid)
+      .loginAs(consumer)
 
     response.assertStatus(200)
     const vendor = response
@@ -62,7 +62,7 @@ test.group('vendor availability API', (group) => {
 
     const selectResponse = await client
       .post(`/api/vendors/${listing.uuid}/select`)
-      .header('x-user-id', consumer.uuid)
+      .loginAs(consumer)
     selectResponse.assertStatus(200)
     assert.equal(selectResponse.body().savedToContacts, true)
     assert.equal(selectResponse.body().listing.inContacts, true)
@@ -76,7 +76,7 @@ test.group('vendor availability API', (group) => {
 
     const repeatedSelectResponse = await client
       .post(`/api/vendors/${listing.uuid}/select`)
-      .header('x-user-id', consumer.uuid)
+      .loginAs(consumer)
     repeatedSelectResponse.assertStatus(200)
     assert.equal(repeatedSelectResponse.body().vendorUuid, selectResponse.body().vendorUuid)
     assert.equal(
@@ -90,7 +90,7 @@ test.group('vendor availability API', (group) => {
 
     const editResponse = await client
       .patch(`/api/vendors/${listing.uuid}`)
-      .header('x-user-id', consumer.uuid)
+      .loginAs(consumer)
       .json({ name: 'Unauthorized API Rename' })
     editResponse.assertStatus(403)
   })
@@ -110,7 +110,7 @@ test.group('vendor availability API', (group) => {
 
     const response = await client
       .get(`/api/vendors/trusted-matches?name=${encodeURIComponent(sharedName)}`)
-      .header('x-user-id', consumer.uuid)
+      .loginAs(consumer)
 
     response.assertStatus(200)
     assert.deepEqual(
@@ -119,5 +119,32 @@ test.group('vendor availability API', (group) => {
         .vendors.map((vendor: { vendorListingUuid: string }) => vendor.vendorListingUuid),
       [trusted.uuid]
     )
+  })
+
+  test('requires a session and ignores spoofed user identity headers', async ({ client }) => {
+    const unauthenticated = await client
+      .get('/api/vendors/available')
+      .header('x-user-id', consumer.uuid)
+    unauthenticated.assertStatus(401)
+
+    const otherConsumer = await User.create({
+      fullName: 'Other Availability Consumer',
+      email: `other-availability-${uuidv4()}@example.com`,
+      password: 'password123',
+      entitlementId: consumer.entitlementId,
+      isActive: true,
+    })
+    const listing = await VendorService.createVendor(consumer.uuid, {
+      name: `Header Spoof Vendor ${uuidv4()}`,
+      email: 'header-spoof@example.com',
+    })
+
+    const response = await client
+      .patch(`/api/vendors/${listing.uuid}`)
+      .loginAs(otherConsumer)
+      .header('x-user-id', consumer.uuid)
+      .json({ name: 'Spoofed Rename' })
+
+    response.assertStatus(404)
   })
 })

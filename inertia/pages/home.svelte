@@ -192,21 +192,25 @@
         const targetUrl = page.url ?? '';
         const uuidMatch = targetUrl.match(/\/projects\/([^/?#]+)/);
         const projectUuid = uuidMatch ? uuidMatch[1] : null;
+        const vendorListingUuidsToAttach = [...pendingVendorListingUuids];
 
         // Attach any vendor listings selected during new-project creation
-        if (projectUuid && pendingVendorListingUuids.length > 0) {
+        if (projectUuid && vendorListingUuidsToAttach.length > 0) {
           attachingVendors = true;
+          const warningKey = `project-vendor-attach-warning:${projectUuid}`;
           try {
             const res = await fetch(`/api/projects/${projectUuid}/vendors`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ vendorListingUuids: pendingVendorListingUuids }),
+              body: JSON.stringify({ vendorListingUuids: vendorListingUuidsToAttach }),
             });
             if (!res.ok) {
               attachVendorError = 'Project created, but vendors could not be added. You can retry from the project page.';
+              sessionStorage.setItem(warningKey, attachVendorError);
             }
           } catch {
             attachVendorError = 'Project created, but vendors could not be added due to a network error.';
+            sessionStorage.setItem(warningKey, attachVendorError);
           }
           attachingVendors = false;
         }
@@ -219,8 +223,15 @@
         // followed the redirect, but this ensures the browser URL and view are
         // in sync even when they aren't (prevents the "page doesn't change" bug).
         const destination = projectUuid ? `/projects/${projectUuid}` : '/dashboard';
-        if (typeof window !== 'undefined' && window.location.pathname !== destination) {
-          router.visit(destination);
+        if (typeof window !== 'undefined') {
+          if (projectUuid && vendorListingUuidsToAttach.length > 0) {
+            // The create redirect has already rendered the project page while
+            // attachment was still running. Reload once so linked vendors (or
+            // the persisted warning) are visible in the final page state.
+            window.location.replace(destination);
+          } else if (window.location.pathname !== destination) {
+            router.visit(destination);
+          }
         }
       },
     });

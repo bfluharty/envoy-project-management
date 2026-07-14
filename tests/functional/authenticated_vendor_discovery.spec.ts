@@ -97,13 +97,10 @@ test.group('authenticated vendor discovery API', (group) => {
       .where('user_uuid', consumer.uuid)
       .count('* as total')
 
-    const response = await client
-      .post('/api/vendors/search')
-      .header('x-user-id', consumer.uuid)
-      .json({
-        projectDescription: 'I need a commercial electrician for an office renovation project.',
-        postalCode: '23220',
-      })
+    const response = await client.post('/api/vendors/search').loginAs(consumer).json({
+      projectDescription: 'I need a commercial electrician for an office renovation project.',
+      postalCode: '23220',
+    })
 
     response.assertStatus(200)
     assert.equal(response.body().vendors.length, 2)
@@ -133,7 +130,7 @@ test.group('authenticated vendor discovery API', (group) => {
   test('validates authenticated search input', async ({ client }) => {
     const response = await client
       .post('/api/vendors/search')
-      .header('x-user-id', consumer.uuid)
+      .loginAs(consumer)
       .json({ projectDescription: 'too short', postalCode: '' })
 
     response.assertStatus(422)
@@ -149,13 +146,10 @@ test.group('authenticated vendor discovery API', (group) => {
       isActive: true,
     })
 
-    const response = await client
-      .post('/api/vendors/search')
-      .header('x-user-id', vendorUser.uuid)
-      .json({
-        projectDescription: 'I need a commercial electrician for an office renovation project.',
-        postalCode: '23220',
-      })
+    const response = await client.post('/api/vendors/search').loginAs(vendorUser).json({
+      projectDescription: 'I need a commercial electrician for an office renovation project.',
+      postalCode: '23220',
+    })
 
     response.assertStatus(403)
   })
@@ -170,13 +164,10 @@ test.group('authenticated vendor discovery API', (group) => {
       .where('user_uuid', consumer.uuid)
       .count('* as total')
 
-    const response = await client
-      .post('/api/vendors/search')
-      .header('x-user-id', consumer.uuid)
-      .json({
-        projectDescription: 'I need a commercial plumber for a restaurant renovation.',
-        postalCode: '23220',
-      })
+    const response = await client.post('/api/vendors/search').loginAs(consumer).json({
+      projectDescription: 'I need a commercial plumber for a restaurant renovation.',
+      postalCode: '23220',
+    })
 
     response.assertStatus(502)
     response.assertBodyContains({ retryable: true })

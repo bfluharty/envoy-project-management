@@ -12,7 +12,7 @@ import {
 } from '#validators/projects_validator'
 import ReasoningEngineService from '#services/reasoning_engine_service'
 import ReasoningRequestContextService from '#services/reasoning_request_context_service'
-import { isOnlyActivatingRecord, validateUser } from '../../utils/controller_utils.js'
+import { isOnlyActivatingRecord } from '../../utils/controller_utils.js'
 import ProjectVendorAttachmentService, {
   ProjectVendorAttachmentError,
 } from '#services/project_vendor_attachment_service'
@@ -25,16 +25,16 @@ import {
 } from '#utils/rate_limit_utils'
 
 export default class ProjectsAPIController {
-  async attachVendors({ request, response }: HttpContext) {
-    const userId = request.header('x-user-id') || ''
-    try {
-      const user = await validateUser(userId)
-      if (!user || !(await UserRoleService.isConsumer(user))) {
-        return response.status(403).json({ error: 'User is not authorized' })
-      }
-    } catch (error) {
-      return response.status(401).json({ error: error.message })
-    }
+  private async getConsumer(auth: HttpContext['auth']) {
+    const user = auth.getUserOrFail()
+    if (!user.isActive || !(await UserRoleService.isConsumer(user))) return null
+    return user
+  }
+
+  async attachVendors({ auth, request, response }: HttpContext) {
+    const user = await this.getConsumer(auth)
+    if (!user) return response.status(403).json({ error: 'User is not authorized' })
+    const userId = user.uuid
 
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
     const { vendorListingUuids } = await request.validateUsing(attachVendorListingsValidator)
@@ -60,20 +60,10 @@ export default class ProjectsAPIController {
   /**
    * Display all user projects
    */
-  async getAll({ request, response }: HttpContext) {
-    // Validate user
-    const userId = request.header('x-user-id') || ''
-    try {
-      const isValidUser = await validateUser(userId)
-      if (!isValidUser) {
-        return response.status(403).json({
-          error: 'User is not authorized',
-          developerText: 'User is not active or does not exist',
-        })
-      }
-    } catch (error) {
-      return response.status(401).json({ error: error.message })
-    }
+  async getAll({ auth, request, response }: HttpContext) {
+    const user = await this.getConsumer(auth)
+    if (!user) return response.status(403).json({ error: 'User is not authorized' })
+    const userId = user.uuid
 
     // Validate request
     const { limit, offset } = await request.validateUsing(getUserProjectsValidator)
@@ -99,20 +89,10 @@ export default class ProjectsAPIController {
   /**
    * Get a single user project
    */
-  async getByUuid({ request, response }: HttpContext) {
-    // Validate user
-    const userId = request.header('x-user-id') || ''
-    try {
-      const isValidUser = await validateUser(userId)
-      if (!isValidUser) {
-        return response.status(403).json({
-          error: 'User is not authorized',
-          developerText: 'User is not active or does not exist',
-        })
-      }
-    } catch (error) {
-      return response.status(401).json({ error: error.message })
-    }
+  async getByUuid({ auth, request, response }: HttpContext) {
+    const user = await this.getConsumer(auth)
+    if (!user) return response.status(403).json({ error: 'User is not authorized' })
+    const userId = user.uuid
 
     // Validate request
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
@@ -136,20 +116,10 @@ export default class ProjectsAPIController {
   /**
    * Create a new project
    */
-  async create({ request, response }: HttpContext) {
-    // Validate user
-    const userId = request.header('x-user-id') || ''
-    try {
-      const isValidUser = await validateUser(userId)
-      if (!isValidUser) {
-        return response.status(403).json({
-          error: 'User is not authorized',
-          developerText: 'User is not active or does not exist',
-        })
-      }
-    } catch (error) {
-      return response.status(401).json({ error: error.message })
-    }
+  async create({ auth, request, response }: HttpContext) {
+    const user = await this.getConsumer(auth)
+    if (!user) return response.status(403).json({ error: 'User is not authorized' })
+    const userId = user.uuid
 
     // Validate request
     const validatedRequest = await request.validateUsing(createProjectValidator)
@@ -193,20 +163,10 @@ export default class ProjectsAPIController {
   /**
    * Update a project
    */
-  async update({ request, response }: HttpContext) {
-    // Validate user
-    const userId = request.header('x-user-id') || ''
-    try {
-      const isValidUser = await validateUser(userId)
-      if (!isValidUser) {
-        return response.status(403).json({
-          error: 'User is not authorized',
-          developerText: 'User is not active or does not exist',
-        })
-      }
-    } catch (error) {
-      return response.status(401).json({ error: error.message })
-    }
+  async update({ auth, request, response }: HttpContext) {
+    const user = await this.getConsumer(auth)
+    if (!user) return response.status(403).json({ error: 'User is not authorized' })
+    const userId = user.uuid
 
     // Validate request
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
@@ -244,20 +204,10 @@ export default class ProjectsAPIController {
   /**
    * Retry project intake and planning prompt-data generation.
    */
-  async retryIntake({ request, response }: HttpContext) {
-    // Validate user
-    const userId = request.header('x-user-id') || ''
-    try {
-      const isValidUser = await validateUser(userId)
-      if (!isValidUser) {
-        return response.status(403).json({
-          error: 'User is not authorized',
-          developerText: 'User is not active or does not exist',
-        })
-      }
-    } catch (error) {
-      return response.status(401).json({ error: error.message })
-    }
+  async retryIntake({ auth, request, response }: HttpContext) {
+    const user = await this.getConsumer(auth)
+    if (!user) return response.status(403).json({ error: 'User is not authorized' })
+    const userId = user.uuid
 
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
 
@@ -276,20 +226,10 @@ export default class ProjectsAPIController {
   /**
    * Chat with reasoning engine about a project
    */
-  async chat({ request, response }: HttpContext) {
-    // Validate user
-    const userId = request.header('x-user-id') || ''
-    try {
-      const isValidUser = await validateUser(userId)
-      if (!isValidUser) {
-        return response.status(403).json({
-          error: 'User is not authorized',
-          developerText: 'User is not active or does not exist',
-        })
-      }
-    } catch (error) {
-      return response.status(401).json({ error: error.message })
-    }
+  async chat({ auth, request, response }: HttpContext) {
+    const user = await this.getConsumer(auth)
+    if (!user) return response.status(403).json({ error: 'User is not authorized' })
+    const userId = user.uuid
 
     // Validate request
     const { uuid: projectUuid } = await requestParamsValidator.validate(request.params())
@@ -307,13 +247,6 @@ export default class ProjectsAPIController {
         projectUuid,
         project.conversations[0].uuid
       )
-      const user = await validateUser(userId)
-      if (!user) {
-        return response.status(403).json({
-          error: 'User is not authorized',
-          developerText: 'User is not active or does not exist',
-        })
-      }
       const planningPromptData = await ProjectReasoningWorkflowService.ensurePlanningPromptData(
         project,
         userId

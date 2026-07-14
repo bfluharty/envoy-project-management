@@ -15,19 +15,28 @@
     <VendorSearch context="new-project" {onClose} bind:pendingUuids />
 -->
 <script lang="ts">
-  import { CheckCircleIcon, ShieldAlertIcon, MailIcon, MapPinIcon, XIcon, SearchIcon } from '@lucide/svelte';
+  import { CheckCircleIcon, ShieldAlertIcon, MapPinIcon, XIcon, SearchIcon } from '@lucide/svelte';
+
+  interface VendorLocation {
+    address?: string | null;
+    locality?: string | null;
+    region?: string | null;
+    postcode?: string | null;
+    country?: string | null;
+    formatted_address?: string | null;
+  }
 
   // ── Types ──────────────────────────────────────────────────────────────────
   export interface VendorResult {
     vendorListingUuid: string;
     name: string;
     categories: string[];
-    location: string | null;
+    location: VendorLocation | null;
     hasEmail: boolean;
     onboardedToEnvoy: boolean;
     consumerOwned: boolean;
     inContacts: boolean;
-    contactMappingUuid: string | null;
+    vendorUuid: string | null;
   }
 
   type Context = 'contacts' | 'project' | 'new-project';
@@ -86,12 +95,24 @@
     if (!projectDescription.trim()) {
       descError = 'Describe what you need.';
       valid = false;
+    } else if (projectDescription.trim().length < 20) {
+      descError = 'Please enter at least 20 characters.';
+      valid = false;
     }
     if (!postalCode.trim()) {
       postalError = 'ZIP or postal code is required.';
       valid = false;
     }
     return valid;
+  }
+
+  function formatLocation(location: VendorLocation | null): string {
+    if (!location) return '';
+    if (location.formatted_address?.trim()) return location.formatted_address.trim();
+
+    return [location.address, location.locality, location.region, location.postcode, location.country]
+      .filter((part): part is string => !!part?.trim())
+      .join(', ');
   }
 
   // ── Search ─────────────────────────────────────────────────────────────────
@@ -102,6 +123,7 @@
     searchError = '';
     retryable   = false;
     selected    = new Set();
+    hasSearched = false;
 
     try {
       const res = await fetch('/api/vendors/search', {
@@ -114,10 +136,11 @@
       });
 
       if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
         const isServerError = res.status >= 500;
-        searchError = isServerError
+        searchError = body?.error ?? (isServerError
           ? 'Our vendor search is temporarily unavailable. Please try again.'
-          : 'Search failed. Please check your inputs and try again.';
+          : 'Search failed. Please check your inputs and try again.');
         retryable = isServerError;
         return;
       }
@@ -242,16 +265,6 @@
   }
 
   // ── Keyboard nav on vendor cards ───────────────────────────────────────────
-  function handleCardKeydown(e: KeyboardEvent, uuid: string) {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      if (context === 'contacts') {
-        saveToContacts(uuid);
-      } else {
-        toggleSelection(uuid);
-      }
-    }
-  }
 </script>
 
 <div class="space-y-5">
@@ -382,9 +395,8 @@
                   type="button"
                   role="checkbox"
                   aria-checked={isSelected}
-                  aria-disabled={isAttached}
-                  onclick={() => !isAttached && toggleSelection(vendor.vendorListingUuid)}
-                  onkeydown={(e) => handleCardKeydown(e, vendor.vendorListingUuid)}
+                    disabled={isAttached}
+                    onclick={() => !isAttached && toggleSelection(vendor.vendorListingUuid)}
                   class="w-full text-left rounded-xl border p-4 transition-all duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500
                     {isAttached
                       ? 'border-surface-200-800 opacity-60 cursor-default'
@@ -487,19 +499,13 @@
         </span>
       {/if}
     </div>
-    {#if p.vendor.location}
+    {#if formatLocation(p.vendor.location)}
       <p class="text-xs text-surface-500 flex items-center gap-1">
-        <MapPinIcon class="size-3 shrink-0" />{p.vendor.location}
+        <MapPinIcon class="size-3 shrink-0" />{formatLocation(p.vendor.location)}
       </p>
     {/if}
     {#if p.vendor.categories.length > 0}
       <p class="text-xs text-surface-500">{p.vendor.categories.join(' · ')}</p>
-    {/if}
-    {#if !p.vendor.hasEmail}
-      <p class="text-xs text-surface-500 flex items-center gap-1 mt-0.5">
-        <MailIcon class="size-3 shrink-0" />
-        No email on file
-      </p>
     {/if}
   </div>
 {/snippet}

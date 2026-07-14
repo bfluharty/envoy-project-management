@@ -24,6 +24,16 @@ export type AttachedProjectVendor = {
   projectVendorUuid: string
 }
 
+type AttachmentOptions = {
+  skipUnavailable?: boolean
+}
+
+export type ProjectVendorAttachmentResult = {
+  projectUuid: string
+  vendors: AttachedProjectVendor[]
+  unavailableVendorListingUuids: string[]
+}
+
 export default class ProjectVendorAttachmentService {
   public static async attachListings(
     userUuid: string,
@@ -49,8 +59,9 @@ export default class ProjectVendorAttachmentService {
     userUuid: string,
     projectUuid: string,
     vendorListingUuids: string[],
-    trx: TransactionClientContract
-  ): Promise<{ projectUuid: string; vendors: AttachedProjectVendor[] }> {
+    trx: TransactionClientContract,
+    options: AttachmentOptions = {}
+  ): Promise<ProjectVendorAttachmentResult> {
     if (vendorListingUuids.length < 1 || vendorListingUuids.length > MAX_VENDOR_ATTACHMENTS) {
       throw new ProjectVendorAttachmentError('Attach between 1 and 8 vendor listings', 422)
     }
@@ -79,7 +90,7 @@ export default class ProjectVendorAttachmentService {
       canonicalByRequestedUuid.set(requestedUuid, canonical.uuid)
     }
 
-    if (unavailableVendorListingUuids.length > 0) {
+    if (unavailableVendorListingUuids.length > 0 && !options.skipUnavailable) {
       throw new ProjectVendorAttachmentError(
         'One or more vendor listings are unavailable',
         422,
@@ -91,12 +102,27 @@ export default class ProjectVendorAttachmentService {
     const attachedVendors: AttachedProjectVendor[] = []
     const attachedListingUuids = new Set<string>()
 
+    const markCanonicalUnavailable = (canonicalUuid: string) => {
+      const requestedUuids = [...canonicalByRequestedUuid.entries()]
+        .filter(([, resolvedUuid]) => resolvedUuid === canonicalUuid)
+        .map(([requestedUuid]) => requestedUuid)
+      unavailableVendorListingUuids.push(
+        ...(requestedUuids.length ? requestedUuids : [canonicalUuid])
+      )
+    }
+
     for (const canonicalUuid of canonicalUuids) {
       const listing = await VendorService.resolveCanonicalListing(canonicalUuid, trx, true)
       if (!listing?.isActive || listing.supersededByVendorListingUuid) {
-        throw new ProjectVendorAttachmentError('One or more vendor listings are unavailable', 422, [
-          canonicalUuid,
-        ])
+        if (!options.skipUnavailable) {
+          throw new ProjectVendorAttachmentError(
+            'One or more vendor listings are unavailable',
+            422,
+            [canonicalUuid]
+          )
+        }
+        markCanonicalUnavailable(canonicalUuid)
+        continue
       }
       if (attachedListingUuids.has(listing.uuid)) continue
       attachedListingUuids.add(listing.uuid)
@@ -104,9 +130,15 @@ export default class ProjectVendorAttachmentService {
       await VendorService.adoptOwnerlessNoEmailSearchListing(userUuid, listing.uuid, trx)
       const mapping = await VendorService.ensureUserVendorMapping(userUuid, listing.uuid, trx)
       if (!mapping) {
-        throw new ProjectVendorAttachmentError('One or more vendor listings are unavailable', 422, [
-          listing.uuid,
-        ])
+        if (!options.skipUnavailable) {
+          throw new ProjectVendorAttachmentError(
+            'One or more vendor listings are unavailable',
+            422,
+            [listing.uuid]
+          )
+        }
+        markCanonicalUnavailable(canonicalUuid)
+        continue
       }
 
       let projectVendor = await ProjectVendor.query()
@@ -139,6 +171,10 @@ export default class ProjectVendorAttachmentService {
       })
     }
 
-    return { projectUuid, vendors: attachedVendors }
+    return {
+      projectUuid,
+      vendors: attachedVendors,
+      unavailableVendorListingUuids: [...new Set(unavailableVendorListingUuids)],
+    }
   }
 }

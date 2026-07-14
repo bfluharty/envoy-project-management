@@ -58,6 +58,8 @@ export default class ProjectsController {
       .preload('vendor', (q) => q.preload('vendorListing'))
     const linkedVendors = projectVendors.map((pv) => ({
       uuid: pv.vendor.uuid,
+      vendorUuid: pv.vendor.uuid,
+      vendorListingUuid: pv.vendor.vendorListing.uuid,
       name: pv.vendor.vendorListing.name,
       email: pv.vendor.vendorListing.email,
     }))
@@ -84,6 +86,8 @@ export default class ProjectsController {
       linkedVendors,
       allVendors: allVendors.map((v) => ({
         uuid: v.uuid,
+        vendorUuid: v.uuid,
+        vendorListingUuid: v.vendorListing.uuid,
         name: v.vendorListing.name,
         email: v.vendorListing.email,
       })),

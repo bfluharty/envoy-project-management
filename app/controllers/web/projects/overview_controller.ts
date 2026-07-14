@@ -35,6 +35,8 @@ export default class OverviewController {
         .preload('vendor', (q) => q.preload('vendorListing'))
       const linkedVendors = projectVendors.map((pv) => ({
         uuid: pv.vendor.uuid,
+        vendorUuid: pv.vendor.uuid,
+        vendorListingUuid: pv.vendor.vendorListing.uuid,
         name: pv.vendor.vendorListing.name,
         email: pv.vendor.vendorListing.email,
       }))

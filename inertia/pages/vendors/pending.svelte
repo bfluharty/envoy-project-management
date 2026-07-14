@@ -1,13 +1,17 @@
 <script lang="ts">
   import Navbar from '#components/navbar.svelte';
   import PublicFooter from '#components/public_footer.svelte';
-  import { ClockIcon } from '@lucide/svelte';
+  import { AlertTriangleIcon, ClockIcon } from '@lucide/svelte';
 
   const {
     vendorName = null,
+    vendorApprovalStatus = 'PENDING',
   }: {
     vendorName?: string | null;
+    vendorApprovalStatus?: 'PENDING' | 'REJECTED';
   } = $props();
+
+  const isRejected = $derived(vendorApprovalStatus === 'REJECTED');
 </script>
 
 <svelte:head>
@@ -21,13 +25,21 @@
     <div class="max-w-md w-full text-center space-y-6">
       <div class="flex justify-center">
         <div class="p-4 rounded-full bg-warning-500/10">
-          <ClockIcon class="size-10 text-warning-500" />
+          {#if isRejected}
+            <AlertTriangleIcon class="size-10 text-warning-500" />
+          {:else}
+            <ClockIcon class="size-10 text-warning-500" />
+          {/if}
         </div>
       </div>
 
       <div class="space-y-2">
-        <h1 class="text-3xl font-bold">You're on the list</h1>
-        {#if vendorName}
+        <h1 class="text-3xl font-bold">{isRejected ? 'We need more information' : "You're on the list"}</h1>
+        {#if isRejected}
+          <p class="text-surface-600-400">
+            We could not approve{vendorName ? ` ${vendorName}` : ' your vendor account'} yet. Contact us so we can help verify your business.
+          </p>
+        {:else if vendorName}
           <p class="text-surface-600-400">
             Thanks, <span class="font-semibold text-surface-900-100">{vendorName}</span>. Your vendor account has been created and is pending approval.
           </p>
@@ -38,6 +50,7 @@
         {/if}
       </div>
 
+      {#if !isRejected}
       <div class="card preset-outlined-surface-200-800 border border-surface-200-800 bg-surface-50-950/50 p-5 text-left space-y-3 text-sm text-surface-600-400">
         <p class="font-medium text-surface-900-100">What happens next?</p>
         <ul class="space-y-2 list-none">
@@ -55,6 +68,7 @@
           </li>
         </ul>
       </div>
+      {/if}
 
       <p class="text-sm text-surface-600-400">
         Questions? <a href="/contact" class="text-primary-500 hover:underline">Get in touch</a>.

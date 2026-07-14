@@ -28,6 +28,7 @@ const inertiaConfig = defineConfig({
     flash: (ctx) => ({
       success: ctx.session?.flashMessages?.get('success') ?? null,
       error: ctx.session?.flashMessages?.get('error') ?? null,
+      partial_success: ctx.session?.flashMessages?.get('partial_success') ?? null,
     }),
     projects: async (ctx) => {
       // Only fetch projects if user is authenticated

@@ -564,7 +564,7 @@ Response:
 }
 ```
 
-Every normalized Foursquare result is inserted or matched to a `vendor_listing` before this response is built. The response contains at most eight listings, ordered with email-bearing listings first and no-email listings afterward. Raw source data and contact fields are not returned to the anonymous UI.
+Every normalized Foursquare result is inserted or matched to a `vendor_listing` before this response is built. The response contains at most eight listings. Relevant existing Envoy listings rank first regardless of claim status; within that tier and the remaining live-result tier, email-bearing listings rank before no-email listings. Raw source data and contact fields are not returned to the anonymous UI.
 
 If no usable Foursquare results or existing listings can be returned, return `200` with an empty `vendors` array and:
 
@@ -890,7 +890,7 @@ Responsibilities:
 6. Dedupe candidates produced by the current search batch.
 7. Insert or reuse a `vendor_listing` for every normalized candidate.
 8. Do not overwrite listings that already exist.
-9. Rank persisted listings with email first and no-email listings afterward.
+9. Merge relevant existing listings with persisted live results, rank the relevant existing tier first regardless of claim status, and then rank each tier with email first and no-email listings afterward.
 10. Store the top eight recommendation UUIDs and any selected UUIDs on the draft.
 11. Return the top eight recommendations to the UI.
 
@@ -923,12 +923,13 @@ If a Foursquare result matches an existing listing:
 
 Sort order:
 
-1. Email present before email absent.
-2. Within each group, `date_refreshed` descending.
-3. Foursquare relevance order.
-4. Name ascending for stable display.
+1. Existing active, non-superseded listings that match an inferred Foursquare category ID and a postal code in the configured search radius.
+2. Within the relevant-existing tier and then within the remaining live-result tier, email present before email absent.
+3. Within each group, `date_refreshed` descending.
+4. Source relevance order.
+5. Name ascending for stable display.
 
-Take the first eight only after applying this ordering. Five email-bearing results plus five no-email results therefore return the five email-bearing results followed by the top three no-email results.
+Claim status is not itself a ranking signal. Relevant claimed and unclaimed existing listings receive the same tier boost, and unrelated claimed listings are not included. Take the first eight only after merging, deduplicating, and applying this ordering.
 
 ### 9.3 Dedupe
 
@@ -1380,8 +1381,10 @@ Cover:
 - Foursquare candidate normalization.
 - Every normalized Foursquare candidate is inserted or reuses a listing before recommendations are returned.
 - Existing search listings are not refreshed or overwritten.
-- Email-bearing listings rank before no-email listings.
-- Recommendation response is capped at 8 after email-first ranking.
+- Relevant existing listings rank before live results regardless of claim status.
+- Unrelated claimed listings receive no ranking boost.
+- Within each result tier, email-bearing listings rank before no-email listings.
+- Recommendation response is capped at 8 after relevant-existing-first ranking and email-first ordering within each tier.
 - Newer `date_refreshed` ranks before older `date_refreshed`.
 - Dedupe by `fsq_place_id`.
 - Dedupe by email.
@@ -1431,7 +1434,7 @@ Project-management Foursquare client tests should also verify that ZIP/postal co
 Happy path:
 
 ```text
-anonymous intake -> reasoning vendor searches -> Foursquare results persisted as listings -> email-first recommendations -> select listing UUIDs -> register -> auto-login -> project completion -> project created -> vendors linked -> user sees project Convo
+anonymous intake -> reasoning vendor searches -> relevant existing listings merged with persisted Foursquare results -> relevant-existing-first recommendations -> select listing UUIDs -> register -> auto-login -> project completion -> project created -> vendors linked -> user sees project Convo
 ```
 
 Failure scenarios:
@@ -1504,7 +1507,7 @@ Use Playwright for:
 - Complete `vendor_search_service`.
 - Add Foursquare candidate normalization.
 - Insert or reuse listings for every normalized result without refreshes.
-- Add email-first merge/rank/dedupe and cap recommendations at eight.
+- Merge relevant existing listings with live results, rank relevant existing listings first regardless of claim status, apply email-first ordering within each tier, dedupe, and cap recommendations at eight.
 - Render recommendation UI.
 
 ### Step 6: Project Completion

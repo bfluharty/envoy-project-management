@@ -15,13 +15,9 @@ import {
   vendorSearchValidator,
   vendorSelectionValidator,
 } from '#validators/onboarding_validator'
-import {
-  anonymousVendorSearchRateLimitRules,
-  getClientIp,
-  rejectWhenRateLimited,
-} from '#utils/rate_limit_utils'
 
 function getDraftStep(draft: {
+  vendorSearches: unknown[]
   recommendedVendorListingUuids: string[]
   selectedVendorListingUuids: string[]
 }) {
@@ -29,7 +25,7 @@ function getDraftStep(draft: {
     return 'selection'
   }
 
-  if (draft.recommendedVendorListingUuids.length > 0) {
+  if (draft.recommendedVendorListingUuids.length > 0 || draft.vendorSearches.length > 0) {
     return 'recommendations'
   }
 
@@ -46,7 +42,10 @@ async function serializeDraft(draft: {
   expiresAt: { toISO(): string | null }
 }) {
   const recommendedVendorListingUuids = draft.recommendedVendorListingUuids ?? []
-  const selectedVendorListingUuids = draft.selectedVendorListingUuids ?? []
+  const selectedListings = await VendorService.getListingsByUuidsPreservingOrder(
+    draft.selectedVendorListingUuids ?? []
+  )
+  const selectedVendorListingUuids = selectedListings.map((listing) => listing.uuid)
   const recommendedListings = await VendorService.getListingsByUuidsPreservingOrder(
     recommendedVendorListingUuids
   )
@@ -58,7 +57,11 @@ async function serializeDraft(draft: {
     vendorSearches: Array.isArray(draft.vendorSearches) ? draft.vendorSearches : [],
     vendors: recommendedListings.map((listing) => VendorService.toPublicRecommendation(listing)),
     selectedVendorListingUuids,
-    step: getDraftStep({ recommendedVendorListingUuids, selectedVendorListingUuids }),
+    step: getDraftStep({
+      vendorSearches: Array.isArray(draft.vendorSearches) ? draft.vendorSearches : [],
+      recommendedVendorListingUuids,
+      selectedVendorListingUuids,
+    }),
     expiresAt: draft.expiresAt.toISO(),
   }
 }
@@ -108,15 +111,6 @@ export default class OnboardingController {
   async searchVendors({ request, response, session }: HttpContext) {
     const payload = await request.validateUsing(vendorSearchValidator)
     const anonymousSessionUuid = OnboardingDraftService.getOrCreateAnonymousSessionUuid(session)
-    const rateLimitResponse = await rejectWhenRateLimited(
-      request,
-      response,
-      anonymousVendorSearchRateLimitRules({
-        anonymousSessionUuid,
-        ip: getClientIp(request),
-      })
-    )
-    if (rateLimitResponse) return rateLimitResponse
 
     logger.info(
       {

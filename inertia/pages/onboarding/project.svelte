@@ -4,38 +4,60 @@
   import type { LocationData } from '#components/location_search.svelte';
   import { router } from '@inertiajs/svelte';
   import { page } from '@inertiajs/svelte';
+  import { onMount, untrack } from 'svelte';
   import { Steps } from '@skeletonlabs/skeleton-svelte';
-  import { CheckCircleIcon, ShieldAlertIcon, MailIcon, MapPinIcon, AlertTriangleIcon } from '@lucide/svelte';
+  import { CheckCircleIcon, ShieldAlertIcon, MapPinIcon, AlertTriangleIcon } from '@lucide/svelte';
 
   // ── Types ──────────────────────────────────────────────────────────────────
-  interface SelectedVendor {
-    uuid: string;
-    name: string;
-    location: string | null;
-    categories: string[];
-    hasEmail: boolean;
-    onboardedToEnvoy: boolean;
-    consumerOwned: boolean;
+  interface VendorLocation {
+    address?: string;
+    locality?: string;
+    region?: string;
+    postcode?: string;
+    country?: string;
+    formatted_address?: string;
   }
 
-  interface OnboardingDraft {
-    projectBlurb: string | null;
-    postalCode: string | null;
-    selectedVendors: SelectedVendor[];
+  interface SelectedVendor {
+    vendorListingUuid: string;
+    name: string;
+    location: VendorLocation | null;
+    categories: string[];
+    onboardedToEnvoy: boolean;
+    consumerOwned: boolean;
+    ownershipWarning: string | null;
   }
+
+  interface ProjectPrefill {
+    title?: string;
+    description?: string | null;
+    location?: Record<string, unknown> | null;
+  }
+
+  interface RecoveryLinks {
+    dashboardUrl: string;
+    vendorSearchUrl: string;
+  }
+
+  type OnboardingLocationData = LocationData & { postalCode?: string };
 
   // ── Props from backend ─────────────────────────────────────────────────────
   const {
-    draft = null,
-    expired = false,
+    state: onboardingState = 'active',
+    project = null,
+    selectedVendors = [],
     currencies = [],
+    recovery = null,
   }: {
-    draft?: OnboardingDraft | null;
-    expired?: boolean;
+    state?: 'active' | 'expired';
+    project?: ProjectPrefill | null;
+    selectedVendors?: SelectedVendor[];
     currencies?: { code: string; name: string }[];
+    recovery?: RecoveryLinks | null;
   } = $props();
 
   const flash = $derived($page.props.flash || {});
+  const expired = $derived(onboardingState === 'expired');
 
   // ── Currency sort ──────────────────────────────────────────────────────────
   const commonCurrencyCodes = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CNY', 'INR', 'MXN', 'BRL'];
@@ -62,11 +84,10 @@
   let processing    = $state(false);
   let errors        = $state<Record<string, string>>({});
 
-  let title          = $state('');
-  let description    = $state(draft?.projectBlurb ?? '');
-  let location       = $state<LocationData | null>(
-    draft?.postalCode ? { label: draft.postalCode, postalCode: draft.postalCode } as LocationData : null
-  );
+  const initialProject = untrack(() => project);
+  let title          = $state(initialProject?.title ?? '');
+  let description    = $state(initialProject?.description ?? '');
+  let location       = $state<OnboardingLocationData | null>(normalizeProjectLocation(initialProject?.location));
   let startDate      = $state('');
   let endDate        = $state('');
   let deadline       = $state('');
@@ -74,7 +95,69 @@
   let budgetCurrency = $state('USD');
   let goals          = $state('');
 
-  const selectedVendors = draft?.selectedVendors ?? [];
+  function normalizeProjectLocation(
+    value: Record<string, unknown> | null | undefined
+  ): OnboardingLocationData | null {
+    if (!value) return null;
+
+    const formattedAddress =
+      typeof value.formatted_address === 'string'
+        ? value.formatted_address
+        : typeof value.formattedAddress === 'string'
+          ? value.formattedAddress
+          : typeof value.postalCode === 'string'
+            ? value.postalCode
+            : typeof value.postcode === 'string'
+              ? value.postcode
+              : '';
+
+    if (!formattedAddress) return null;
+
+    return {
+      city:
+        typeof value.city === 'string'
+          ? value.city
+          : typeof value.locality === 'string'
+            ? value.locality
+            : formattedAddress,
+      state:
+        typeof value.state === 'string'
+          ? value.state
+          : typeof value.region === 'string'
+            ? value.region
+            : '',
+      postcode:
+        typeof value.postcode === 'string'
+          ? value.postcode
+          : typeof value.postalCode === 'string'
+            ? value.postalCode
+            : undefined,
+      formatted_address: formattedAddress,
+      lat: typeof value.lat === 'number' ? value.lat : null,
+      lon: typeof value.lon === 'number' ? value.lon : null,
+      postalCode:
+        typeof value.postalCode === 'string'
+          ? value.postalCode
+          : typeof value.postcode === 'string'
+            ? value.postcode
+            : undefined,
+    };
+  }
+
+  function formatVendorLocation(value: VendorLocation | null): string {
+    if (!value) return '';
+    if (value.formatted_address) return value.formatted_address;
+    return [value.address, value.locality, value.region, value.postcode, value.country]
+      .filter(Boolean)
+      .join(', ');
+  }
+
+  onMount(() => {
+    if (onboardingState === 'expired') {
+      localStorage.removeItem('envoy_onboarding_token');
+      localStorage.removeItem('envoy_seen');
+    }
+  });
 
   // ── Step nav ───────────────────────────────────────────────────────────────
   function nextStep() {
@@ -103,11 +186,17 @@
       ...(budgetAmount !== '' ? { budgetAmount: Number(budgetAmount) } : {}),
       ...(budgetCurrency ? { budgetCurrency } : {}),
       ...(goals.trim() ? { goals: goals.trim() } : {}),
-      isActive: true,
     };
   }
 
   function submitProject() {
+    if (processing) return;
+    if (!title.trim()) {
+      errors = { title: 'Project title is required.' };
+      currentStep = 0;
+      return;
+    }
+
     processing = true;
     errors = {};
 
@@ -118,12 +207,11 @@
         // Return to step 0 on title errors so user sees them
         if (formErrors?.title) currentStep = 0;
       },
-      onSuccess: (page) => {
-        // Backend provides redirectTo — follow it
-        const redirectTo = (page.props as Record<string, unknown>).redirectTo as string | undefined;
-        if (redirectTo) {
-          router.visit(redirectTo);
-        }
+      onSuccess: () => {
+        // The server redirects to the created project. Clear browser-only draft
+        // state after that redirect succeeds; the server draft is already consumed.
+        localStorage.removeItem('envoy_onboarding_token');
+        localStorage.removeItem('envoy_seen');
       },
     });
   }
@@ -147,8 +235,8 @@
         <h1 class="text-2xl font-bold">Your session has expired</h1>
         <p class="text-surface-600-400">The onboarding session that brought you here has expired or already been used.</p>
         <div class="flex flex-col sm:flex-row gap-3 justify-center">
-          <a href="/dashboard" class="btn preset-filled-primary-500">Go to Dashboard</a>
-          <a href="/" class="btn preset-tonal">Start a new vendor search</a>
+          <a href={recovery?.dashboardUrl ?? '/dashboard'} class="btn preset-filled-primary-500">Go to Dashboard</a>
+          <a href={recovery?.vendorSearchUrl ?? '/'} class="btn preset-tonal">Start a new vendor search</a>
         </div>
       </div>
 
@@ -164,12 +252,18 @@
         </aside>
       {/if}
 
+      {#if flash.partial_success}
+        <aside class="card preset-tonal-warning p-4" role="status">
+          <p>{flash.partial_success}</p>
+        </aside>
+      {/if}
+
       <!-- Selected vendor review -->
       {#if selectedVendors.length > 0}
         <section class="space-y-3">
           <h2 class="font-medium text-sm text-surface-600-400 uppercase tracking-wide">Vendors you selected</h2>
           <ul class="space-y-2" role="list">
-            {#each selectedVendors as vendor (vendor.uuid)}
+            {#each selectedVendors as vendor (vendor.vendorListingUuid)}
               <li class="flex items-start gap-3 rounded-xl border border-surface-200-800 bg-surface-50-950/30 p-3">
                 <div class="flex-1 min-w-0 space-y-0.5">
                   <div class="flex items-center gap-2 flex-wrap">
@@ -189,17 +283,14 @@
                   </div>
                   {#if vendor.location}
                     <p class="text-xs text-surface-500 flex items-center gap-1">
-                      <MapPinIcon class="size-3 shrink-0" />{vendor.location}
+                      <MapPinIcon class="size-3 shrink-0" />{formatVendorLocation(vendor.location)}
                     </p>
                   {/if}
                   {#if vendor.categories.length > 0}
                     <p class="text-xs text-surface-500">{vendor.categories.join(' · ')}</p>
                   {/if}
-                  {#if !vendor.hasEmail}
-                    <p class="text-xs text-surface-500 flex items-center gap-1">
-                      <MailIcon class="size-3 shrink-0" />
-                      No email on file
-                    </p>
+                  {#if vendor.consumerOwned && vendor.ownershipWarning}
+                    <p class="text-xs text-warning-600-400">{vendor.ownershipWarning}</p>
                   {/if}
                 </div>
               </li>

@@ -2,7 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import UserRoleService from '#services/user_role_service'
 
 export default class VendorOnboardingController {
-  async pending({ auth, response }: HttpContext) {
+  async pending({ auth, inertia, response }: HttpContext) {
     const user = auth.getUserOrFail()
 
     if (!(await UserRoleService.isVendor(user))) {
@@ -13,8 +13,8 @@ export default class VendorOnboardingController {
       return response.redirect('/vendor/listing')
     }
 
-    return response.ok({
-      status: 'PENDING',
+    return inertia.render('vendors/pending', {
+      vendorName: user.fullName,
       vendorApprovalStatus: user.vendorApprovalStatus ?? 'PENDING',
     })
   }

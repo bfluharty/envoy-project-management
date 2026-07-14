@@ -72,7 +72,7 @@ Relevant current behavior:
 2. Let anonymous consumers describe a project and enter a ZIP code.
 3. Use the reasoning-engine to infer up to four relevant vendor search classifications and Foursquare search queries.
 4. Use project-management to call Foursquare through the existing vendor search service.
-5. Show up to eight Foursquare vendor results, prioritizing vendors with email while retaining high-ranking vendors without email when needed to fill the result set.
+5. Show up to eight vendor results. Existing Envoy listings that match an inferred category and the search postal-code radius rank first regardless of claim status; remaining results prioritize vendors with email while retaining high-ranking vendors without email when needed to fill the result set.
 6. Persist every normalized Foursquare result as a global `vendor_listing`, then store recommended and selected listing UUIDs on the anonymous draft for 24 hours.
 7. Let consumers register and auto-login.
 8. After registration, send onboarding users directly to a first-project completion screen with project details prefilled.
@@ -252,8 +252,9 @@ Project-management inserts or reuses vendor_listings for every normalized result
   v
 Top recommendation list
   - up to eight results
-  - results with email first, then results without email
-  - each email group sorted by date_refreshed desc, then Foursquare relevance
+  - relevant existing Envoy listings first, whether claimed or unclaimed
+  - within that tier and the remaining live-result tier, results with email first, then results without email
+  - each email group sorted by date_refreshed desc, then source relevance
   - "Onboarded to Envoy" only when claim_status = CLAIMED
   - consumer-owned listings show an unverified ownership warning
   |
@@ -374,12 +375,13 @@ Project-management should call Foursquare directly because:
 
 Return at most eight recommendations. Priority should be:
 
-1. Results with email before results without email.
-2. Within each email-presence group, `date_refreshed` descending.
-3. Foursquare relevance order.
-4. Name ascending for stable ordering.
+1. Existing active, non-superseded Envoy listings that match an inferred Foursquare category ID and a postal code in the configured search radius.
+2. Within the relevant-existing tier and then within the remaining live-result tier, results with email before results without email.
+3. Within each email-presence group, `date_refreshed` descending.
+4. Source relevance order.
+5. Name ascending for stable ordering.
 
-For example, if five eligible results have email and five do not, return all five with email followed by the top three without email.
+Claim status alone never grants ranking priority: an unrelated claimed listing is excluded, while a relevant unclaimed listing receives the same relevant-existing boost as a relevant claimed listing. Apply the eight-result cap only after merging and deduplicating relevant existing listings with newly persisted live results.
 
 Deduplication:
 
@@ -611,7 +613,7 @@ Keep the committed project and vendor links. Return the canonical `/projects/:pr
 - Limit inferred vendor types/classifications to 4.
 - Normalize Foursquare results.
 - Insert or reuse a `vendor_listing` for every normalized result.
-- Rank email-bearing results first, then results without email.
+- Rank relevant existing listings first regardless of claim status, then rank each result tier with email-bearing results before results without email.
 - Return at most eight recommendations while retaining no-email results when needed.
 - Store recommended and selected vendor listing UUID arrays on the onboarding draft.
 - Merge, rank, and dedupe search-originated recommendations without forcing dedupe on manual consumer listings.

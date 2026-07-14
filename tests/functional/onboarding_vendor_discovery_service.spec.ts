@@ -1,5 +1,6 @@
 import { test } from '@japa/runner'
 import { strict as assert } from 'node:assert'
+import { DateTime } from 'luxon'
 import { validate as validateUuid, version as uuidVersion, v4 as uuidv4 } from 'uuid'
 import testUtils from '@adonisjs/core/services/test_utils'
 import AnonymousOnboardingDraft from '#models/anonymous_onboarding_draft'
@@ -8,6 +9,7 @@ import OnboardingVendorDiscoveryService, {
   VendorDiscoveryDependencyError,
   normalizeFoursquarePlace,
   normalizeVendorName,
+  rankPersistedListings,
   validateVendorSearches,
 } from '#services/onboarding_vendor_discovery_service'
 import ReasoningEngineService from '#services/reasoning_engine_service'
@@ -124,10 +126,89 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
     assert.equal(candidate.dateRefreshed, '2026-05-20')
   })
 
+  test('ranks relevant existing listings first, then by email, freshness, relevance, and name', async () => {
+    const createListing = (input: {
+      name: string
+      email: string | null
+      dateRefreshed: string
+      claimStatus?: 'CLAIMED' | 'UNCLAIMED'
+    }) =>
+      VendorListing.create({
+        name: input.name,
+        email: input.email,
+        originator: 'SEARCH',
+        dateRefreshed: DateTime.fromISO(input.dateRefreshed),
+        claimStatus: input.claimStatus ?? 'UNCLAIMED',
+        isActive: true,
+      })
+
+    const [
+      olderEmail,
+      lowerRelevance,
+      nameZulu,
+      nameAlpha,
+      claimedNoEmail,
+      relevantExistingNoEmail,
+    ] = await Promise.all([
+      createListing({
+        name: 'Older Email',
+        email: 'older@example.com',
+        dateRefreshed: '2026-06-01',
+      }),
+      createListing({
+        name: 'Lower Relevance',
+        email: 'lower@example.com',
+        dateRefreshed: '2026-07-01',
+      }),
+      createListing({ name: 'Zulu', email: 'zulu@example.com', dateRefreshed: '2026-07-01' }),
+      createListing({ name: 'Alpha', email: 'alpha@example.com', dateRefreshed: '2026-07-01' }),
+      createListing({
+        name: 'Claimed Without Email',
+        email: null,
+        dateRefreshed: '2026-12-01',
+        claimStatus: 'CLAIMED',
+      }),
+      createListing({
+        name: 'Relevant Existing Without Email',
+        email: null,
+        dateRefreshed: '2025-01-01',
+      }),
+    ])
+
+    const ranked = rankPersistedListings([
+      { listing: olderEmail, relevanceRank: 0 },
+      { listing: lowerRelevance, relevanceRank: 4 },
+      { listing: nameZulu, relevanceRank: 1 },
+      { listing: nameAlpha, relevanceRank: 1 },
+      { listing: claimedNoEmail, relevanceRank: 0 },
+      {
+        listing: relevantExistingNoEmail,
+        relevanceRank: 3,
+        isRelevantExistingListing: true,
+      },
+    ])
+
+    assert.deepEqual(
+      ranked.map(({ listing }) => listing.name),
+      [
+        'Relevant Existing Without Email',
+        'Alpha',
+        'Zulu',
+        'Lower Relevance',
+        'Older Email',
+        'Claimed Without Email',
+      ]
+    )
+  })
+
   test('creates draft, searches Foursquare, dedupes, ranks, matches listings, and persists recommendations', async () => {
     const existingFsqPlaceId = `existing-fsq-${uuidv4()}`
     const existingEmail = `existing-${uuidv4()}@example.com`
     const noEmailFsqPlaceId = `no-email-${uuidv4()}`
+    const sharedEmail = `shared-${uuidv4()}@example.com`
+    const oldSharedFsqPlaceId = `old-shared-${uuidv4()}`
+    const newSharedFsqPlaceId = `new-shared-${uuidv4()}`
+    const hvacFsqPlaceId = `hvac-${uuidv4()}`
 
     await VendorListing.create({
       name: 'Existing Electric',
@@ -162,10 +243,9 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
       if (query === 'commercial painter') {
         return [
           {
-            fsq_place_id: 'old-shared',
+            fsq_place_id: oldSharedFsqPlaceId,
             name: 'Shared Co',
-            email: 'shared@example.com',
-            tel: '+18045550111',
+            email: sharedEmail,
             date_refreshed: '2026-01-01',
             categories: [{ name: 'Painter' }],
             location: { postcode: '23220' },
@@ -197,10 +277,9 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
       if (query === 'commercial plumber') {
         return [
           {
-            fsq_place_id: 'new-shared',
+            fsq_place_id: newSharedFsqPlaceId,
             name: 'Shared Co Updated',
-            email: 'shared@example.com',
-            tel: '+18045550333',
+            email: sharedEmail,
             website: 'https://shared.example',
             date_refreshed: '2026-07-01',
             categories: [{ name: 'Plumber' }],
@@ -211,9 +290,9 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
 
       return [
         {
-          fsq_place_id: 'hvac-1',
+          fsq_place_id: hvacFsqPlaceId,
           name: 'HVAC One',
-          email: 'hvac@example.com',
+          email: `hvac-${uuidv4()}@example.com`,
           date_refreshed: '2026-05-01',
           categories: [{ name: 'HVAC' }],
           location: { postcode: '23220' },
@@ -240,12 +319,15 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
     )
     assert.deepEqual(calls[1].fsqCategoryIds, ['electrician-category-id', 'lighting-category-id'])
     assert.deepEqual(calls[0].fsqCategoryIds, [])
-    assert.equal(response.vendors.length, 4)
+    assert.deepEqual(
+      response.vendors.map((vendor) => vendor.name),
+      ['HVAC One', 'Shared Co', 'Existing Electric', 'No Email Vendor']
+    )
     assert.deepEqual(
       response.vendors.map((vendor) => vendor.hasEmail),
       [true, true, true, false]
     )
-    assert.equal(response.vendors[0].name, 'Existing Electric')
+    assert.equal(response.vendors[0].name, 'HVAC One')
     assert.equal(response.vendors[3].name, 'No Email Vendor')
     assert.equal('email' in response.vendors[0], false)
     assert.equal('sourcePayload' in response.vendors[0], false)
@@ -337,7 +419,40 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
     )
   })
 
-  test('uses five relevant nearby listings without calling Foursquare', async () => {
+  test('applies the eight-result cap across multiple inferred searches', async () => {
+    stubReasoning({
+      vendorSearches: [
+        { classification: 'Contractor', query: 'multi contractor' },
+        { classification: 'Designer', query: 'multi designer' },
+      ],
+    })
+    const batchUuid = uuidv4()
+    stubFoursquare((query) =>
+      Array.from({ length: 6 }, (_, index) => ({
+        fsq_place_id: `${batchUuid}-${query}-${index}`,
+        name: `${query} Vendor ${index}`,
+        email: `${batchUuid}-${query}-${index}@example.com`,
+        date_refreshed: `2026-06-${String(index + 1).padStart(2, '0')}`,
+      }))
+    )
+
+    const response = await OnboardingVendorDiscoveryService.search({
+      projectDescription: 'I need contractors and designers for a commercial renovation project.',
+      postalCode: '23220',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    assert.equal(response.vendors.length, 8)
+    assert.equal(
+      await VendorListing.query()
+        .whereLike('fsq_place_id', `${batchUuid}-%`)
+        .count('* as total')
+        .then((rows) => Number(rows[0].$extras.total)),
+      12
+    )
+  })
+
+  test('always calls Foursquare and falls back to relevant nearby listings when live results are empty', async () => {
     const categoryId = `internal-category-${uuidv4()}`
     await VendorListing.createMany([
       ...['23220', '23173', '23219', '23221', '23222'].map((postcode, index) => ({
@@ -393,10 +508,13 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
       anonymousSessionUuid: uuidv4(),
     })
 
-    assert.equal(foursquareCallCount, 0)
+    assert.equal(foursquareCallCount, 1)
     assert.equal(response.vendors.length, 5)
-    assert.equal(response.vendors[0].name, 'Internal Vendor 4')
-    assert.equal(response.vendors[0].onboardedToEnvoy, true)
+    assert.equal(response.vendors[0].name, 'Internal Vendor 0')
+    assert.equal(
+      response.vendors.find((vendor) => vendor.name === 'Internal Vendor 4')?.onboardedToEnvoy,
+      true
+    )
     assert.equal(
       response.vendors.some((vendor) => vendor.name === 'Distant Internal Vendor'),
       false
@@ -407,20 +525,32 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
     )
   })
 
-  test('supplements fewer than five internal listings to eight with Foursquare', async () => {
+  test('prioritizes relevant existing listings and then fills with successful live results', async () => {
     const categoryId = `supplement-category-${uuidv4()}`
-    await VendorListing.createMany(
-      ['Claimed Internal', 'Unclaimed Internal A', 'Unclaimed Internal B'].map((name, index) => ({
-        name,
-        email: `supplement-internal-${index}@example.com`,
-        originator: (index === 0 ? 'VENDOR' : 'SEARCH') as 'VENDOR' | 'SEARCH',
-        categories: ['Supplement Category'],
-        fsqCategoryIds: [categoryId],
+    await VendorListing.createMany([
+      ...['Claimed Internal', 'Unclaimed Internal A', 'Unclaimed Internal B'].map(
+        (name, index) => ({
+          name,
+          email: `supplement-internal-${index}@example.com`,
+          originator: (index === 0 ? 'VENDOR' : 'SEARCH') as 'VENDOR' | 'SEARCH',
+          categories: ['Supplement Category'],
+          fsqCategoryIds: [categoryId],
+          location: { postcode: '23220' },
+          claimStatus: (index === 0 ? 'CLAIMED' : 'UNCLAIMED') as 'CLAIMED' | 'UNCLAIMED',
+          isActive: true,
+        })
+      ),
+      {
+        name: 'Unrelated Claimed Vendor',
+        email: 'unrelated-claimed@example.com',
+        originator: 'VENDOR' as const,
+        categories: ['Unrelated Category'],
+        fsqCategoryIds: [`unrelated-${categoryId}`],
         location: { postcode: '23220' },
-        claimStatus: (index === 0 ? 'CLAIMED' : 'UNCLAIMED') as 'CLAIMED' | 'UNCLAIMED',
+        claimStatus: 'CLAIMED' as const,
         isActive: true,
-      }))
-    )
+      },
+    ])
 
     stubReasoning({
       vendorSearches: [
@@ -459,6 +589,48 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
       response.vendors.slice(3).every((vendor) => vendor.name.startsWith('External Vendor')),
       true
     )
+    assert.equal(
+      response.vendors.some((vendor) => vendor.name === 'Unrelated Claimed Vendor'),
+      false
+    )
+  })
+
+  test('returns cached matching listings with a live-search warning when Foursquare is unavailable', async () => {
+    const categoryId = `fallback-category-${uuidv4()}`
+    const listing = await VendorListing.create({
+      name: 'Cached Fallback Vendor',
+      email: `cached-fallback-${uuidv4()}@example.com`,
+      originator: 'SEARCH',
+      categories: ['Fallback Category'],
+      fsqCategoryIds: [categoryId],
+      location: { postcode: '23220' },
+      claimStatus: 'UNCLAIMED',
+      isActive: true,
+    })
+    stubReasoning({
+      vendorSearches: [
+        {
+          classification: 'Fallback Category',
+          query: 'fallback category',
+          fsqCategoryIds: [categoryId],
+        },
+      ],
+    })
+    stubFoursquare(() => {
+      throw new Error('foursquare unavailable')
+    })
+
+    const response = await OnboardingVendorDiscoveryService.search({
+      projectDescription: 'I need a fallback category vendor for a commercial project.',
+      postalCode: '23220',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    assert.deepEqual(
+      response.vendors.map((vendor) => vendor.vendorListingUuid),
+      [listing.uuid]
+    )
+    assert.equal(response.liveSearchUnavailable, true)
   })
 
   test('wraps reasoning and Foursquare failures as retryable dependency errors', async () => {

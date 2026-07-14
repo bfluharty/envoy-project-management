@@ -7,7 +7,6 @@ import VendorService, { type SearchVendorCandidate } from '#services/vendor_serv
 import { getPostalCodesWithinRadius, normalizeVendorListingName } from '#utils/vendor_listing_utils'
 
 const MAX_VENDOR_SEARCHES = 4
-const MIN_INTERNAL_RECOMMENDATIONS = 5
 const MAX_RECOMMENDATIONS_PER_CATEGORY = 8
 
 export const NO_VENDOR_RESULTS = 'NO_VENDOR_RESULTS'
@@ -26,13 +25,14 @@ export type RankedVendorCandidate = SearchVendorCandidate & {
 type PersistedRankedListing = {
   listing: VendorListing
   relevanceRank: number
-  sourcePriority: number
+  isRelevantExistingListing?: boolean
 }
 
 export type VendorDiscoveryResult = {
   vendorSearches: VendorDiscoverySearch[]
   listings: VendorListing[]
   emptyStateReason?: string
+  liveSearchUnavailable?: boolean
 }
 
 export class VendorDiscoveryDependencyError extends Error {
@@ -257,8 +257,8 @@ export function rankPersistedListings(candidates: PersistedRankedListing[]) {
     const existing = byUuid.get(candidate.listing.uuid)
     if (
       !existing ||
-      candidate.sourcePriority < existing.sourcePriority ||
-      (candidate.sourcePriority === existing.sourcePriority &&
+      (candidate.isRelevantExistingListing && !existing.isRelevantExistingListing) ||
+      (candidate.isRelevantExistingListing === existing.isRelevantExistingListing &&
         candidate.relevanceRank < existing.relevanceRank)
     ) {
       byUuid.set(candidate.listing.uuid, candidate)
@@ -266,14 +266,9 @@ export function rankPersistedListings(candidates: PersistedRankedListing[]) {
   }
 
   return [...byUuid.values()].sort((left, right) => {
-    const claimDelta =
-      Number(right.listing.claimStatus === 'CLAIMED') -
-      Number(left.listing.claimStatus === 'CLAIMED')
-    if (claimDelta !== 0) return claimDelta
-
-    if (left.sourcePriority !== right.sourcePriority) {
-      return left.sourcePriority - right.sourcePriority
-    }
+    const relevantExistingDelta =
+      Number(!!right.isRelevantExistingListing) - Number(!!left.isRelevantExistingListing)
+    if (relevantExistingDelta !== 0) return relevantExistingDelta
 
     const emailDelta = Number(!!right.listing.email) - Number(!!left.listing.email)
     if (emailDelta !== 0) return emailDelta
@@ -294,7 +289,7 @@ async function persistCandidates(candidates: RankedVendorCandidate[]) {
   const persisted: PersistedRankedListing[] = []
   for (const candidate of dedupeCandidates(candidates)) {
     const listing = await VendorService.insertOrReuseSearchListing(candidate)
-    persisted.push({ listing, relevanceRank: candidate.relevanceRank, sourcePriority: 1 })
+    persisted.push({ listing, relevanceRank: candidate.relevanceRank })
   }
   return persisted
 }
@@ -325,6 +320,7 @@ export default class VendorDiscoveryService {
     let noEmailPlaceCount = 0
     let internalListingCount = 0
     let foursquareSearchCount = 0
+    let foursquareFailureCount = 0
     let persistedListingCount = 0
 
     for (const vendorSearch of vendorSearches) {
@@ -337,13 +333,8 @@ export default class VendorDiscoveryService {
       const internalCandidates = internalListings.map((listing, index) => ({
         listing,
         relevanceRank: index,
-        sourcePriority: 0,
+        isRelevantExistingListing: true,
       }))
-
-      if (internalListings.length >= MIN_INTERNAL_RECOMMENDATIONS) {
-        recommendationCandidates.push(...internalCandidates)
-        continue
-      }
 
       foursquareSearchCount += 1
       let places: unknown[]
@@ -358,7 +349,9 @@ export default class VendorDiscoveryService {
           { err: error, rawPlaceCount, ...logContext },
           'Foursquare vendor discovery failed'
         )
-        throw new VendorDiscoveryDependencyError('Foursquare vendor search failed')
+        foursquareFailureCount += 1
+        recommendationCandidates.push(...internalCandidates)
+        continue
       }
 
       rawPlaceCount += places.length
@@ -376,16 +369,18 @@ export default class VendorDiscoveryService {
 
       const persistedCandidates = await persistCandidates(normalizedCandidates)
       persistedListingCount += persistedCandidates.length
-      recommendationCandidates.push(
-        ...rankPersistedListings([...internalCandidates, ...persistedCandidates]).slice(
-          0,
-          MAX_RECOMMENDATIONS_PER_CATEGORY
-        )
-      )
+      recommendationCandidates.push(...internalCandidates, ...persistedCandidates)
     }
 
-    const recommendations = rankPersistedListings(recommendationCandidates)
+    const recommendations = rankPersistedListings(recommendationCandidates).slice(
+      0,
+      MAX_RECOMMENDATIONS_PER_CATEGORY
+    )
     const listings = recommendations.map(({ listing }) => listing)
+
+    if (listings.length === 0 && foursquareFailureCount > 0) {
+      throw new VendorDiscoveryDependencyError('Foursquare vendor search failed')
+    }
 
     logger.info(
       {
@@ -397,6 +392,7 @@ export default class VendorDiscoveryService {
         noEmailPlaceCount,
         internalListingCount,
         foursquareSearchCount,
+        foursquareFailureCount,
         persistedListingCount,
         recommendationCount: listings.length,
         ...logContext,
@@ -408,6 +404,7 @@ export default class VendorDiscoveryService {
       vendorSearches,
       listings,
       emptyStateReason: listings.length === 0 ? NO_VENDOR_RESULTS : undefined,
+      liveSearchUnavailable: foursquareFailureCount > 0 || undefined,
     }
   }
 }

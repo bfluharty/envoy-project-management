@@ -21,6 +21,9 @@ const EXPIRED_TOKEN_EMAIL = 'registration.test.expired@example.com'
 const INVALID_TOKEN_EMAIL = 'registration.test.invalid@example.com'
 const QUERY_TOKEN_EMAIL = 'registration.test.query@example.com'
 const VENDOR_EMAIL = 'registration.test.vendor@example.com'
+const CONSUMER_LOGIN_EMAIL = 'registration.test.consumer.login@example.com'
+const VENDOR_LOGIN_EMAIL = 'registration.test.vendor.login@example.com'
+const GENERAL_ERROR_EMAIL = 'registration.test.general.error@example.com'
 const VALID_PASSWORD = 'Password123!'
 
 function setCookieHeader(response: any) {
@@ -140,6 +143,85 @@ test.group('registration', (group) => {
     } finally {
       await AnonymousOnboardingDraft.query().where('token_uuid', tokenUuid).delete()
       await User.query().where('email', SESSION_ONBOARDING_EMAIL).delete()
+    }
+  })
+
+  test('consumer login associates a session handoff token and resumes onboarding', async ({
+    client,
+  }) => {
+    const entitlementId = await EntitlementService.getIdByCanonicalName('CONSUMER')
+    const user = await User.create({
+      fullName: 'Returning Consumer',
+      email: CONSUMER_LOGIN_EMAIL,
+      password: VALID_PASSWORD,
+      entitlementId,
+      isActive: true,
+    })
+    const { tokenUuid, draft } = await OnboardingDraftService.createDraft({
+      projectDescription: 'I need a commercial electrician for a new restaurant.',
+      postalCode: '23230',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    try {
+      const handoffResponse = await client
+        .post('/onboarding/registration-handoff')
+        .json({ onboardingToken: tokenUuid })
+
+      const response = await client
+        .post('/login')
+        .withSession(handoffResponse.session())
+        .form({ email: CONSUMER_LOGIN_EMAIL, password: VALID_PASSWORD })
+        .redirects(0)
+
+      response.assertFound()
+      response.assertHeader('location', '/onboarding/project')
+
+      const reloadedDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
+      assert.equal(reloadedDraft.registeredUserUuid, user.uuid)
+    } finally {
+      await AnonymousOnboardingDraft.query().where('token_uuid', tokenUuid).delete()
+      await User.query().where('email', CONSUMER_LOGIN_EMAIL).delete()
+    }
+  })
+
+  test('vendor login discards a consumer onboarding handoff and routes to vendor pending', async ({
+    client,
+  }) => {
+    const entitlementId = await EntitlementService.getIdByCanonicalName('VENDOR')
+    await User.create({
+      fullName: 'Returning Vendor',
+      email: VENDOR_LOGIN_EMAIL,
+      password: VALID_PASSWORD,
+      entitlementId,
+      vendorApprovalStatus: 'PENDING',
+      isActive: true,
+    })
+    const { tokenUuid, draft } = await OnboardingDraftService.createDraft({
+      projectDescription: 'I need a commercial electrician for a new restaurant.',
+      postalCode: '23230',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    try {
+      const handoffResponse = await client
+        .post('/onboarding/registration-handoff')
+        .json({ onboardingToken: tokenUuid })
+
+      const response = await client
+        .post('/login')
+        .withSession(handoffResponse.session())
+        .form({ email: VENDOR_LOGIN_EMAIL, password: VALID_PASSWORD })
+        .redirects(0)
+
+      response.assertFound()
+      response.assertHeader('location', '/vendor/pending')
+
+      const reloadedDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
+      assert.equal(reloadedDraft.registeredUserUuid, null)
+    } finally {
+      await AnonymousOnboardingDraft.query().where('token_uuid', tokenUuid).delete()
+      await User.query().where('email', VENDOR_LOGIN_EMAIL).delete()
     }
   })
 
@@ -289,10 +371,20 @@ test.group('registration', (group) => {
     client,
   }) => {
     await User.query().where('email', VENDOR_EMAIL).delete()
+    const { tokenUuid, draft } = await OnboardingDraftService.createDraft({
+      projectDescription: 'I need a commercial electrician for a new restaurant.',
+      postalCode: '23230',
+      anonymousSessionUuid: uuidv4(),
+    })
 
     try {
+      const handoffResponse = await client
+        .post('/onboarding/registration-handoff')
+        .json({ onboardingToken: tokenUuid })
+
       const response = await client
         .post('/register')
+        .withSession(handoffResponse.session())
         .form({
           fullName: 'Vendor Test User',
           email: VENDOR_EMAIL,
@@ -309,7 +401,10 @@ test.group('registration', (group) => {
       const entitlement = await UserEntitlement.findOrFail(created.entitlementId)
       assert.equal(entitlement.canonicalName, 'VENDOR')
       assert.equal(created.vendorApprovalStatus, 'PENDING')
+      const reloadedDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
+      assert.equal(reloadedDraft.registeredUserUuid, null)
     } finally {
+      await AnonymousOnboardingDraft.query().where('token_uuid', tokenUuid).delete()
       await User.query().where('email', VENDOR_EMAIL).delete()
     }
   })
@@ -318,6 +413,10 @@ test.group('registration', (group) => {
     client,
   }) => {
     const consumerEntitlementId = await EntitlementService.getIdByCanonicalName('CONSUMER')
+    const previousGoogleClientId = env.get('GOOGLE_CLIENT_ID')
+    const previousGoogleClientSecret = env.get('GOOGLE_CLIENT_SECRET')
+    env.set('GOOGLE_CLIENT_ID', 'registration-error-client-id')
+    env.set('GOOGLE_CLIENT_SECRET', 'registration-error-client-secret')
 
     await User.create({
       fullName: 'Existing User',
@@ -336,6 +435,7 @@ test.group('registration', (group) => {
           email: DUPLICATE_EMAIL,
           password: VALID_PASSWORD,
           passwordConfirmation: VALID_PASSWORD,
+          accountType: 'vendor',
         })
         .redirects(0)
 
@@ -350,10 +450,69 @@ test.group('registration', (group) => {
           errors: {
             email: 'An account with this email already exists.',
           },
+          accountType: 'vendor',
+          socialAuthProviders: [
+            {
+              provider: 'google',
+              label: 'Google',
+              href: '/auth/google?flow=registration&accountType=vendor&emailTermsAccepted=1',
+            },
+          ],
         },
       })
     } finally {
+      env.set('GOOGLE_CLIENT_ID', previousGoogleClientId)
+      env.set('GOOGLE_CLIENT_SECRET', previousGoogleClientSecret)
       await User.query().where('email', DUPLICATE_EMAIL).delete()
+    }
+  })
+
+  test('general registration errors preserve vendor selection and registration social options', async ({
+    client,
+  }) => {
+    const originalGetEntitlementId = EntitlementService.getIdByCanonicalName
+    const previousGoogleClientId = env.get('GOOGLE_CLIENT_ID')
+    const previousGoogleClientSecret = env.get('GOOGLE_CLIENT_SECRET')
+    env.set('GOOGLE_CLIENT_ID', 'registration-general-error-client-id')
+    env.set('GOOGLE_CLIENT_SECRET', 'registration-general-error-client-secret')
+    EntitlementService.getIdByCanonicalName = (async () => {
+      throw new Error('forced entitlement lookup failure')
+    }) as typeof EntitlementService.getIdByCanonicalName
+
+    try {
+      const response = await client
+        .post('/register')
+        .header('X-Inertia', 'true')
+        .form({
+          fullName: 'General Error Vendor',
+          email: GENERAL_ERROR_EMAIL,
+          password: VALID_PASSWORD,
+          passwordConfirmation: VALID_PASSWORD,
+          accountType: 'vendor',
+        })
+        .redirects(0)
+
+      response.assertStatus(200)
+      response.assertBodyContains({
+        component: 'auth/register',
+        props: {
+          flashMessage: { type: 'error', message: 'Something went wrong. Please try again.' },
+          accountType: 'vendor',
+          socialAuthProviders: [
+            {
+              provider: 'google',
+              label: 'Google',
+              href: '/auth/google?flow=registration&accountType=vendor&emailTermsAccepted=1',
+            },
+          ],
+        },
+      })
+      assert.equal(await User.findBy('email', GENERAL_ERROR_EMAIL), null)
+    } finally {
+      EntitlementService.getIdByCanonicalName = originalGetEntitlementId
+      env.set('GOOGLE_CLIENT_ID', previousGoogleClientId)
+      env.set('GOOGLE_CLIENT_SECRET', previousGoogleClientSecret)
+      await User.query().where('email', GENERAL_ERROR_EMAIL).delete()
     }
   })
 })

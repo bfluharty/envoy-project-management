@@ -111,6 +111,29 @@ test.group('onboarding draft routes', (group) => {
     assert.equal('sourcePayload' in response.body().vendors[0], false)
   })
 
+  test('restore preserves a completed empty-results recommendation step', async ({ client }) => {
+    const { tokenUuid } = await OnboardingDraftService.createDraft({
+      projectDescription: 'I need a highly specialized contractor for an unusual renovation.',
+      postalCode: '23220',
+      anonymousSessionUuid: uuidv4(),
+    })
+    await OnboardingDraftService.updateRecommendations(tokenUuid, {
+      vendorSearches: [{ classification: 'Specialist', query: 'specialist contractor' }],
+      recommendedVendorListingUuids: [],
+    })
+
+    const response = await client
+      .post('/onboarding/draft/restore')
+      .json({ onboardingToken: tokenUuid })
+
+    response.assertOk()
+    response.assertBodyContains({
+      step: 'recommendations',
+      vendors: [],
+      selectedVendorListingUuids: [],
+    })
+  })
+
   test('restore rejects invalid UUID v4 tokens', async ({ client }) => {
     const response = await client
       .post('/onboarding/draft/restore')
@@ -147,6 +170,50 @@ test.group('onboarding draft routes', (group) => {
 
     successResponse.assertOk()
     successResponse.assertBodyContains({ selectedCount: 1 })
+  })
+
+  test('vendor selection accepts and persists a canonical replacement', async ({ client }) => {
+    const superseded = await VendorListing.create({
+      name: 'Superseded Recommendation',
+      email: 'superseded-selection@example.com',
+      originator: 'SEARCH',
+      isActive: true,
+    })
+    const canonical = await VendorListing.create({
+      name: 'Canonical Recommendation',
+      email: 'canonical-selection@example.com',
+      originator: 'VENDOR',
+      claimStatus: 'CLAIMED',
+      isActive: true,
+    })
+    const { draft, tokenUuid } = await OnboardingDraftService.createDraft({
+      projectDescription: 'I need a contractor whose listing may be claimed during selection.',
+      postalCode: '23220',
+      anonymousSessionUuid: uuidv4(),
+      recommendedVendorListingUuids: [superseded.uuid],
+    })
+    superseded.supersededByVendorListingUuid = canonical.uuid
+    await superseded.save()
+
+    const selectionResponse = await client.patch('/onboarding/vendor-selection').json({
+      onboardingToken: tokenUuid,
+      selectedVendorListingUuids: [canonical.uuid],
+    })
+
+    selectionResponse.assertOk()
+    selectionResponse.assertBodyContains({ selectedCount: 1 })
+    await draft.refresh()
+    assert.deepEqual(draft.recommendedVendorListingUuids, [canonical.uuid])
+    assert.deepEqual(draft.selectedVendorListingUuids, [canonical.uuid])
+
+    const restoreResponse = await client
+      .post('/onboarding/draft/restore')
+      .json({ onboardingToken: tokenUuid })
+    restoreResponse.assertOk()
+    restoreResponse.assertBodyContains({
+      selectedVendorListingUuids: [canonical.uuid],
+      step: 'selection',
+    })
   })
 
   test('registration handoff stores token server-side and returns a token-free redirect target', async ({

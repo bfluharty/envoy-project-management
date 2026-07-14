@@ -97,7 +97,7 @@ router
 router
   .get('/dashboard', [DashboardController, 'show'])
   .as('dashboard')
-  .middleware([middleware.auth(), middleware.activeInbox()])
+  .middleware([middleware.auth(), middleware.consumer()])
 router.get('/account', [AccountController, 'show']).as('account').middleware(middleware.auth())
 router
   .get('/account/avatar/google', [AccountController, 'googleAvatar'])
@@ -136,7 +136,7 @@ router
     router.delete('/:uuid', [ContactsController, 'destroy'])
   })
   .prefix('/contacts')
-  .middleware([middleware.auth(), middleware.activeInbox()])
+  .middleware([middleware.auth(), middleware.consumer()])
 
 // UI routes for projects
 router
@@ -153,7 +153,7 @@ router
     router.post('/:uuid/chat', [ConvoController, 'chat'])
   })
   .prefix('/projects')
-  .middleware([middleware.auth(), middleware.activeInbox()])
+  .middleware([middleware.auth(), middleware.consumer()])
 
 // API routes for projects
 router
@@ -177,6 +177,7 @@ router
       .prefix('/projects')
   })
   .prefix('/api')
+  .middleware([middleware.auth(), middleware.consumer()])
 
 // API routes for vendors
 router
@@ -202,6 +203,7 @@ router
       .prefix('/vendors')
   })
   .prefix('/api')
+  .middleware([middleware.auth(), middleware.consumer()])
 
 // API routes for inbox (authenticated)
 const InboxAPIController = () => import('#controllers/api/inbox_api_controller')

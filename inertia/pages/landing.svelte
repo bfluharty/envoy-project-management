@@ -4,25 +4,41 @@
   import PublicFooter from '#components/public_footer.svelte';
   import { page } from '@inertiajs/svelte';
   import { onMount } from 'svelte';
-  import { CheckCircleIcon, AlertTriangleIcon, ShieldAlertIcon, MailIcon, MapPinIcon } from '@lucide/svelte';
+  import { CheckCircleIcon, ShieldAlertIcon, MapPinIcon } from '@lucide/svelte';
 
   // ── Types ──────────────────────────────────────────────────────────────────
+  interface VendorLocation {
+    address?: string;
+    locality?: string;
+    region?: string;
+    postcode?: string;
+    country?: string;
+    formatted_address?: string;
+  }
+
   interface VendorListing {
-    uuid: string;
+    vendorListingUuid: string;
     name: string;
-    location: string | null;
+    location: VendorLocation | null;
     categories: string[];
-    hasEmail: boolean;
     onboardedToEnvoy: boolean;
     consumerOwned: boolean;
+    ownershipWarning: string | null;
   }
 
   interface DraftRestoreResponse {
-    token: string;
-    projectBlurb: string | null;
+    projectDescription: string;
     postalCode: string | null;
-    recommendations: VendorListing[];
+    vendors: VendorListing[];
+    vendorSearches?: unknown[];
     selectedVendorListingUuids: string[];
+    step: 'intake' | 'recommendations' | 'selection';
+  }
+
+  interface VendorSearchResponse {
+    onboardingToken: string;
+    vendors: VendorListing[];
+    emptyStateReason?: 'NO_VENDOR_RESULTS';
   }
 
   // ── localStorage keys ──────────────────────────────────────────────────────
@@ -42,47 +58,80 @@
   let selected      = $state<Set<string>>(new Set());
   let selectionError = $state('');
   let persistingSelection = $state(false);
+  let continuing = $state(false);
 
   // Derived: has the anonymous user seen results?
   let seen          = $state(false);
   let restoring     = $state(false);
 
   // ── Restore on mount ───────────────────────────────────────────────────────
-  onMount(async () => {
-    const storedToken = localStorage.getItem(TOKEN_KEY);
-    if (!storedToken) return;
+  function clearStoredDraft() {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(SEEN_KEY);
+    token = null;
+    blurb = '';
+    postalCode = '';
+    recommendations = [];
+    selected = new Set();
+    blurbError = '';
+    postalError = '';
+    selectionError = '';
+    seen = false;
+  }
 
+  function isInvalidDraftResponse(response: Response) {
+    return response.status === 404 || response.status === 410 || response.status === 422;
+  }
+
+  async function restoreDraft() {
+    const storedToken = localStorage.getItem(TOKEN_KEY);
+    if (!storedToken) {
+      localStorage.removeItem(SEEN_KEY);
+      return;
+    }
+
+    token = storedToken;
     restoring = true;
+    searchError = '';
     try {
       const res = await fetch('/onboarding/draft/restore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: storedToken }),
+        body: JSON.stringify({ onboardingToken: storedToken }),
       });
 
       if (!res.ok) {
-        // Draft missing, expired, consumed, or abandoned — clear state without login redirect
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(SEEN_KEY);
-        token = null;
-        seen = false;
+        if (isInvalidDraftResponse(res)) {
+          clearStoredDraft();
+          return;
+        }
+
+        searchError = 'We could not restore your vendor search. Please try again.';
         return;
       }
 
       const data: DraftRestoreResponse = await res.json();
-      token = data.token;
-      blurb = data.projectBlurb ?? '';
+      token = storedToken;
+      blurb = data.projectDescription ?? '';
       postalCode = data.postalCode ?? '';
-      recommendations = data.recommendations ?? [];
+      recommendations = (data.vendors ?? []).slice(0, 8);
       selected = new Set(data.selectedVendorListingUuids ?? []);
-      seen = localStorage.getItem(SEEN_KEY) === 'true' && recommendations.length > 0;
+      seen =
+        localStorage.getItem(SEEN_KEY) === 'true' ||
+        data.step === 'recommendations' ||
+        data.step === 'selection' ||
+        (data.vendorSearches?.length ?? 0) > 0 ||
+        recommendations.length > 0;
     } catch {
-      // Network failure — silently clear stale state
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(SEEN_KEY);
+      // Keep the token on retryable network failures so a valid draft is not lost.
+      searchError = 'We could not restore your vendor search. Check your connection and try again.';
     } finally {
       restoring = false;
     }
+  }
+
+  onMount(() => {
+    void restoreDraft();
   });
 
   // ── Validation ─────────────────────────────────────────────────────────────
@@ -92,8 +141,8 @@
     let valid = true;
 
     const trimmedBlurb = blurb.trim();
-    if (trimmedBlurb.length < 5) {
-      blurbError = 'Please describe your project (at least 5 characters).';
+    if (trimmedBlurb.length < 20) {
+      blurbError = 'Please describe your project in at least 20 characters.';
       valid = false;
     } else if (trimmedBlurb.length > 2000) {
       blurbError = 'Description must be 2,000 characters or fewer.';
@@ -114,16 +163,13 @@
 
     searching = true;
     searchError = '';
-    selected = new Set();
-
     try {
-      const res = await fetch('/onboarding/search', {
+      const res = await fetch('/onboarding/vendor-search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          projectBlurb: blurb.trim(),
+          projectDescription: blurb.trim(),
           postalCode: postalCode.trim(),
-          ...(token ? { token } : {}),
         }),
       });
 
@@ -132,12 +178,14 @@
         return;
       }
 
-      const data: { token: string; recommendations: VendorListing[] } = await res.json();
-      token = data.token;
-      recommendations = (data.recommendations ?? []).slice(0, 8);
+      const data: VendorSearchResponse = await res.json();
+      token = data.onboardingToken;
+      recommendations = (data.vendors ?? []).slice(0, 8);
+      selected = new Set();
+      selectionError = '';
 
       // Persist token and mark seen
-      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(TOKEN_KEY, data.onboardingToken);
       localStorage.setItem(SEEN_KEY, 'true');
       seen = true;
     } catch {
@@ -149,8 +197,15 @@
 
   // ── Selection ──────────────────────────────────────────────────────────────
   async function toggleSelection(uuid: string) {
+    if (persistingSelection || continuing) return;
+
+    const previous = new Set(selected);
     const next = new Set(selected);
     if (next.has(uuid)) {
+      if (next.size === 1) {
+        selectionError = 'Select another vendor before removing your final selection.';
+        return;
+      }
       next.delete(uuid);
     } else {
       if (next.size >= 8) {
@@ -162,20 +217,35 @@
     selectionError = '';
     selected = next;
 
-    if (!token) return;
+    if (!token) {
+      selected = previous;
+      selectionError = 'Your vendor search could not be found. Please search again.';
+      return;
+    }
 
     persistingSelection = true;
     try {
-      await fetch('/onboarding/vendor-selection', {
+      const res = await fetch('/onboarding/vendor-selection', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          token,
-          selectedVendorListingUuids: [...selected],
+          onboardingToken: token,
+          selectedVendorListingUuids: [...next],
         }),
       });
+
+      if (!res.ok) {
+        if (isInvalidDraftResponse(res)) {
+          clearStoredDraft();
+          searchError = 'That vendor search is no longer available. Please start a new search.';
+        } else {
+          selected = previous;
+          selectionError = 'We could not save your selection. Please try again.';
+        }
+      }
     } catch {
-      // Non-fatal — selection is still shown in UI
+      selected = previous;
+      selectionError = 'We could not save your selection. Check your connection and try again.';
     } finally {
       persistingSelection = false;
     }
@@ -188,21 +258,60 @@
       return;
     }
 
-    // If a server-side handoff is needed before navigating away
-    if (token) {
-      try {
-        await fetch('/onboarding/registration-handoff', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token }),
-        });
-      } catch {
-        // Proceed anyway — handoff is best-effort
-      }
+    if (!token) {
+      selectionError = 'Your vendor search could not be found. Please search again.';
+      return;
     }
 
-    // Navigate to registration without token in URL
-    window.location.href = '/register?accountType=consumer';
+    continuing = true;
+    selectionError = '';
+    try {
+      // Persist the exact final selection before binding the draft to the session.
+      const selectionResponse = await fetch('/onboarding/vendor-selection', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          onboardingToken: token,
+          selectedVendorListingUuids: [...selected],
+        }),
+      });
+
+      if (!selectionResponse.ok) {
+        if (isInvalidDraftResponse(selectionResponse)) {
+          clearStoredDraft();
+          searchError = 'That vendor search is no longer available. Please start a new search.';
+        } else {
+          selectionError = 'We could not save your selection. Please try again.';
+        }
+        return;
+      }
+
+      const handoffResponse = await fetch('/onboarding/registration-handoff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ onboardingToken: token }),
+      });
+
+      if (!handoffResponse.ok) {
+        if (isInvalidDraftResponse(handoffResponse)) {
+          clearStoredDraft();
+          searchError = 'That vendor search is no longer available. Please start a new search.';
+        } else {
+          selectionError = 'We could not prepare registration. Please try again.';
+        }
+        return;
+      }
+
+      const data: { redirectTo?: string } = await handoffResponse.json();
+      const redirectTo = data.redirectTo?.startsWith('/register')
+        ? data.redirectTo
+        : '/register?accountType=consumer';
+      window.location.assign(redirectTo);
+    } catch {
+      selectionError = 'We could not prepare registration. Check your connection and try again.';
+    } finally {
+      continuing = false;
+    }
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -215,6 +324,15 @@
   function applyPrompt(prompt: string) {
     blurb = prompt;
     blurbError = '';
+  }
+
+  function formatLocation(location: VendorLocation | null): string {
+    if (!location) return '';
+    if (location.formatted_address) return location.formatted_address;
+
+    return [location.address, location.locality, location.region, location.postcode, location.country]
+      .filter(Boolean)
+      .join(', ');
   }
 </script>
 
@@ -305,7 +423,19 @@
           </div>
 
           {#if searchError}
-            <aside class="card preset-tonal-error p-3 text-sm">{searchError}</aside>
+            <aside class="card preset-tonal-error p-3 text-sm space-y-2" role="alert">
+              <p>{searchError}</p>
+              {#if token && !seen}
+                <button
+                  type="button"
+                  class="btn btn-sm preset-tonal"
+                  onclick={restoreDraft}
+                  disabled={restoring}
+                >
+                  Retry restore
+                </button>
+              {/if}
+            </aside>
           {/if}
 
           <button
@@ -348,13 +478,14 @@
               {/if}
 
               <ul class="space-y-3" role="list">
-                {#each recommendations as vendor (vendor.uuid)}
-                  {@const isSelected = selected.has(vendor.uuid)}
+                {#each recommendations as vendor (vendor.vendorListingUuid)}
+                  {@const isSelected = selected.has(vendor.vendorListingUuid)}
                   <li>
                     <button
                       type="button"
-                      onclick={() => toggleSelection(vendor.uuid)}
+                      onclick={() => toggleSelection(vendor.vendorListingUuid)}
                       aria-pressed={isSelected}
+                      disabled={searching || !!searchError || persistingSelection || continuing}
                       class="w-full text-left rounded-xl border p-4 transition-all duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 {isSelected
                         ? 'border-primary-500 bg-primary-500/10'
                         : 'border-surface-200-800 bg-surface-50-950/30 hover:bg-surface-100-900/40'}"
@@ -380,7 +511,7 @@
                           {#if vendor.location}
                             <p class="text-sm text-surface-600-400 flex items-center gap-1">
                               <MapPinIcon class="size-3.5 shrink-0" />
-                              {vendor.location}
+                              {formatLocation(vendor.location)}
                             </p>
                           {/if}
 
@@ -388,10 +519,9 @@
                             <p class="text-xs text-surface-500">{vendor.categories.join(' · ')}</p>
                           {/if}
 
-                          {#if !vendor.hasEmail}
-                            <p class="text-xs text-surface-500 flex items-center gap-1 mt-1">
-                              <MailIcon class="size-3.5 shrink-0" />
-                              No email on file — Envoy will attempt to reach out via other means
+                          {#if vendor.consumerOwned && vendor.ownershipWarning}
+                            <p class="text-xs text-warning-600-400 mt-1">
+                              {vendor.ownershipWarning}
                             </p>
                           {/if}
                         </div>
@@ -415,7 +545,7 @@
               <div class="pt-2 space-y-2">
                 <p class="text-sm text-surface-500 text-center">
                   {selected.size} of {recommendations.length} selected
-                  {#if persistingSelection}
+                  {#if persistingSelection || continuing}
                     <span class="text-xs"> · saving…</span>
                   {/if}
                 </p>
@@ -424,9 +554,17 @@
                   type="button"
                   class="btn preset-filled-primary-500 w-full"
                   onclick={handleContinue}
-                  disabled={selected.size === 0}
+                  disabled={
+                    selected.size === 0 ||
+                    searching ||
+                    !!searchError ||
+                    persistingSelection ||
+                    continuing
+                  }
                 >
-                  Continue with {selected.size > 0 ? selected.size : ''} vendor{selected.size !== 1 ? 's' : ''} →
+                  {continuing
+                    ? 'Preparing registration…'
+                    : `Continue with ${selected.size > 0 ? selected.size : ''} vendor${selected.size !== 1 ? 's' : ''} →`}
                 </button>
 
                 <p class="text-xs text-center text-surface-500">

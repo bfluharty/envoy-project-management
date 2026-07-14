@@ -5,6 +5,8 @@ import { CheckIcon, SearchIcon, XIcon } from '@lucide/svelte';
 export interface LocationData {
     city: string;
     state: string;
+    postcode?: string;
+    country?: string;
     formatted_address: string;
     lat: number | null;
     lon: number | null;
@@ -21,8 +23,10 @@ interface NominatimResult {
         city?: string;
         town?: string;
         village?: string;
+        county?: string;
         state?: string;
         postcode?: string;
+        country?: string;
     };
 }
 
@@ -44,6 +48,7 @@ let loading = $state(false);
 let fetchError = $state<string | null>(null);
 let activeIndex = $state(-1);
 let isConfirmed = $state(false);
+let userEditing = $state(false);
 
 let timerId: ReturnType<typeof setTimeout> | null = null;
 let controller: AbortController | null = null;
@@ -52,7 +57,7 @@ const listboxId = $derived(`location-listbox-${id}`);
 
 // Sync display string when parent resets or changes value (only when dropdown is closed)
 $effect(() => {
-    if (!isOpen) {
+    if (!isOpen && !userEditing) {
         query = value?.formatted_address ?? value?.city ?? '';
         isConfirmed = value !== null;
     }
@@ -72,13 +77,15 @@ function getDisplayName(result: NominatimResult): string {
     const a = result.address;
     const street = [a.house_number, a.road].filter(Boolean).join(' ');
     const city = a.city ?? a.town ?? a.village ?? a.suburb ?? '';
-    const parts = [street, city, a.state].filter(Boolean);
-    return parts.join(', ');
+    const parts = [street, city, a.state, a.postcode, a.country].filter(Boolean);
+    return parts.join(', ') || result.display_name;
 }
 
 function onInput() {
+    userEditing = true;
     isConfirmed = false;
     fetchError = null;
+    if (value !== null) onchange(null);
     clearTimeout(timerId!);
     if (query.trim().length < 2) {
         results = [];
@@ -87,27 +94,32 @@ function onInput() {
     }
     timerId = setTimeout(async () => {
         controller?.abort();
-        controller = new AbortController();
+        const requestController = new AbortController();
+        controller = requestController;
+        const searchQuery = query.trim();
         loading = true;
         isOpen = true;
         try {
             const res = await fetch(
-                `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&countrycodes=us`,
-                { signal: controller.signal }
+                `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=5&addressdetails=1`,
+                { signal: requestController.signal }
             );
-            const data: NominatimResult[] = await res.json();
-            if (query.trim().length >= 2) {
+            if (!res.ok) throw new Error(`Location search failed (${res.status})`);
+            const payload: unknown = await res.json();
+            if (!Array.isArray(payload)) throw new Error('Location search returned an invalid response');
+            const data = payload as NominatimResult[];
+            if (query.trim() === searchQuery && searchQuery.length >= 2) {
                 results = data;
                 activeIndex = -1;
             }
-        } catch (e: any) {
-            if (e.name !== 'AbortError') {
+        } catch (error: unknown) {
+            if (!(error instanceof Error && error.name === 'AbortError')) {
                 fetchError = 'Search unavailable — save without a location or try again.';
                 results = [];
-                isOpen = false;
+                isOpen = true;
             }
         } finally {
-            loading = false;
+            if (controller === requestController) loading = false;
         }
     }, 400);
 }
@@ -118,11 +130,14 @@ function selectResult(result: NominatimResult) {
     const loc: LocationData = {
         city,
         state,
+        postcode: result.address.postcode,
+        country: result.address.country,
         formatted_address: getDisplayName(result),
         lat: parseFloat(result.lat),
         lon: parseFloat(result.lon),
     };
     query = loc.formatted_address;
+    userEditing = false;
     isConfirmed = true;
     results = [];
     isOpen = false;
@@ -139,6 +154,7 @@ function saveAsEntered() {
         lat: null,
         lon: null,
     };
+    userEditing = false;
     isConfirmed = true;
     results = [];
     isOpen = false;
@@ -148,6 +164,7 @@ function saveAsEntered() {
 
 function clearLocation() {
     query = '';
+    userEditing = false;
     isConfirmed = false;
     results = [];
     isOpen = false;
@@ -286,7 +303,14 @@ onDestroy(() => {
                                {activeIndex === i
                                    ? 'bg-primary-500/20 border-l-2 border-primary-500'
                                    : 'hover:bg-surface-200-800'}"
-                        onmousedown={(e) => { e.preventDefault(); selectResult(result); }}>
+                        onmousedown={(e) => e.preventDefault()}
+                        onkeydown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                selectResult(result);
+                            }
+                        }}
+                        onclick={() => selectResult(result)}>
                         <span class="text-sm">{getDisplayName(result)}</span>
                     </li>
                 {/each}

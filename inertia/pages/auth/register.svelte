@@ -1,5 +1,6 @@
 <script lang="ts">
   import { router } from '@inertiajs/svelte'
+  import { untrack } from 'svelte'
   import AuthPageShell from '#components/auth_page_shell.svelte'
 
   interface SocialAuthProvider {
@@ -26,18 +27,44 @@
   let email = $state('')
   let password = $state('')
   let passwordConfirmation = $state('')
+  let selectedAccountType = $state<'consumer' | 'vendor'>(untrack(() => accountType))
   let processing = $state(false)
+  let socialProcessing = $state<string | null>(null)
   let errors = $state<Record<string, string>>({})
   let showError = $state(false)
   let errorMessage = $state('')
   let flashType = $state<'error' | 'success' | null>(null)
   let flashText = $state('')
 
+  const TOKEN_KEY = 'envoy_onboarding_token'
+  const SEEN_KEY = 'envoy_seen'
+
+  function getOnboardingToken(): string | undefined {
+    const token = localStorage.getItem(TOKEN_KEY)
+    if (!token) return undefined
+
+    const uuidV4Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    if (uuidV4Pattern.test(token)) return token
+
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(SEEN_KEY)
+    return undefined
+  }
+
+  function socialHref(provider: SocialAuthProvider): string {
+    const url = new URL(provider.href, 'http://envoy.local')
+    url.searchParams.set('accountType', selectedAccountType)
+    return `${url.pathname}${url.search}`
+  }
+
   function handleSubmit(event: Event) {
     event.preventDefault()
     processing = true
     errors = {}
     showError = false
+
+    const onboardingToken =
+      selectedAccountType === 'consumer' ? getOnboardingToken() : undefined
 
     router.post(
       '/register',
@@ -46,6 +73,8 @@
         email,
         password,
         passwordConfirmation,
+        accountType: selectedAccountType,
+        ...(onboardingToken ? { onboardingToken } : {}),
       },
       {
         onFinish: () => {
@@ -58,6 +87,45 @@
         },
       }
     )
+  }
+
+  async function handleSocialAuth(event: MouseEvent, provider: SocialAuthProvider) {
+    event.preventDefault()
+    if (socialProcessing) return
+    showError = false
+    socialProcessing = provider.provider
+
+    try {
+      const onboardingToken =
+        selectedAccountType === 'consumer' ? getOnboardingToken() : undefined
+
+      if (onboardingToken) {
+        const response = await fetch('/onboarding/registration-handoff', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ onboardingToken }),
+        })
+
+        if (!response.ok) {
+          if (response.status === 404 || response.status === 410 || response.status === 422) {
+            localStorage.removeItem(TOKEN_KEY)
+            localStorage.removeItem(SEEN_KEY)
+            errorMessage = 'Your vendor search is no longer available. Start a new search to continue with those vendors.'
+          } else {
+            errorMessage = 'We could not preserve your vendor selections. Please try again.'
+          }
+          showError = true
+          return
+        }
+      }
+
+      window.location.assign(socialHref(provider))
+    } catch {
+      errorMessage = 'We could not preserve your vendor selections. Check your connection and try again.'
+      showError = true
+    } finally {
+      socialProcessing = null
+    }
   }
 
   $effect(() => {
@@ -79,8 +147,62 @@
     </p>
   </div>
 
+  <fieldset class="mt-8 space-y-2">
+    <legend class="label font-medium">What brings you to Envoy?</legend>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <label
+        class="cursor-pointer rounded-xl border p-4 transition-colors {selectedAccountType === 'consumer'
+          ? 'border-primary-500 bg-primary-500/10'
+          : 'border-surface-200-800 hover:bg-surface-100-900/40'}"
+      >
+        <span class="flex items-start gap-3">
+          <input
+            type="radio"
+            name="accountType"
+            value="consumer"
+            bind:group={selectedAccountType}
+            class="mt-1 accent-primary-500"
+          />
+          <span>
+            <span class="block font-medium">I am planning a project</span>
+            <span class="block text-sm text-surface-600-400">Find and work with trusted pros.</span>
+          </span>
+        </span>
+      </label>
+
+      <label
+        class="cursor-pointer rounded-xl border p-4 transition-colors {selectedAccountType === 'vendor'
+          ? 'border-primary-500 bg-primary-500/10'
+          : 'border-surface-200-800 hover:bg-surface-100-900/40'}"
+      >
+        <span class="flex items-start gap-3">
+          <input
+            type="radio"
+            name="accountType"
+            value="vendor"
+            bind:group={selectedAccountType}
+            class="mt-1 accent-primary-500"
+          />
+          <span>
+            <span class="block font-medium">I am a pro or vendor</span>
+            <span class="block text-sm text-surface-600-400">Create a professional account.</span>
+          </span>
+        </span>
+      </label>
+    </div>
+    {#if errors.accountType}
+      <p class="text-error-500 text-sm">{errors.accountType}</p>
+    {/if}
+  </fieldset>
+
+  {#if showError}
+    <aside class="card preset-tonal-error mt-4 p-4" role="alert">
+      <p>{errorMessage}</p>
+    </aside>
+  {/if}
+
   {#if passwordAuthEnabled}
-    <form class="mt-8 space-y-6" onsubmit={handleSubmit}>
+    <form class="mt-6 space-y-6" onsubmit={handleSubmit}>
       {#if flashType === 'success'}
         <aside
           class="card border border-success-500/20 bg-success-500/10 p-4 text-surface-950 dark:border-surface-200-800 dark:bg-surface-100-900/40 dark:text-surface-50"
@@ -92,12 +214,6 @@
       {#if flashType === 'error' && !showError}
         <aside class="card preset-tonal-error p-4">
           <p>{flashText}</p>
-        </aside>
-      {/if}
-
-      {#if showError}
-        <aside class="card preset-tonal-error p-4">
-          <p>{errorMessage}</p>
         </aside>
       {/if}
 
@@ -215,9 +331,11 @@
     <div class="space-y-3">
       {#each socialAuthProviders as provider (provider.provider)}
         <a
-          href={provider.href}
-          class="btn btn-outline w-full gap-2"
-          data-account-type={accountType}
+          href={socialHref(provider)}
+          class="btn btn-outline w-full gap-2 {socialProcessing ? 'pointer-events-none opacity-60' : ''}"
+          data-account-type={selectedAccountType}
+          aria-disabled={socialProcessing ? 'true' : undefined}
+          onclick={(event) => handleSocialAuth(event, provider)}
         >
           {#if provider.provider === 'google'}
             <svg class="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
@@ -246,7 +364,9 @@
               <span class="bg-[#ffb900]"></span>
             </span>
           {/if}
-          Continue with {provider.label}
+          {socialProcessing === provider.provider
+            ? `Connecting to ${provider.label}...`
+            : `Continue with ${provider.label}`}
         </a>
       {/each}
     </div>
