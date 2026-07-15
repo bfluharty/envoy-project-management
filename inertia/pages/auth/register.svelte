@@ -36,6 +36,12 @@
   let flashType = $state<'error' | 'success' | null>(null)
   let flashText = $state('')
 
+  const alternateRegistration = $derived(
+    accountType === 'vendor'
+      ? { label: 'Register as a Consumer', href: '/register?accountType=consumer' }
+      : { label: 'Register as a Pro', href: '/register?accountType=vendor' }
+  )
+
   const TOKEN_KEY = 'envoy_onboarding_token'
   const SEEN_KEY = 'envoy_seen'
 
@@ -138,62 +144,16 @@
   })
 </script>
 
-<AuthPageShell pageTitle="Register" showGuestCta={false}>
+<AuthPageShell pageTitle="Register" showGuestCta={false} guestAction={alternateRegistration}>
   <div class="text-center">
-    <h2 class="text-3xl font-bold">Create your account</h2>
+    <h2 class="text-3xl font-bold">
+      Create your {accountType === 'vendor' ? 'Pro' : ''} account
+    </h2>
     <p class="mt-2 text-surface-600-400">
       Already have an account?
       <a href="/login" class="text-primary-500 hover:text-primary-400">Sign in</a>
     </p>
   </div>
-
-  <fieldset class="mt-8 space-y-2">
-    <legend class="label font-medium">What brings you to Envoy?</legend>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <label
-        class="cursor-pointer rounded-xl border p-4 transition-colors {selectedAccountType === 'consumer'
-          ? 'border-primary-500 bg-primary-500/10'
-          : 'border-surface-200-800 hover:bg-surface-100-900/40'}"
-      >
-        <span class="flex items-start gap-3">
-          <input
-            type="radio"
-            name="accountType"
-            value="consumer"
-            bind:group={selectedAccountType}
-            class="mt-1 accent-primary-500"
-          />
-          <span>
-            <span class="block font-medium">I am planning a project</span>
-            <span class="block text-sm text-surface-600-400">Find and work with trusted pros.</span>
-          </span>
-        </span>
-      </label>
-
-      <label
-        class="cursor-pointer rounded-xl border p-4 transition-colors {selectedAccountType === 'vendor'
-          ? 'border-primary-500 bg-primary-500/10'
-          : 'border-surface-200-800 hover:bg-surface-100-900/40'}"
-      >
-        <span class="flex items-start gap-3">
-          <input
-            type="radio"
-            name="accountType"
-            value="vendor"
-            bind:group={selectedAccountType}
-            class="mt-1 accent-primary-500"
-          />
-          <span>
-            <span class="block font-medium">I am a pro or vendor</span>
-            <span class="block text-sm text-surface-600-400">Create a professional account.</span>
-          </span>
-        </span>
-      </label>
-    </div>
-    {#if errors.accountType}
-      <p class="text-error-500 text-sm">{errors.accountType}</p>
-    {/if}
-  </fieldset>
 
   {#if showError}
     <aside class="card preset-tonal-error mt-4 p-4" role="alert">

@@ -3,8 +3,14 @@ import { router, page, Link } from '@inertiajs/svelte'
 import { HouseIcon, LogOutIcon } from '@lucide/svelte'
 import Logo from './logo.svelte';
 
-const props = $props<{ showGuestCta?: boolean }>();
+type GuestAction = {
+  label: string;
+  href: string;
+};
+
+const props = $props<{ showGuestCta?: boolean; guestAction?: GuestAction | null }>();
 const showGuestCta = $derived(props.showGuestCta ?? true);
+const guestAction = $derived(props.guestAction ?? null);
 const user = $derived($page.props.user);
 const isDashboard = $derived($page.url.startsWith('/dashboard'));
 const isLogin = $derived($page.url.startsWith('/login'));
@@ -44,22 +50,32 @@ function handleLogout() {
         <span class="hidden sm:inline">{isLoggingOut ? 'Logging out...' : 'Logout'}</span>
       </button>
       </div>
-    {:else if showGuestCta}
+    {:else if showGuestCta || guestAction}
       <div class="flex flex-wrap justify-end gap-1.5">
-      <a
-        href="/login"
-        aria-current={isLogin ? 'page' : undefined}
-        class="btn btn-sm px-2 sm:px-3 text-xs sm:text-sm transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 {isLogin ? 'preset-filled-primary-500' : 'hover:preset-tonal'}"
-      >
-        Sign In
-      </a>
-      <a
-        href="/register"
-        aria-current={isRegister ? 'page' : undefined}
-        class="btn btn-sm px-2 sm:px-3 text-xs sm:text-sm transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 {isRegister ? 'preset-filled-primary-500' : 'preset-outlined-primary-500'}"
-      >
-        Create Account
-      </a>
+        {#if showGuestCta}
+          <a
+            href="/login"
+            aria-current={isLogin ? 'page' : undefined}
+            class="btn btn-sm px-2 sm:px-3 text-xs sm:text-sm transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 {isLogin ? 'preset-filled-primary-500' : 'hover:preset-tonal'}"
+          >
+            Sign In
+          </a>
+          <a
+            href="/register"
+            aria-current={isRegister ? 'page' : undefined}
+            class="btn btn-sm px-2 sm:px-3 text-xs sm:text-sm transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 {isRegister ? 'preset-filled-primary-500' : 'preset-outlined-primary-500'}"
+          >
+            Create Account
+          </a>
+        {/if}
+        {#if guestAction}
+          <a
+            href={guestAction.href}
+            class="btn btn-sm px-3 text-xs sm:text-sm preset-outlined-primary-500 transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500"
+          >
+            {guestAction.label}
+          </a>
+        {/if}
       </div>
     {/if}
   </div>

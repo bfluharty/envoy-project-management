@@ -5,10 +5,12 @@
   const {
     pageTitle,
     showGuestCta = false,
+    guestAction = null,
     children,
   }: {
     pageTitle: string;
     showGuestCta?: boolean;
+    guestAction?: { label: string; href: string } | null;
     children: () => unknown;
   } = $props();
 </script>
@@ -18,7 +20,7 @@
 </svelte:head>
 
 <div class="min-h-svh flex flex-col">
-  <Navbar {showGuestCta} />
+  <Navbar {showGuestCta} {guestAction} />
   <main class="flex-1 flex items-center justify-center p-6 sm:px-8">
     <div class="max-w-md w-full space-y-8 rounded-xl border border-surface-200-800 bg-surface-50-950/50 backdrop-blur-md p-6 sm:p-8">
       {@render children()}

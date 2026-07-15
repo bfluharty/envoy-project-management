@@ -6,27 +6,7 @@
   import { page } from '@inertiajs/svelte';
   import { onMount, untrack } from 'svelte';
   import { Steps } from '@skeletonlabs/skeleton-svelte';
-  import { CheckCircleIcon, ShieldAlertIcon, MapPinIcon, AlertTriangleIcon } from '@lucide/svelte';
-
-  // ── Types ──────────────────────────────────────────────────────────────────
-  interface VendorLocation {
-    address?: string;
-    locality?: string;
-    region?: string;
-    postcode?: string;
-    country?: string;
-    formatted_address?: string;
-  }
-
-  interface SelectedVendor {
-    vendorListingUuid: string;
-    name: string;
-    location: VendorLocation | null;
-    categories: string[];
-    onboardedToEnvoy: boolean;
-    consumerOwned: boolean;
-    ownershipWarning: string | null;
-  }
+  import { AlertTriangleIcon } from '@lucide/svelte';
 
   interface ProjectPrefill {
     title?: string;
@@ -45,13 +25,11 @@
   const {
     state: onboardingState = 'active',
     project = null,
-    selectedVendors = [],
     currencies = [],
     recovery = null,
   }: {
     state?: 'active' | 'expired';
     project?: ProjectPrefill | null;
-    selectedVendors?: SelectedVendor[];
     currencies?: { code: string; name: string }[];
     recovery?: RecoveryLinks | null;
   } = $props();
@@ -142,14 +120,6 @@
             ? value.postcode
             : undefined,
     };
-  }
-
-  function formatVendorLocation(value: VendorLocation | null): string {
-    if (!value) return '';
-    if (value.formatted_address) return value.formatted_address;
-    return [value.address, value.locality, value.region, value.postcode, value.country]
-      .filter(Boolean)
-      .join(', ');
   }
 
   onMount(() => {
@@ -256,47 +226,6 @@
         <aside class="card preset-tonal-warning p-4" role="status">
           <p>{flash.partial_success}</p>
         </aside>
-      {/if}
-
-      <!-- Selected vendor review -->
-      {#if selectedVendors.length > 0}
-        <section class="space-y-3">
-          <h2 class="font-medium text-sm text-surface-600-400 uppercase tracking-wide">Vendors you selected</h2>
-          <ul class="space-y-2" role="list">
-            {#each selectedVendors as vendor (vendor.vendorListingUuid)}
-              <li class="flex items-start gap-3 rounded-xl border border-surface-200-800 bg-surface-50-950/30 p-3">
-                <div class="flex-1 min-w-0 space-y-0.5">
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <span class="font-medium text-sm">{vendor.name}</span>
-                    {#if vendor.onboardedToEnvoy}
-                      <span class="inline-flex items-center gap-1 text-xs font-medium text-primary-500 bg-primary-500/10 rounded-full px-2 py-0.5">
-                        <CheckCircleIcon class="size-3" />
-                        Onboarded to Envoy
-                      </span>
-                    {/if}
-                    {#if vendor.consumerOwned}
-                      <span class="inline-flex items-center gap-1 text-xs font-medium text-warning-500 bg-warning-500/10 rounded-full px-2 py-0.5">
-                        <ShieldAlertIcon class="size-3" />
-                        Unverified listing
-                      </span>
-                    {/if}
-                  </div>
-                  {#if vendor.location}
-                    <p class="text-xs text-surface-500 flex items-center gap-1">
-                      <MapPinIcon class="size-3 shrink-0" />{formatVendorLocation(vendor.location)}
-                    </p>
-                  {/if}
-                  {#if vendor.categories.length > 0}
-                    <p class="text-xs text-surface-500">{vendor.categories.join(' · ')}</p>
-                  {/if}
-                  {#if vendor.consumerOwned && vendor.ownershipWarning}
-                    <p class="text-xs text-warning-600-400">{vendor.ownershipWarning}</p>
-                  {/if}
-                </div>
-              </li>
-            {/each}
-          </ul>
-        </section>
       {/if}
 
       <!-- Project form wizard (matches pattern from home.svelte) -->

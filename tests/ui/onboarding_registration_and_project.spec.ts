@@ -111,21 +111,37 @@ async function fillPasswordRegistration(page: Page) {
   await page.getByLabel('Confirm Password').fill('password123')
 }
 
-async function expectAccountTypeSelected(page: Page, name: RegExp) {
-  const radio = page.getByRole('radio', { name })
-  await expect(radio).toBeChecked()
-}
-
 test.describe('registration handoff', () => {
-  test('defaults to consumer and preselects vendor from the For pros route', async ({ page }) => {
+  test('switches between consumer and pro registration from the top navigation', async ({
+    page,
+  }) => {
     await mockRegisterPage(page)
-    await page.goto('/register')
-    await expectAccountTypeSelected(page, /I am planning a project/i)
-
-    await page.unroute('/register')
     await mockRegisterPage(page, 'vendor', '/register?accountType=vendor')
-    await page.goto('/register?accountType=vendor')
-    await expectAccountTypeSelected(page, /^I am a pro or vendor/i)
+    await mockRegisterPage(page, 'consumer', '/register?accountType=consumer')
+    await page.goto('/register')
+    await expect(page.getByRole('heading', { name: 'Create your Consumer account' })).toBeVisible()
+    await expect(page.getByText('What brings you to Envoy?')).toHaveCount(0)
+    await expect(page.getByRole('radio')).toHaveCount(0)
+    await expect(page.getByText('Continue with Google', { exact: true })).toBeVisible()
+    await expect(page.getByText('Continue with Microsoft', { exact: true })).toBeVisible()
+    const proRegistration = page.getByRole('link', { name: 'Register as a Pro', exact: true })
+    await expect(proRegistration).toHaveAttribute('href', '/register?accountType=vendor')
+    await proRegistration.click()
+
+    await expect(page).toHaveURL(/\/register\?accountType=vendor$/)
+    await expect(page.getByRole('heading', { name: 'Create your Pro account' })).toBeVisible()
+    await expect(page.getByText('Continue with Google', { exact: true })).toHaveAttribute(
+      'data-account-type',
+      'vendor'
+    )
+    const consumerRegistration = page.getByRole('link', {
+      name: 'Register as a Consumer',
+      exact: true,
+    })
+    await expect(consumerRegistration).toHaveAttribute('href', '/register?accountType=consumer')
+    await consumerRegistration.click()
+    await expect(page).toHaveURL(/\/register\?accountType=consumer$/)
+    await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible()
   })
 
   test('submits account type and onboarding token in the password body, then auto-login redirects', async ({
@@ -265,7 +281,7 @@ test.describe('registration handoff', () => {
 })
 
 test.describe('first project completion', () => {
-  test('prefills the intake fields and renders selected vendors as read-only review', async ({
+  test('prefills the intake fields without rendering a selected-vendor review', async ({
     page,
   }) => {
     await mockInertiaPage(page, '/onboarding/project', 'onboarding/project', activeProjectProps)
@@ -276,10 +292,9 @@ test.describe('first project completion', () => {
       'I need to renovate a small restaurant space before opening.'
     )
     await expect(page.getByPlaceholder('Search city or address…')).toHaveValue('23220')
-    await expect(page.getByText('Richmond Build Co')).toBeVisible()
-    await expect(page.getByText('Onboarded to Envoy')).toBeVisible()
-    await expect(page.getByText('Consumer Managed Design')).toBeVisible()
-    await expect(page.getByText(/Unverified listing/i)).toBeVisible()
+    await expect(page.getByText('Vendors you selected')).toHaveCount(0)
+    await expect(page.getByText('Richmond Build Co')).toHaveCount(0)
+    await expect(page.getByText('Consumer Managed Design')).toHaveCount(0)
     await expect(page.getByText(/No email on file/i)).toHaveCount(0)
     await expect(page.getByRole('checkbox')).toHaveCount(0)
   })
