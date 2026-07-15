@@ -5,6 +5,7 @@
   import { page } from '@inertiajs/svelte';
   import { onMount } from 'svelte';
   import { CheckCircleIcon, ShieldAlertIcon, MapPinIcon } from '@lucide/svelte';
+  import { groupVendorsByPrimaryClassification } from '../utils/vendor_grouping';
 
   // ── Types ──────────────────────────────────────────────────────────────────
   interface VendorLocation {
@@ -63,6 +64,7 @@
   // Derived: has the anonymous user seen results?
   let seen          = $state(false);
   let restoring     = $state(false);
+  const recommendationGroups = $derived(groupVendorsByPrimaryClassification(recommendations));
 
   // ── Restore on mount ───────────────────────────────────────────────────────
   function clearStoredDraft() {
@@ -477,8 +479,19 @@
                 <aside class="card preset-tonal-error p-3 text-sm" role="alert">{selectionError}</aside>
               {/if}
 
-              <ul class="space-y-3" role="list">
-                {#each recommendations as vendor (vendor.vendorListingUuid)}
+              <div class="space-y-6">
+                {#each recommendationGroups as group}
+                  <section
+                    aria-label={`${group.classification} vendors`}
+                    data-vendor-classification={group.classification}
+                    class="space-y-3"
+                  >
+                    <div class="flex items-center justify-between gap-3 border-b border-surface-200-800 pb-2">
+                      <h3 class="font-semibold">{group.classification}</h3>
+                      <span class="text-xs text-surface-500">{group.vendors.length}</span>
+                    </div>
+                    <ul class="space-y-3" role="list">
+                      {#each group.vendors as vendor (vendor.vendorListingUuid)}
                   {@const isSelected = selected.has(vendor.vendorListingUuid)}
                   <li>
                     <button
@@ -539,8 +552,11 @@
                       </div>
                     </button>
                   </li>
+                      {/each}
+                    </ul>
+                  </section>
                 {/each}
-              </ul>
+              </div>
 
               <div class="pt-2 space-y-2">
                 <p class="text-sm text-surface-500 text-center">

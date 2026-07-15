@@ -197,6 +197,15 @@ test.describe('anonymous vendor discovery', () => {
       .allTextContents()
     expect(names[0]).toContain('Email First Electric')
     expect(names[2]).toContain('No Email Plumbing')
+    const groups = page.locator(
+      'section[aria-label="Vendor recommendations"] section[data-vendor-classification]'
+    )
+    await expect(groups).toHaveCount(3)
+    expect(
+      await groups.evaluateAll((nodes) =>
+        nodes.map((node) => node.getAttribute('data-vendor-classification'))
+      )
+    ).toEqual(['Electrician', 'General Contractor', 'Plumber'])
     await expect(page.getByText('456 Broad St, Richmond, VA 23220')).toBeVisible()
     await expect(page.getByText('Onboarded to Envoy')).toBeVisible()
     await expect(page.getByText(/Unverified listing/i)).toBeVisible()

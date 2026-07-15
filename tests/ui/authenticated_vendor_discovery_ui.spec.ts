@@ -51,7 +51,7 @@ const projectProps = {
 async function openContactsSearch(page: import('@playwright/test').Page) {
   await mockInertiaPage(page, '/contacts', 'contacts/index', { contacts: [], user })
   await page.goto('/contacts')
-  await page.getByRole('button', { name: /Find vendors/i }).click()
+  await page.getByRole('button', { name: /Find additional contacts/i }).click()
 }
 
 async function fillVendorSearch(page: import('@playwright/test').Page) {
@@ -119,6 +119,66 @@ test.describe('authenticated vendor search component', () => {
     expect(selectUserHeader).toBeUndefined()
   })
 
+  test('groups ranked results by primary Foursquare classification without reordering them', async ({
+    page,
+  }) => {
+    const rankedVendors = [
+      {
+        ...vendorResult,
+        vendorListingUuid: '10000000-0000-4000-8000-000000000001',
+        name: 'First Ranked Builder',
+      },
+      {
+        ...vendorResult,
+        vendorListingUuid: '20000000-0000-4000-8000-000000000002',
+        name: 'Second Ranked Electrician',
+        categories: ['Electrician'],
+      },
+      {
+        ...vendorResult,
+        vendorListingUuid: '30000000-0000-4000-8000-000000000003',
+        name: 'Third Ranked Builder',
+      },
+      {
+        ...vendorResult,
+        vendorListingUuid: '40000000-0000-4000-8000-000000000004',
+        name: 'Fourth Ranked Vendor',
+        categories: [],
+      },
+    ]
+    await page.route('/api/vendors/search', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ vendors: rankedVendors }),
+      })
+    )
+    await openContactsSearch(page)
+    await fillVendorSearch(page)
+    await page.getByRole('button', { name: 'Search vendors' }).click()
+
+    const groups = page.locator(
+      'section[aria-label="Search results"] section[data-vendor-classification]'
+    )
+    await expect(groups).toHaveCount(3)
+
+    const renderedGroups = await groups.evaluateAll((nodes) =>
+      nodes.map((node) => ({
+        classification: node.getAttribute('data-vendor-classification'),
+        vendors: [...node.querySelectorAll('li')].map((item) => item.textContent ?? ''),
+      }))
+    )
+    expect(renderedGroups.map((group) => group.classification)).toEqual([
+      'Commercial Contractor',
+      'Electrician',
+      'Other vendors',
+    ])
+    expect(renderedGroups[0].vendors[0]).toContain('First Ranked Builder')
+    expect(renderedGroups[0].vendors[1]).toContain('Third Ranked Builder')
+    expect(renderedGroups[1].vendors[0]).toContain('Second Ranked Electrician')
+    expect(renderedGroups[2].vendors[0]).toContain('Fourth Ranked Vendor')
+  })
+
   test('offers a working retry after a transient authenticated search failure', async ({
     page,
   }) => {
@@ -177,7 +237,7 @@ test.describe('authenticated vendor search component', () => {
     await page.getByRole('radio', { name: 'overview' }).click({ force: true })
     const contactsHeading = page.getByRole('heading', { name: 'Contacts' })
     await contactsHeading.locator('..').getByRole('button', { name: 'Edit' }).click()
-    await page.getByRole('button', { name: /Find vendors/i }).click()
+    await page.getByRole('button', { name: /Find new contacts/i }).click()
     await fillVendorSearch(page)
     await page.getByRole('button', { name: 'Search vendors' }).click()
 

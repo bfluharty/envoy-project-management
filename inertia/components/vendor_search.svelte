@@ -16,6 +16,7 @@
 -->
 <script lang="ts">
   import { CheckCircleIcon, ShieldAlertIcon, MapPinIcon, XIcon, SearchIcon } from '@lucide/svelte';
+  import { groupVendorsByPrimaryClassification } from '../utils/vendor_grouping';
 
   interface VendorLocation {
     address?: string | null;
@@ -86,6 +87,7 @@
 
   // Derived: which listings are already in this project
   const attachedSet = $derived(new Set(projectVendors));
+  const resultGroups = $derived(groupVendorsByPrimaryClassification(results));
 
   // ── Validation ─────────────────────────────────────────────────────────────
   function validate(): boolean {
@@ -359,8 +361,19 @@
           <aside class="card preset-tonal-error p-3 text-sm" role="alert">{selectionError}</aside>
         {/if}
 
-        <ul class="space-y-2" role="list">
-          {#each results as vendor (vendor.vendorListingUuid)}
+        <div class="space-y-5">
+          {#each resultGroups as group}
+            <section
+              aria-label={`${group.classification} vendors`}
+              data-vendor-classification={group.classification}
+              class="space-y-2"
+            >
+              <div class="flex items-center justify-between gap-3 border-b border-surface-200-800 pb-1.5">
+                <h3 class="font-semibold text-sm">{group.classification}</h3>
+                <span class="text-xs text-surface-500">{group.vendors.length}</span>
+              </div>
+              <ul class="space-y-2" role="list">
+                {#each group.vendors as vendor (vendor.vendorListingUuid)}
             {@const isSelected = selected.has(vendor.vendorListingUuid)}
             {@const isAttached = attachedSet.has(vendor.vendorListingUuid)}
             {@const isInContacts = savedContact[vendor.vendorListingUuid] || vendor.inContacts}
@@ -428,8 +441,11 @@
                 </button>
               {/if}
             </li>
+                {/each}
+              </ul>
+            </section>
           {/each}
-        </ul>
+        </div>
 
         <!-- Context-specific action bar -->
         {#if context === 'project'}
