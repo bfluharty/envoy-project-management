@@ -10,6 +10,7 @@ import VendorListing from '#models/vendor_listing'
 import ReasoningEngineService from '#services/reasoning_engine_service'
 import VendorSearchService from '#services/vendor_search_service'
 import VendorService from '#services/vendor_service'
+import { acceptConsentForTest } from '../helpers/user_consent.js'
 
 test.group('authenticated vendor discovery API', (group) => {
   const restores: Array<() => void> = []
@@ -25,6 +26,7 @@ test.group('authenticated vendor discovery API', (group) => {
       entitlementId: entitlement.id,
       isActive: true,
     })
+    await acceptConsentForTest(consumer)
   })
   group.each.teardown(() => {
     while (restores.length) restores.pop()?.()
@@ -157,6 +159,7 @@ test.group('authenticated vendor discovery API', (group) => {
       entitlementId: vendorEntitlement.id,
       isActive: true,
     })
+    await acceptConsentForTest(vendorUser)
 
     const response = await client.post('/api/vendors/search').loginAs(vendorUser).json({
       projectDescription: 'I need a commercial electrician for an office renovation project.',

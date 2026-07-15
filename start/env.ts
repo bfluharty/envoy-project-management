@@ -60,6 +60,8 @@ export default await Env.create(new URL('../', import.meta.url), {
   EMAIL_SYNC_WORKER_ENABLED: Env.schema.boolean.optional(),
   EMAIL_SYNC_WORKER_INTERVAL_SECONDS: Env.schema.number.optional(),
   EMAIL_TERMS_VERSION: Env.schema.string.optional(),
+  CONSENT_CLEANUP_ENABLED: Env.schema.boolean.optional(),
+  CONSENT_CLEANUP_INTERVAL_HOURS: Env.schema.number.optional(),
 
   /* Inbox OAuth (customer grants access; we listen and reply on their behalf) */
   GOOGLE_CLIENT_ID: Env.schema.string.optional(),

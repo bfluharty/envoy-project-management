@@ -90,17 +90,26 @@ async function mockRegisterPage(
       {
         provider: 'google',
         label: 'Google',
-        href: `/auth/google/redirect?intent=register&accountType=${accountType}`,
+        href: `/auth/google?flow=registration&accountType=${accountType}`,
       },
       {
         provider: 'microsoft',
         label: 'Microsoft',
-        href: `/auth/microsoft/redirect?intent=register&accountType=${accountType}`,
+        href: `/auth/microsoft?flow=registration&accountType=${accountType}`,
       },
     ],
     passwordAuthEnabled: true,
     accountType,
     errors: {},
+  })
+}
+
+async function mockConsentPage(page: Page) {
+  await mockInertiaPage(page, '/onboarding/consent', 'onboarding/consent', {
+    termsVersion: '2026-07-15-terms-v1',
+    privacyPolicyVersion: '2026-07-15-privacy-v1',
+    modelTrainingNoticeVersion: '2026-07-15-model-training-v1',
+    privacyReackOnly: false,
   })
 }
 
@@ -119,11 +128,36 @@ test.describe('registration handoff', () => {
     await mockRegisterPage(page, 'vendor', '/register?accountType=vendor')
     await mockRegisterPage(page, 'consumer', '/register?accountType=consumer')
     await page.goto('/register')
-    await expect(page.getByRole('heading', { name: 'Create your Consumer account' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible()
     await expect(page.getByText('What brings you to Envoy?')).toHaveCount(0)
     await expect(page.getByRole('radio')).toHaveCount(0)
     await expect(page.getByText('Continue with Google', { exact: true })).toBeVisible()
     await expect(page.getByText('Continue with Microsoft', { exact: true })).toBeVisible()
+    const mailboxAuthorization = page.locator('#mailboxAuthorizationAccepted')
+    const googleRegistration = page.getByText('Continue with Google', { exact: true })
+    const microsoftRegistration = page.getByText('Continue with Microsoft', { exact: true })
+    await expect(mailboxAuthorization).not.toBeChecked()
+    await expect(googleRegistration).toHaveAttribute('aria-disabled', 'true')
+    await expect(microsoftRegistration).toHaveAttribute('aria-disabled', 'true')
+    await expect(googleRegistration).toHaveAttribute(
+      'href',
+      '/auth/google?flow=registration&accountType=consumer'
+    )
+    await expect(microsoftRegistration).toHaveAttribute(
+      'href',
+      '/auth/microsoft?flow=registration&accountType=consumer'
+    )
+    await mailboxAuthorization.check()
+    await expect(googleRegistration).not.toHaveAttribute('aria-disabled', 'true')
+    await expect(microsoftRegistration).not.toHaveAttribute('aria-disabled', 'true')
+    await expect(googleRegistration).toHaveAttribute(
+      'href',
+      '/auth/google?flow=registration&accountType=consumer&emailTermsAccepted=1'
+    )
+    await expect(microsoftRegistration).toHaveAttribute(
+      'href',
+      '/auth/microsoft?flow=registration&accountType=consumer&emailTermsAccepted=1'
+    )
     const proRegistration = page.getByRole('link', { name: 'Register as a Pro', exact: true })
     await expect(proRegistration).toHaveAttribute('href', '/register?accountType=vendor')
     await proRegistration.click()
@@ -144,7 +178,7 @@ test.describe('registration handoff', () => {
     await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible()
   })
 
-  test('submits account type and onboarding token in the password body, then auto-login redirects', async ({
+  test('preserves the onboarding token through password registration and consent', async ({
     page,
   }) => {
     await page.addInitScript(
@@ -152,21 +186,36 @@ test.describe('registration handoff', () => {
       ONBOARDING_TOKEN
     )
     await mockRegisterPage(page)
+    await mockConsentPage(page)
     await mockInertiaPage(page, '/onboarding/project', 'onboarding/project', activeProjectProps)
 
     let registrationBody: Record<string, unknown> | undefined
+    let consentBody: Record<string, unknown> | undefined
     await page.route('/register', async (route) => {
       if (route.request().method() !== 'POST') {
         await route.fallback()
         return
       }
       registrationBody = route.request().postDataJSON()
+      await redirectInertia(route, '/onboarding/consent')
+    })
+    await page.route('/onboarding/consent', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.fallback()
+        return
+      }
+      consentBody = route.request().postDataJSON()
       await redirectInertia(route, '/onboarding/project')
     })
 
     await page.goto('/register')
     await fillPasswordRegistration(page)
     await page.getByRole('button', { name: 'Create account' }).click()
+
+    await page.waitForURL('**/onboarding/consent')
+    await expect(page.locator('#termsAccepted')).not.toBeChecked()
+    await page.locator('#termsAccepted').check()
+    await page.getByRole('button', { name: 'Continue' }).click()
 
     await page.waitForURL('**/onboarding/project')
     expect(registrationBody).toEqual({
@@ -177,26 +226,29 @@ test.describe('registration handoff', () => {
       accountType: 'consumer',
       onboardingToken: ONBOARDING_TOKEN,
     })
+    expect(consentBody).toEqual({ termsAccepted: true, modelTrainingOptIn: false })
     await expect(page.getByRole('heading', { name: 'Complete your project' })).toBeVisible()
   })
 
-  test('vendor password registration omits onboarding token and redirects to pending verification', async ({
+  test('vendor password registration omits the token and routes to pending after consent', async ({
     page,
   }) => {
     await mockRegisterPage(page, 'vendor', '/register?accountType=vendor')
+    await mockConsentPage(page)
     await mockInertiaPage(page, '/vendor/pending', 'vendors/pending', {
       vendorName: 'Jane Consumer',
       user: { ...consumerUser, fullName: 'Jane Consumer' },
     })
 
     let registrationBody: Record<string, unknown> | undefined
+    let consentBody: Record<string, unknown> | undefined
     await page.route('**/register?accountType=vendor', async (route) => {
       if (route.request().method() !== 'POST') {
         await route.fallback()
         return
       }
       registrationBody = route.request().postDataJSON()
-      await redirectInertia(route, '/vendor/pending')
+      await redirectInertia(route, '/onboarding/consent')
     })
     await page.route('/register', async (route) => {
       if (route.request().method() !== 'POST') {
@@ -204,6 +256,14 @@ test.describe('registration handoff', () => {
         return
       }
       registrationBody = route.request().postDataJSON()
+      await redirectInertia(route, '/onboarding/consent')
+    })
+    await page.route('/onboarding/consent', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.fallback()
+        return
+      }
+      consentBody = route.request().postDataJSON()
       await redirectInertia(route, '/vendor/pending')
     })
 
@@ -211,9 +271,14 @@ test.describe('registration handoff', () => {
     await fillPasswordRegistration(page)
     await page.getByRole('button', { name: 'Create account' }).click()
 
+    await page.waitForURL('**/onboarding/consent')
+    await page.locator('#termsAccepted').check()
+    await page.getByRole('button', { name: 'Continue' }).click()
+
     await page.waitForURL('**/vendor/pending')
     expect(registrationBody).toMatchObject({ accountType: 'vendor' })
     expect(registrationBody).not.toHaveProperty('onboardingToken')
+    expect(consentBody).toEqual({ termsAccepted: true, modelTrainingOptIn: false })
     await expect(page.getByRole('heading', { name: /on the list/i })).toBeVisible()
   })
 
@@ -236,7 +301,7 @@ test.describe('registration handoff', () => {
       })
     })
     await page.route(
-      '**/auth/google/redirect?intent=register&accountType=consumer',
+      '**/auth/google?flow=registration&accountType=consumer&emailTermsAccepted=1',
       async (route) => {
         calls.push('oauth')
         await route.fulfill({
@@ -248,9 +313,12 @@ test.describe('registration handoff', () => {
     )
 
     await page.goto('/register')
+    await page.locator('#mailboxAuthorizationAccepted').check()
     await page.getByText('Continue with Google', { exact: true }).click()
 
-    await page.waitForURL('**/auth/google/redirect?intent=register&accountType=consumer')
+    await page.waitForURL(
+      '**/auth/google?flow=registration&accountType=consumer&emailTermsAccepted=1'
+    )
     expect(calls).toEqual(['handoff', 'oauth'])
     expect(handoffBody).toEqual({ onboardingToken: ONBOARDING_TOKEN })
     expect(page.url()).not.toContain(ONBOARDING_TOKEN)
@@ -266,12 +334,13 @@ test.describe('registration handoff', () => {
     await page.route('/onboarding/registration-handoff', (route) =>
       route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"failed"}' })
     )
-    await page.route('**/auth/google/redirect**', async (route) => {
+    await page.route('**/auth/google?flow=registration**', async (route) => {
       oauthCalled = true
       await route.abort()
     })
 
     await page.goto('/register')
+    await page.locator('#mailboxAuthorizationAccepted').check()
     await page.getByText('Continue with Google', { exact: true }).click()
 
     await expect(page).toHaveURL(/\/register$/)

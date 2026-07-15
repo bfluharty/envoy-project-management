@@ -28,6 +28,7 @@
   let password = $state('')
   let passwordConfirmation = $state('')
   let selectedAccountType = $state<'consumer' | 'vendor'>(untrack(() => accountType))
+  let mailboxAuthorizationAccepted = $state(false)
   let processing = $state(false)
   let socialProcessing = $state<string | null>(null)
   let errors = $state<Record<string, string>>({})
@@ -60,6 +61,11 @@
   function socialHref(provider: SocialAuthProvider): string {
     const url = new URL(provider.href, 'http://envoy.local')
     url.searchParams.set('accountType', selectedAccountType)
+    if (mailboxAuthorizationAccepted) {
+      url.searchParams.set('emailTermsAccepted', '1')
+    } else {
+      url.searchParams.delete('emailTermsAccepted')
+    }
     return `${url.pathname}${url.search}`
   }
 
@@ -98,6 +104,11 @@
   async function handleSocialAuth(event: MouseEvent, provider: SocialAuthProvider) {
     event.preventDefault()
     if (socialProcessing) return
+    if (!mailboxAuthorizationAccepted) {
+      errorMessage = 'Please authorize mailbox access before continuing with Google or Microsoft.'
+      showError = true
+      return
+    }
     showError = false
     socialProcessing = provider.provider
 
@@ -288,13 +299,34 @@
   {/if}
 
   {#if socialAuthProviders.length > 0}
-    <div class="space-y-3">
+    <div class="space-y-4">
+      <div class="rounded-xl border border-surface-200-800 bg-surface-100-900/30 p-4">
+        <label class="flex cursor-pointer items-start gap-3" for="mailboxAuthorizationAccepted">
+          <input
+            id="mailboxAuthorizationAccepted"
+            name="mailboxAuthorizationAccepted"
+            type="checkbox"
+            class="checkbox mt-1 shrink-0"
+            bind:checked={mailboxAuthorizationAccepted}
+            disabled={socialProcessing !== null}
+          />
+          <span class="text-sm leading-6 text-surface-700-300">
+            I authorize Envoy to view my email, prepare local drafts, and send approved messages
+            from my connected account.
+          </span>
+        </label>
+        <p class="mt-2 pl-9 text-xs leading-5 text-surface-600-400">
+          Envoy will only view emails sent and received by contacts that you select. You can disconnect your inbox at any time in Account Settings.
+        </p>
+      </div>
+
       {#each socialAuthProviders as provider (provider.provider)}
         <a
           href={socialHref(provider)}
-          class="btn btn-outline w-full gap-2 {socialProcessing ? 'pointer-events-none opacity-60' : ''}"
+          class="btn btn-outline w-full gap-2 {socialProcessing || !mailboxAuthorizationAccepted ? 'pointer-events-none opacity-50' : ''}"
           data-account-type={selectedAccountType}
-          aria-disabled={socialProcessing ? 'true' : undefined}
+          aria-disabled={socialProcessing || !mailboxAuthorizationAccepted ? 'true' : undefined}
+          tabindex={socialProcessing || !mailboxAuthorizationAccepted ? -1 : undefined}
           onclick={(event) => handleSocialAuth(event, provider)}
         >
           {#if provider.provider === 'google'}

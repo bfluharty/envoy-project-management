@@ -33,6 +33,11 @@ export default async function globalSetup() {
 
     if (!loginResponse.ok() && ![302, 303].includes(loginResponse.status())) return
 
+    const consentResponse = await page.request.post('http://localhost:8080/onboarding/consent', {
+      data: { termsAccepted: true, modelTrainingOptIn: false },
+    })
+    if (!consentResponse.ok() && ![302, 303].includes(consentResponse.status())) return
+
     // Wait for the dashboard to fully load — this is when Vite re-optimizes
     // home.svelte's skeleton-svelte imports. Use a long timeout to allow for
     // the automatic full-reload Vite triggers after re-optimization.

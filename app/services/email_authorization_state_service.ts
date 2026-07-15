@@ -2,6 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import encryption from '@adonisjs/core/services/encryption'
 import env from '#start/env'
 import { randomBytes } from 'node:crypto'
+import { normalizePostAuthReturnPath } from '#services/post_auth_redirect_service'
 
 export type EmailAuthorizationFlow = 'login' | 'registration' | 'reauth'
 export type EmailAuthorizationProvider = 'google' | 'microsoft'
@@ -27,19 +28,7 @@ function sessionKey(nonce: string) {
 }
 
 function normalizeReturnPath(value: unknown): string | null {
-  if (typeof value !== 'string' || value.length === 0) {
-    return null
-  }
-
-  if (!value.startsWith('/') || value.startsWith('//')) {
-    return null
-  }
-
-  if (value.startsWith('/auth/') || value.startsWith('/login') || value.startsWith('/register')) {
-    return null
-  }
-
-  return value
+  return normalizePostAuthReturnPath(value)
 }
 
 function currentTermsVersion() {

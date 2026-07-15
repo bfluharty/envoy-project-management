@@ -2,6 +2,7 @@ import { defineConfig } from '@adonisjs/inertia'
 import type { InferSharedProps } from '@adonisjs/inertia/types'
 import env from '#start/env'
 import { serializeAuthenticatedUser } from '#services/user_avatar_service'
+import UserConsentService from '#services/user_consent_service'
 
 const inertiaConfig = defineConfig({
   /**
@@ -31,8 +32,10 @@ const inertiaConfig = defineConfig({
       partial_success: ctx.session?.flashMessages?.get('partial_success') ?? null,
     }),
     projects: async (ctx) => {
-      // Only fetch projects if user is authenticated
+      // Shared props also run on consent-exempt pages. Never expose product data until the
+      // authenticated user has completed every currently required consent acknowledgment.
       if (!ctx.auth?.user) return []
+      if (!(await UserConsentService.hasCurrentRequiredConsent(ctx.auth.user.uuid))) return []
 
       try {
         const projectModule = await import('#models/project')

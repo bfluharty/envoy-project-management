@@ -15,6 +15,9 @@ import OnboardingDraftService, {
 } from '#services/onboarding_draft_service'
 import UserRoleService from '#services/user_role_service'
 import { v4 as uuidv4 } from 'uuid'
+import UserConsentService from '#services/user_consent_service'
+import PostAuthRedirectService from '#services/post_auth_redirect_service'
+import { acceptConsentForTest } from '../helpers/user_consent.js'
 
 type SocialProvider = 'google' | 'microsoft'
 
@@ -253,10 +256,12 @@ test.group('social auth routes', () => {
     const restoreEnv = configureSocialEnv()
 
     try {
-      const response = await client.get('/auth/google?flow=registration').redirects(0)
+      for (const provider of ['google', 'microsoft']) {
+        const response = await client.get(`/auth/${provider}?flow=registration`).redirects(0)
 
-      response.assertFound()
-      response.assertHeader('location', '/register')
+        response.assertFound()
+        response.assertHeader('location', '/register')
+      }
     } finally {
       restoreEnv()
     }
@@ -265,16 +270,68 @@ test.group('social auth routes', () => {
 
 test.group('social auth callback', (group) => {
   const socialEmail = 'social.microsoft@example.com'
+  const socialGoogleEmail = 'social.google@example.com'
   const socialVendorEmail = 'social.vendor.microsoft@example.com'
   const existingVendorEmail = 'social.existing.vendor.microsoft@example.com'
 
   group.each.teardown(async () => {
     await User.query()
-      .whereIn('email', [socialEmail, socialVendorEmail, existingVendorEmail])
+      .whereIn('email', [socialEmail, socialGoogleEmail, socialVendorEmail, existingVendorEmail])
       .delete()
   })
 
-  test('creates user, primary inbox connection, and consent from registration callback', async () => {
+  test('Google consumer registration keeps onboarding state through consent to its destination', async () => {
+    const { tokenUuid, draft } = await OnboardingDraftService.createDraft({
+      projectDescription: 'I need help planning a kitchen renovation.',
+      postalCode: '23230',
+      anonymousSessionUuid: uuidv4(),
+    })
+    const controller = new AuthController()
+    const callback = makeSocialCallbackContext(
+      'google',
+      {
+        id: 'google-consumer-user-1',
+        email: socialGoogleEmail,
+        name: 'Social Google',
+        emailVerificationState: 'verified',
+        token: {
+          token: 'google-access-token',
+          refreshToken: 'google-refresh-token',
+          scope:
+            'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send',
+          expiresIn: 3600,
+        },
+      },
+      undefined,
+      'consumer',
+      tokenUuid
+    )
+
+    try {
+      const result = await controller.socialCallback(callback.ctx)
+      assert.deepEqual(result, { type: 'path', path: '/onboarding/consent' })
+      assert.equal(callback.sessionValues.get(ONBOARDING_TOKEN_SESSION_KEY), tokenUuid)
+
+      const user = await User.findByOrFail('email', socialGoogleEmail)
+      await UserConsentService.completeOnboarding({
+        userUuid: user.uuid,
+        termsAccepted: true,
+        modelTrainingOptIn: false,
+      })
+      assert.equal(
+        await PostAuthRedirectService.resolve(user, callback.ctx.session),
+        '/onboarding/project'
+      )
+
+      const reloadedDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
+      assert.equal(reloadedDraft.registeredUserUuid, user.uuid)
+      assert.equal(callback.sessionValues.has(ONBOARDING_TOKEN_SESSION_KEY), false)
+    } finally {
+      await AnonymousOnboardingDraft.query().where('token_uuid', tokenUuid).delete()
+    }
+  })
+
+  test('creates a user and inbox authorization then requires product consent', async () => {
     await User.query().where('email', socialEmail).delete()
 
     const controller = new AuthController()
@@ -296,10 +353,10 @@ test.group('social auth callback', (group) => {
 
     const result = await controller.socialCallback(callback.ctx)
 
-    assert.deepEqual(result, { type: 'path', path: '/account' })
+    assert.deepEqual(result, { type: 'path', path: '/onboarding/consent' })
     assert.equal(callback.loggedInUser?.email, socialEmail)
     assert.equal(callback.sessionValues.get('auth.login_method'), 'microsoft')
-    assert.equal(callback.sessionValues.has('auth.intended_url'), false)
+    assert.equal(callback.sessionValues.get('auth.intended_url'), '/account')
     assert.equal(callback.flashes.get('success'), 'Welcome!')
 
     const user = await User.findByOrFail('email', socialEmail)
@@ -322,9 +379,14 @@ test.group('social auth callback', (group) => {
       .firstOrFail()
     assert.equal(consent.email, socialEmail)
     assert.equal(consent.termsVersion, '2026-06-26-email-access-v1')
+
+    const productConsent = await UserConsentService.getPreference(user.uuid)
+    assert.ok(productConsent)
+    assert.equal(productConsent.termsAccepted, false)
+    assert.equal(productConsent.modelTrainingOptIn, false)
   })
 
-  test('vendor registration callback discards consumer onboarding and routes to pending', async () => {
+  test('vendor registration callback preserves state until product consent is complete', async () => {
     const { tokenUuid, draft } = await OnboardingDraftService.createDraft({
       projectDescription: 'I need a commercial electrician for a new restaurant.',
       postalCode: '23230',
@@ -352,14 +414,25 @@ test.group('social auth callback', (group) => {
     try {
       const result = await controller.socialCallback(callback.ctx)
 
-      assert.deepEqual(result, { type: 'path', path: '/vendor/pending' })
-      assert.equal(callback.sessionValues.has(ONBOARDING_TOKEN_SESSION_KEY), false)
+      assert.deepEqual(result, { type: 'path', path: '/onboarding/consent' })
+      assert.equal(callback.sessionValues.get(ONBOARDING_TOKEN_SESSION_KEY), tokenUuid)
 
       const user = await User.findByOrFail('email', socialVendorEmail)
       assert.equal(await UserRoleService.getCanonicalName(user), 'VENDOR')
       assert.equal(user.vendorApprovalStatus, 'PENDING')
       const reloadedDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
       assert.equal(reloadedDraft.registeredUserUuid, null)
+
+      await UserConsentService.completeOnboarding({
+        userUuid: user.uuid,
+        termsAccepted: true,
+        modelTrainingOptIn: false,
+      })
+      assert.equal(
+        await PostAuthRedirectService.resolve(user, callback.ctx.session),
+        '/vendor/pending'
+      )
+      assert.equal(callback.sessionValues.has(ONBOARDING_TOKEN_SESSION_KEY), false)
     } finally {
       await AnonymousOnboardingDraft.query().where('token_uuid', tokenUuid).delete()
     }
@@ -367,7 +440,7 @@ test.group('social auth callback', (group) => {
 
   test('callback routes by an existing user role instead of the requested account type', async () => {
     const vendorEntitlementId = await EntitlementService.getIdByCanonicalName('VENDOR')
-    await User.create({
+    const existingVendor = await User.create({
       fullName: 'Existing Approved Vendor',
       email: existingVendorEmail,
       password: 'Password123!',
@@ -375,6 +448,7 @@ test.group('social auth callback', (group) => {
       vendorApprovalStatus: 'APPROVED',
       isActive: true,
     })
+    await acceptConsentForTest(existingVendor)
     const { tokenUuid, draft } = await OnboardingDraftService.createDraft({
       projectDescription: 'I need a commercial electrician for a new restaurant.',
       postalCode: '23230',

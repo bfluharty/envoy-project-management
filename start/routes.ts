@@ -24,6 +24,7 @@ const InboxController = () => import('#controllers/web/inbox_controller')
 const AccountController = () => import('#controllers/web/account_controller')
 const OnboardingController = () => import('#controllers/web/onboarding_controller')
 const OnboardingProjectController = () => import('#controllers/web/onboarding_project_controller')
+const OnboardingConsentController = () => import('#controllers/web/onboarding_consent_controller')
 const VendorOnboardingController = () => import('#controllers/web/vendor_onboarding_controller')
 
 // Public landing page (no auth required)
@@ -57,11 +58,20 @@ router.post('/onboarding/registration-handoff', [OnboardingController, 'registra
 router
   .get('/onboarding/project', [OnboardingProjectController, 'show'])
   .as('onboarding.project.show')
-  .middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.consent()])
 router
   .post('/onboarding/project', [OnboardingProjectController, 'store'])
   .as('onboarding.project.store')
+  .middleware([middleware.auth(), middleware.consent()])
+
+router
+  .get('/onboarding/consent', [OnboardingConsentController, 'show'])
+  .as('onboarding.consent.show')
   .middleware(middleware.auth())
+router
+  .post('/onboarding/consent', [OnboardingConsentController, 'store'])
+  .as('onboarding.consent.store')
+  .middleware([middleware.auth(), middleware.sameOrigin()])
 
 // Auth routes (guest only)
 router
@@ -97,23 +107,37 @@ router
 router
   .get('/dashboard', [DashboardController, 'show'])
   .as('dashboard')
-  .middleware([middleware.auth(), middleware.consumer()])
-router.get('/account', [AccountController, 'show']).as('account').middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.consent(), middleware.consumer()])
+router
+  .get('/account', [AccountController, 'show'])
+  .as('account')
+  .middleware([middleware.auth(), middleware.consent()])
 router
   .get('/account/avatar/google', [AccountController, 'googleAvatar'])
-  .middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.consent()])
 router
   .post('/account/password', [AccountController, 'changePassword'])
-  .middleware(middleware.auth())
-router.post('/account/avatar', [AccountController, 'uploadAvatar']).middleware(middleware.auth())
-router.delete('/account/avatar', [AccountController, 'removeAvatar']).middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.consent()])
+router
+  .post('/account/avatar', [AccountController, 'uploadAvatar'])
+  .middleware([middleware.auth(), middleware.consent()])
+router
+  .delete('/account/avatar', [AccountController, 'removeAvatar'])
+  .middleware([middleware.auth(), middleware.consent()])
 router
   .post('/account/password/setup-email', [AccountController, 'sendPasswordSetupEmail'])
-  .middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.consent()])
+router
+  .patch('/account/data-preferences', [AccountController, 'updateDataPreferences'])
+  .middleware([middleware.auth(), middleware.consent(), middleware.sameOrigin()])
 router.post('/logout', [AuthController, 'logout']).as('auth.logout').middleware(middleware.auth())
 
-router.get('/vendor/pending', [VendorOnboardingController, 'pending']).middleware(middleware.auth())
-router.get('/vendor/listing', [VendorOnboardingController, 'listing']).middleware(middleware.auth())
+router
+  .get('/vendor/pending', [VendorOnboardingController, 'pending'])
+  .middleware([middleware.auth(), middleware.consent()])
+router
+  .get('/vendor/listing', [VendorOnboardingController, 'listing'])
+  .middleware([middleware.auth(), middleware.consent()])
 
 // Inbox (connect customer inbox to listen and reply to vendors)
 router
@@ -125,7 +149,7 @@ router
     router.post('/disconnect', [InboxController, 'disconnect']).as('inbox.disconnect')
   })
   .prefix('/inbox')
-  .middleware(middleware.auth())
+  .middleware([middleware.auth(), middleware.consent()])
 
 // UI routes for contacts
 router
@@ -136,7 +160,7 @@ router
     router.delete('/:uuid', [ContactsController, 'destroy'])
   })
   .prefix('/contacts')
-  .middleware([middleware.auth(), middleware.consumer()])
+  .middleware([middleware.auth(), middleware.consent(), middleware.consumer()])
 
 // UI routes for projects
 router
@@ -153,7 +177,7 @@ router
     router.post('/:uuid/chat', [ConvoController, 'chat'])
   })
   .prefix('/projects')
-  .middleware([middleware.auth(), middleware.consumer()])
+  .middleware([middleware.auth(), middleware.consent(), middleware.consumer()])
 
 // API routes for projects
 router
@@ -177,7 +201,7 @@ router
       .prefix('/projects')
   })
   .prefix('/api')
-  .middleware([middleware.auth(), middleware.consumer()])
+  .middleware([middleware.auth(), middleware.consent(), middleware.consumer()])
 
 // API routes for vendors
 router
@@ -203,7 +227,7 @@ router
       .prefix('/vendors')
   })
   .prefix('/api')
-  .middleware([middleware.auth(), middleware.consumer()])
+  .middleware([middleware.auth(), middleware.consent(), middleware.consumer()])
 
 // API routes for inbox (authenticated)
 const InboxAPIController = () => import('#controllers/api/inbox_api_controller')
@@ -215,7 +239,7 @@ router
     router.post('/reply', [InboxAPIController, 'sendReply'])
   })
   .prefix('/api/inbox')
-  .middleware([middleware.auth(), middleware.activeInbox()])
+  .middleware([middleware.auth(), middleware.consent(), middleware.activeInbox()])
 
 router
   .group(() => {
@@ -248,7 +272,7 @@ router
     ])
   })
   .prefix('/api/projects')
-  .middleware([middleware.auth(), middleware.activeInbox()])
+  .middleware([middleware.auth(), middleware.consent(), middleware.activeInbox()])
 
 // Internal API routes for reasoning-engine callbacks
 router

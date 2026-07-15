@@ -1,6 +1,8 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import type { NextFn } from '@adonisjs/core/types/http'
 import type { Authenticators } from '@adonisjs/auth/types'
+import { expectsJsonResponse } from '#utils/request_mode'
+import { normalizePostAuthReturnPath } from '#services/post_auth_redirect_service'
 
 /**
  * Auth middleware is used authenticate HTTP requests and deny
@@ -19,15 +21,13 @@ export default class AuthMiddleware {
       guards?: (keyof Authenticators)[]
     } = {}
   ) {
-    // Store the intended URL in session for redirect after login
-    // Only store if it's a GET request and not already the login page
-    if (
-      ctx.request.method() === 'GET' &&
-      ctx.request.url() !== this.redirectTo &&
-      !ctx.request.url().startsWith('/login') &&
-      !ctx.request.url().startsWith('/register')
-    ) {
-      ctx.session.put('auth.intended_url', ctx.request.url())
+    // Only browser navigations may become a post-authentication destination. JSON/API requests
+    // must not overwrite a destination the user selected in the UI.
+    if (ctx.request.method() === 'GET' && !expectsJsonResponse(ctx.request)) {
+      const intendedUrl = normalizePostAuthReturnPath(ctx.request.url())
+      if (intendedUrl) {
+        ctx.session.put('auth.intended_url', intendedUrl)
+      }
     }
 
     await ctx.auth.authenticateUsing(options.guards, { loginRoute: this.redirectTo })

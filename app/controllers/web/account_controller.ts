@@ -11,6 +11,8 @@ import {
   deleteUploadedAvatar,
   storeUploadedAvatar,
 } from '#services/user_avatar_service'
+import UserConsentService from '#services/user_consent_service'
+import { updateDataPreferencesValidator } from '#validators/user_consent_validator'
 
 export default class AccountController {
   private passwordAuthEnabled(): boolean {
@@ -53,6 +55,7 @@ export default class AccountController {
   }
 
   private async buildPageProps(user: User, session: HttpContext['session']) {
+    const consentPreference = await UserConsentService.ensurePreference(user.uuid, user.uuid)
     const connections = await UserInboxConnection.query()
       .where('user_uuid', user.uuid)
       .orderBy('is_primary', 'desc')
@@ -74,6 +77,7 @@ export default class AccountController {
         canChangePasswordDirectly,
         canSendPasswordSetupEmail: Boolean(user.providerId) && !canChangePasswordDirectly,
       },
+      dataPrivacy: UserConsentService.serializePreference(consentPreference),
       connections: connections.map((connection) => ({
         id: connection.id,
         provider: connection.provider,
@@ -158,6 +162,22 @@ export default class AccountController {
     }
 
     session.flash('success', 'Check your email for a password setup link.')
+    return response.redirect().toRoute('account')
+  }
+
+  async updateDataPreferences({ auth, request, response, session }: HttpContext) {
+    const user = auth.getUserOrFail()
+    const data = await request.validateUsing(updateDataPreferencesValidator)
+
+    await UserConsentService.updateModelTrainingPreference({
+      userUuid: user.uuid,
+      modelTrainingOptIn: data.modelTrainingOptIn,
+      actorUserUuid: user.uuid,
+      ipAddress: request.ip(),
+      userAgent: request.header('user-agent') ?? null,
+    })
+
+    session.flash('success', 'Your data and privacy preference has been saved.')
     return response.redirect().toRoute('account')
   }
 

@@ -69,6 +69,10 @@ export default defineConfig({
       file: () => import('#providers/email_sync_worker_provider'),
       environment: ['web'],
     },
+    {
+      file: () => import('#providers/pending_consent_cleanup_provider'),
+      environment: ['web'],
+    },
   ],
 
   /*

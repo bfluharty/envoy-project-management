@@ -23,6 +23,8 @@ test('resolvePostLoginRedirect keeps real pages and blocks avatar proxy targets'
   assert.equal(resolvePostLoginRedirect('/account'), '/account')
   assert.equal(resolvePostLoginRedirect('/account#email-accounts'), '/account#email-accounts')
   assert.equal(resolvePostLoginRedirect('/dashboard'), '/dashboard')
+  assert.equal(resolvePostLoginRedirect('/\\example.com/account'), null)
+  assert.equal(resolvePostLoginRedirect('/%5Cexample.com/account'), null)
   assert.equal(resolvePostLoginRedirect('/account/avatar/google'), null)
   assert.equal(resolvePostLoginRedirect('/account/avatar/google?size=64'), null)
   assert.equal(resolvePostLoginRedirect(null), null)

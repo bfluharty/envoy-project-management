@@ -17,12 +17,13 @@ import ProjectService from '#services/project_service'
 import ProjectVendorAttachmentService from '#services/project_vendor_attachment_service'
 import ProjectReasoningWorkflowService from '#services/project_reasoning_workflow_service'
 import VendorService from '#services/vendor_service'
+import { acceptConsentForTest } from '../helpers/user_consent.js'
 
 const PASSWORD = 'Password123!'
 
 async function createUser(role: 'CONSUMER' | 'VENDOR') {
   const entitlement = await UserEntitlement.findByOrFail('canonicalName', role)
-  return User.create({
+  const user = await User.create({
     fullName: `${role} Completion User`,
     email: `${role.toLowerCase()}-completion-${uuidv4()}@example.com`,
     password: PASSWORD,
@@ -30,6 +31,8 @@ async function createUser(role: 'CONSUMER' | 'VENDOR') {
     vendorApprovalStatus: role === 'VENDOR' ? 'PENDING' : null,
     isActive: true,
   })
+
+  return acceptConsentForTest(user)
 }
 
 async function createSearchListing(email: string | null = null) {

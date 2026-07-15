@@ -11,6 +11,7 @@ import ProjectVendorAttachmentService, {
   ProjectVendorAttachmentError,
 } from '#services/project_vendor_attachment_service'
 import VendorService from '#services/vendor_service'
+import { acceptConsentForTest } from '../helpers/user_consent.js'
 
 test.group('ProjectVendorAttachmentService', (group) => {
   let firstUser: User
@@ -35,6 +36,7 @@ test.group('ProjectVendorAttachmentService', (group) => {
       entitlementId: entitlement.id,
       isActive: true,
     })
+    await Promise.all([acceptConsentForTest(firstUser), acceptConsentForTest(secondUser)])
     firstProject = await Project.create({
       title: 'First Attachment Project',
       userUuid: firstUser.uuid,
@@ -265,6 +267,7 @@ test.group('ProjectVendorAttachmentService', (group) => {
       entitlementId: vendorEntitlement.id,
       isActive: true,
     })
+    await acceptConsentForTest(vendorUser)
     const vendorProject = await Project.create({
       title: 'Vendor Account Project',
       userUuid: vendorUser.uuid,

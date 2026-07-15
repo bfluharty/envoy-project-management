@@ -14,6 +14,13 @@ export async function login(page: Page) {
     throw new Error(`Login request failed with status ${response.status()}`)
   }
 
+  const consentResponse = await page.request.post('/onboarding/consent', {
+    data: { termsAccepted: true, modelTrainingOptIn: false },
+  })
+  if (!consentResponse.ok() && ![302, 303].includes(consentResponse.status())) {
+    throw new Error(`Consent setup failed with status ${consentResponse.status()}`)
+  }
+
   await page.goto('/dashboard')
   await page.waitForURL('**/dashboard')
 }

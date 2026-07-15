@@ -49,6 +49,8 @@ router.use([
 export const middleware = router.named({
   guest: () => import('#middleware/guest_middleware'),
   auth: () => import('#middleware/auth_middleware'),
+  consent: () => import('#middleware/consent_required_middleware'),
+  sameOrigin: () => import('#middleware/verify_same_origin_middleware'),
   activeInbox: () => import('#middleware/active_inbox_middleware'),
   consumer: () => import('#middleware/consumer_middleware'),
   silentAuth: () => import('#middleware/silent_auth_middleware'),
