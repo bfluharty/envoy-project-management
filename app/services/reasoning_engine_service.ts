@@ -57,15 +57,26 @@ export default class ReasoningEngineService {
     reasoningRequest: ReasoningRequest,
     project: Project,
     response: HttpContext['response'],
-    options: { saveToHistory?: boolean } = {}
+    options: {
+      saveToHistory?: boolean
+      historyUserPrompt?: string
+      plainTextResponse?: boolean
+    } = {}
   ) {
-    const { saveToHistory = true } = options
+    const { saveToHistory = true, historyUserPrompt, plainTextResponse = false } = options
     try {
       const agentResponse = await this.requestAgent(reasoningRequest)
 
       if (saveToHistory) {
-        await ProjectService.saveConversationTurn(project.conversations[0].uuid, agentResponse.turn)
+        const persistedTurn =
+          historyUserPrompt === undefined
+            ? agentResponse.turn
+            : { ...agentResponse.turn, userPrompt: historyUserPrompt }
+        await ProjectService.saveConversationTurn(project.conversations[0].uuid, persistedTurn)
         const message = await this.handlePostPlanningResponse(agentResponse, project)
+        if (plainTextResponse) {
+          return response.status(200).send(message)
+        }
         return response.status(200).json(message)
       }
 
@@ -99,7 +110,11 @@ export default class ReasoningEngineService {
   ): Promise<string> {
     let message = agentResponse.message ?? agentResponse.turn.modelResponse
 
-    if (agentResponse.agentId !== 'PLANNING' || !agentResponse.readyForNextStep) {
+    if (
+      agentResponse.agentId !== 'PLANNING' ||
+      agentResponse.planningStatus !== 'READY_FOR_OUTREACH' ||
+      !agentResponse.readyForNextStep
+    ) {
       return message
     }
 

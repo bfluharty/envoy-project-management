@@ -118,6 +118,7 @@ test.group('ReasoningRequestContextService', (group) => {
         {
           contents: {
             agentId: 'PLANNING',
+            planningStatus: 'AWAITING_FINAL_DETAILS',
             userPrompt: 'Newest user message',
             modelResponse: 'Newest assistant response',
             timestamp: '2026-07-05T12:05:00.000Z',
@@ -158,6 +159,7 @@ test.group('ReasoningRequestContextService', (group) => {
       },
       {
         agentId: 'PLANNING',
+        planningStatus: 'AWAITING_FINAL_DETAILS',
         userPrompt: 'Newest user message',
         modelResponse: 'Newest assistant response',
         timestamp: '2026-07-05T12:05:00.000Z',
@@ -175,6 +177,31 @@ test.group('ReasoningRequestContextService', (group) => {
     assert.deepEqual(context, {
       projectInsights: [],
       recentTurns: [],
+      planningStatus: 'COLLECTING_DETAILS',
     })
+  })
+
+  test('builds the current planning status from the latest persisted planning turn', async () => {
+    const calls: Call[] = []
+    stubProjectInsights([], calls)
+    stubConversationTurns(
+      [
+        {
+          contents: {
+            agentId: 'PLANNING',
+            planningStatus: 'AWAITING_FINAL_DETAILS',
+            userPrompt: 'Ready for final details.',
+            modelResponse: 'Anything else to include?',
+            timestamp: '2026-07-05T12:05:00.000Z',
+          },
+        },
+      ],
+      calls
+    )
+
+    const context = await ReasoningRequestContextService.buildContext('project-1', 'conversation-1')
+
+    assert.equal(context.planningStatus, 'AWAITING_FINAL_DETAILS')
+    assert.equal(context.recentTurns[0].planningStatus, 'AWAITING_FINAL_DETAILS')
   })
 })

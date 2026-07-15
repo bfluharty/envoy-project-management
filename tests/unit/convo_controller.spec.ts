@@ -46,6 +46,7 @@ test.group('ConvoController reasoning request assembly', (group) => {
     ) => {
       calls.push({ projectUuid, conversationUuid })
       return {
+        planningStatus: 'AWAITING_FINAL_DETAILS',
         projectInsights: [
           {
             uuid: 'insight-1',
@@ -169,6 +170,7 @@ test.group('ConvoController reasoning request assembly', (group) => {
     ])
     assert.equal('pastConversationTurns' in reasoningCalls[0].reasoningRequest, false)
     assert.equal(reasoningCalls[0].reasoningRequest.agentId, 'PLANNING')
+    assert.equal(reasoningCalls[0].reasoningRequest.planningStatus, 'AWAITING_FINAL_DETAILS')
     assert.equal(reasoningCalls[0].reasoningRequest.promptData.prompt, 'What should we do next?')
     assert.deepEqual(reasoningCalls[0].reasoningRequest.stakeholderDetails, {
       name: 'Alice Example',
@@ -217,6 +219,10 @@ test.group('ConvoController reasoning request assembly', (group) => {
       },
     ])
     assert.equal(reasoningCalls[0].reasoningRequest.agentId, 'PLANNING')
-    assert.deepEqual(reasoningCalls[0].options, { saveToHistory: false })
+    assert.equal(reasoningCalls[0].reasoningRequest.planningStatus, 'AWAITING_FINAL_DETAILS')
+    assert.deepEqual(reasoningCalls[0].options, {
+      historyUserPrompt: '',
+      plainTextResponse: true,
+    })
   })
 })

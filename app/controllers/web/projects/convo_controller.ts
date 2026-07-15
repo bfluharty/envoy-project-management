@@ -98,7 +98,8 @@ export default class ConvoController {
         })
 
       return await ReasoningEngineService.handleReasoningChat(reasoningRequest, project, response, {
-        saveToHistory: false,
+        historyUserPrompt: '',
+        plainTextResponse: true,
       })
     } catch (error) {
       if (error.message === 'Project not found') {

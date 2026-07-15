@@ -48,8 +48,10 @@ export default class ProjectsController {
     const allTurns = projectWithHistory?.conversations?.flatMap((c) => c.conversationTurns) ?? []
     const hasPriorConversation = allTurns.length > 0
     const conversationHistory = allTurns.flatMap((turn) => [
-      { role: 'user', content: turn.contents.userPrompt },
-      { role: 'assistant', content: turn.contents.modelResponse },
+      ...(turn.contents.userPrompt?.trim()
+        ? [{ role: 'user' as const, content: turn.contents.userPrompt }]
+        : []),
+      { role: 'assistant' as const, content: turn.contents.modelResponse },
     ])
 
     const projectVendors = await ProjectVendor.query()

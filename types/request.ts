@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon'
 
 export type AgentId = 'INTAKE' | 'PLANNING' | 'OUTREACH'
+export type PlanningStatus = 'COLLECTING_DETAILS' | 'AWAITING_FINAL_DETAILS' | 'READY_FOR_OUTREACH'
 
 export interface ProjectRequest {
   title?: string
@@ -51,6 +52,7 @@ export interface ReasoningProjectInsight {
 
 export interface ReasoningRecentTurn {
   agentId: AgentId
+  planningStatus?: PlanningStatus
   userPrompt: string
   modelResponse: string
   timestamp: string
@@ -62,6 +64,7 @@ export interface StakeholderDetails {
 
 export interface ReasoningRequest {
   agentId: AgentId
+  planningStatus?: PlanningStatus
   promptData?: Record<string, unknown>
   stakeholderDetails?: StakeholderDetails
   projectContext?: ProjectContext
@@ -71,6 +74,7 @@ export interface ReasoningRequest {
 
 export interface ReasoningAgentResponse {
   agentId: AgentId
+  planningStatus?: PlanningStatus
   message: string | null
   data: Record<string, unknown> | null
   readyForNextStep: boolean

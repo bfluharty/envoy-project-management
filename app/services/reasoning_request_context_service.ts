@@ -7,6 +7,7 @@ import ProjectInsightService from '#services/project_insight_service'
 import type User from '#models/user'
 import {
   AgentId,
+  PlanningStatus,
   ProjectContext,
   ReasoningProjectInsight,
   ReasoningRecentTurn,
@@ -26,6 +27,7 @@ export default class ReasoningRequestContextService {
     return {
       projectInsights,
       recentTurns,
+      planningStatus: this.getCurrentPlanningStatus(recentTurns),
     }
   }
 
@@ -110,6 +112,9 @@ export default class ReasoningRequestContextService {
       .filter((turn) => this.isAgentId(turn.contents?.agentId))
       .map((turn) => ({
         agentId: turn.contents.agentId,
+        ...(this.isPlanningStatus(turn.contents.planningStatus)
+          ? { planningStatus: turn.contents.planningStatus }
+          : {}),
         userPrompt: turn.contents.userPrompt ?? '',
         modelResponse: turn.contents.modelResponse ?? '',
         timestamp: turn.contents.timestamp ?? turn.timestamp.toISO() ?? new Date().toISOString(),
@@ -131,5 +136,24 @@ export default class ReasoningRequestContextService {
 
   private static isAgentId(value: unknown): value is AgentId {
     return value === 'INTAKE' || value === 'PLANNING' || value === 'OUTREACH'
+  }
+
+  private static isPlanningStatus(value: unknown): value is PlanningStatus {
+    return (
+      value === 'COLLECTING_DETAILS' ||
+      value === 'AWAITING_FINAL_DETAILS' ||
+      value === 'READY_FOR_OUTREACH'
+    )
+  }
+
+  private static getCurrentPlanningStatus(recentTurns: ReasoningRecentTurn[]): PlanningStatus {
+    for (let index = recentTurns.length - 1; index >= 0; index -= 1) {
+      const turn = recentTurns[index]
+      if (turn.agentId === 'PLANNING' && this.isPlanningStatus(turn.planningStatus)) {
+        return turn.planningStatus
+      }
+    }
+
+    return 'COLLECTING_DETAILS'
   }
 }
