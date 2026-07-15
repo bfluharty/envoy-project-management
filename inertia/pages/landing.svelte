@@ -141,8 +141,8 @@
     let valid = true;
 
     const trimmedBlurb = blurb.trim();
-    if (trimmedBlurb.length < 20) {
-      blurbError = 'Please describe your project in at least 20 characters.';
+    if (trimmedBlurb.length < 5) {
+      blurbError = 'Please describe your project in at least 5 characters.';
       valid = false;
     } else if (trimmedBlurb.length > 2000) {
       blurbError = 'Description must be 2,000 characters or fewer.';

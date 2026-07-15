@@ -135,10 +135,10 @@ test.describe('anonymous vendor discovery', () => {
 
   test('validates the description length and postal code accessibly', async ({ page }) => {
     await page.goto('/')
-    await page.getByLabel('What are you planning?').fill('Too short')
+    await page.getByLabel('What are you planning?').fill('Nope')
     await page.getByRole('button', { name: 'Find vendors' }).click()
 
-    await expect(page.getByText(/at least 20 characters/i)).toBeVisible()
+    await expect(page.getByText(/at least 5 characters/i)).toBeVisible()
     await expect(page.getByText(/postal code is required/i)).toBeVisible()
     await expect(page.getByLabel('What are you planning?')).toHaveAttribute('aria-invalid', 'true')
     await expect(page.getByLabel(/ZIP or postal code/i)).toHaveAttribute('aria-invalid', 'true')

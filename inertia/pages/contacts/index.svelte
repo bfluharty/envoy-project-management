@@ -266,7 +266,7 @@ async function deactivate(uuid: string) {
           onclick={() => { showVendorSearch = !showVendorSearch; }}
           aria-expanded={showVendorSearch}
         >
-          🔍 Find vendors
+          🔍 Find additional contacts
         </button>
         {#if !pageEditMode}
           <button class="btn btn-sm preset-tonal" onclick={() => { pageEditMode = true; }}>

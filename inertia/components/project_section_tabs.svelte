@@ -1,7 +1,7 @@
 <script lang="ts">
-type ProjectTab = 'convo' | 'outreach' | 'overview';
+type ProjectTab = 'chat' | 'outreach' | 'overview';
 
-const TABS: ProjectTab[] = ['convo', 'outreach', 'overview'];
+const TABS: ProjectTab[] = ['chat', 'outreach', 'overview'];
 
 const {
     activeTab,

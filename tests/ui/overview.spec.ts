@@ -50,10 +50,10 @@ function buildThreadCard(overrides: Partial<any> = {}) {
 }
 
 test.describe('tab behaviour', () => {
-  test('project page defaults to convo tab', async ({ page }) => {
+  test('project page defaults to chat tab', async ({ page }) => {
     await login(page)
     await goToProject(page)
-    await expect(page.getByRole('radio', { name: 'convo' })).toBeVisible()
+    await expect(page.getByRole('radio', { name: 'chat' })).toBeVisible()
     await expect(page.getByPlaceholder('Type your message...')).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Project Details' })).not.toBeVisible()
   })
@@ -98,11 +98,11 @@ test.describe('tab behaviour', () => {
     await expect(page.getByRole('button', { name: 'Approve & Send' })).toBeVisible()
   })
 
-  test('switching back to convo tab restores chat', async ({ page }) => {
+  test('switching back to chat tab restores chat', async ({ page }) => {
     await login(page)
     await goToProject(page)
     await page.getByRole('radio', { name: 'overview' }).click({ force: true })
-    await page.getByRole('radio', { name: 'convo' }).click({ force: true })
+    await page.getByRole('radio', { name: 'chat' }).click({ force: true })
     await expect(page.getByPlaceholder('Type your message...')).toBeVisible()
   })
 })

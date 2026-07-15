@@ -47,7 +47,7 @@ test('dashboard page', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Account' })).toBeVisible()
 })
 
-test('project page - convo tab', async ({ page }) => {
+test('project page - chat tab', async ({ page }) => {
   await login(page)
   await goToProject(page)
   await expect(page.getByPlaceholder('Type your message...')).toBeVisible()

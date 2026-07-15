@@ -329,7 +329,7 @@
                 onclick={() => { showVendorSearch = !showVendorSearch; }}
                 aria-expanded={showVendorSearch}
               >
-                🔍 {showVendorSearch ? 'Hide vendor search' : 'Find vendors to add'}
+                🔍 {showVendorSearch ? 'Hide contact search' : 'Find new contacts for this project'}
                 {#if pendingVendorListingUuids.length > 0}
                   <span class="ml-1 text-xs bg-white/20 rounded-full px-2 py-0.5">{pendingVendorListingUuids.length} selected</span>
                 {/if}

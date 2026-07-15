@@ -62,6 +62,17 @@ async function fillVendorSearch(page: import('@playwright/test').Page) {
 }
 
 test.describe('authenticated vendor search component', () => {
+  test('requires a five-character project description', async ({ page }) => {
+    await openContactsSearch(page)
+    await page.getByLabel('What do you need?').fill('Nope')
+    await page.getByLabel(/ZIP or postal code/i).fill('23220')
+
+    await page.getByRole('button', { name: 'Search vendors' }).click()
+
+    await expect(page.getByText(/at least 5 characters/i)).toBeVisible()
+    await expect(page.getByLabel('What do you need?')).toHaveAttribute('aria-invalid', 'true')
+  })
+
   test('searches with session auth, renders marketplace status, and saves a listing to Contacts', async ({
     page,
   }) => {

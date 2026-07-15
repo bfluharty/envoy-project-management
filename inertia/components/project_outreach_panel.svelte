@@ -530,7 +530,7 @@ function getSelectedContact(contactUuid: string) {
                     <div class="min-w-0 space-y-3">
                         <div class="flex items-start justify-between gap-4">
                             <div class="min-w-0 space-y-1">
-                                <p class="text-xs uppercase tracking-[0.18em] text-surface-600-400">Conversation</p>
+                                <p class="text-xs uppercase tracking-[0.18em] text-surface-600-400">Chat</p>
                                 <h3 class="text-lg font-semibold">{selectedCard.vendor.name}</h3>
                                 <p class="text-sm text-surface-600-400">{selectedCard.vendor.email}</p>
                             </div>

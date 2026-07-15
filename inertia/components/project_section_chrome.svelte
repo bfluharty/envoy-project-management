@@ -2,7 +2,7 @@
 import type { Snippet } from 'svelte';
 import ProjectSectionTabs from '#components/project_section_tabs.svelte';
 
-type ProjectTab = 'convo' | 'outreach' | 'overview';
+type ProjectTab = 'chat' | 'outreach' | 'overview';
 
 const {
     activeTab,

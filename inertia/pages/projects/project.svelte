@@ -122,13 +122,13 @@ const {
 
 // ── Tab state ──────────────────────────────────────────────
 const getTabKey = () => `tab-${project.uuid}`;
-const VALID_TABS = ['convo', 'outreach', 'overview'] as const;
+const VALID_TABS = ['chat', 'outreach', 'overview'] as const;
 type ProjectTab = typeof VALID_TABS[number];
 const isReload = typeof performance !== 'undefined' &&
     (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload';
 const storedTab = isReload && typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(getTabKey()) : null;
 let activeTab = $state<ProjectTab>(
-    VALID_TABS.includes(storedTab as any) ? (storedTab as ProjectTab) : 'convo'
+    VALID_TABS.includes(storedTab as any) ? (storedTab as ProjectTab) : 'chat'
 );
 
 function handleTabChange(tab: ProjectTab) {
@@ -1043,15 +1043,15 @@ onDestroy(() => {
     </aside>
 {/if}
 
-<!-- Convo tab -->
-{#if activeTab === 'convo'}
+<!-- Chat tab -->
+{#if activeTab === 'chat'}
 <div class="flex min-h-0 min-w-0 flex-col flex-1 overflow-hidden w-full">
     <div class="min-h-0 flex-1 overflow-y-auto"
-         aria-live="polite" aria-atomic="false" aria-label="Conversation">
+         aria-live="polite" aria-atomic="false" aria-label="Chat">
         <ProjectSectionChrome
             activeTab={activeTab}
             onSelectTab={handleTabChange}
-            sectionLabel="Conversation"
+            sectionLabel="Chat"
             projectName={project.name}
             description="Use Envoy to capture missing details, refine the brief, and keep project planning in one thread."
         />
@@ -1476,7 +1476,7 @@ onDestroy(() => {
                     aria-expanded={activeContactPanel === 'find-vendors'}
                     aria-controls="panel-find-vendors"
                     onclick={() => { activeContactPanel = activeContactPanel === 'find-vendors' ? null : 'find-vendors'; contactSearchQuery = ''; selectedVendorUuids = new Set(); newContactName = ''; newContactEmail = ''; newContactErrors = {}; clearTrustedContactMatches(); }}>
-                    🔍 Find vendors
+                    🔍 Find new contacts
                 </button>
             </div>
 

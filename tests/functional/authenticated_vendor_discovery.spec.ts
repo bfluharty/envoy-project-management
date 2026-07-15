@@ -128,12 +128,24 @@ test.group('authenticated vendor discovery API', (group) => {
   })
 
   test('validates authenticated search input', async ({ client }) => {
-    const response = await client
+    stubReasoning({
+      vendorSearches: [{ classification: 'Painter', query: 'commercial painter' }],
+    })
+    stubFoursquare([])
+
+    const invalidResponse = await client
       .post('/api/vendors/search')
       .loginAs(consumer)
-      .json({ projectDescription: 'too short', postalCode: '' })
+      .json({ projectDescription: 'nope', postalCode: '23220' })
 
-    response.assertStatus(422)
+    invalidResponse.assertStatus(422)
+
+    const validResponse = await client
+      .post('/api/vendors/search')
+      .loginAs(consumer)
+      .json({ projectDescription: 'paint', postalCode: '23220' })
+
+    validResponse.assertStatus(200)
   })
 
   test('rejects authenticated vendor accounts', async ({ client }) => {

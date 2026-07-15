@@ -31,7 +31,7 @@ test.group('onboarding draft routes', (group) => {
     const originalSearch = OnboardingVendorDiscoveryService.search
     const onboardingToken = uuidv4()
     const draftUuid = uuidv4()
-    const projectDescription = 'I need a commercial electrician for a new restaurant buildout.'
+    const projectDescription = 'paint'
     const received: Array<{
       projectDescription: string
       postalCode: string
@@ -54,7 +54,7 @@ test.group('onboarding draft routes', (group) => {
     try {
       const invalidResponse = await client
         .post('/onboarding/vendor-search')
-        .json({ projectDescription: 'no', postalCode: '23220' })
+        .json({ projectDescription: 'nope', postalCode: '23220' })
 
       invalidResponse.assertStatus(422)
 

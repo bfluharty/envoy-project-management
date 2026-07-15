@@ -695,7 +695,7 @@ Request:
 
 Project completion is authenticated and loads the draft by `registered_user_uuid = auth.user.uuid`. It does not accept the raw onboarding token.
 
-The project completion request should create the project and vendor links only. It should not call OpenAI or create outreach drafts. After the transaction commits, redirect the user to the project's default Convo page.
+The project completion request should create the project and vendor links only. It should not call OpenAI or create outreach drafts. After the transaction commits, redirect the user to the project's default Chat page.
 
 Response:
 
@@ -1105,7 +1105,7 @@ store({ auth, request, response, session })
 - Creates project.
 - Links selected vendors to the project.
 - Marks draft consumed.
-- Redirects to `/projects/:projectUuid` after the transaction commits so the existing default Convo experience opens.
+- Redirects to `/projects/:projectUuid` after the transaction commits so the existing default Chat experience opens.
 
 ### 12.2 UI
 
@@ -1206,7 +1206,7 @@ Project completion redirects directly to:
 /projects/:projectUuid
 ```
 
-The existing project page opens its established default Convo experience. Do not add an outreach-preparing page, do not call an initial outreach preparation endpoint, and do not automatically create outreach drafts during onboarding.
+The existing project page opens its established default Chat experience. Do not add an outreach-preparing page, do not call an initial outreach preparation endpoint, and do not automatically create outreach drafts during onboarding.
 
 The project conversation can gather additional project context before the existing user- or agent-initiated outreach flow is used. Gathering missing vendor email or other vendor contact details through the agent is out of scope for this phase.
 
@@ -1434,7 +1434,7 @@ Project-management Foursquare client tests should also verify that ZIP/postal co
 Happy path:
 
 ```text
-anonymous intake -> reasoning vendor searches -> relevant existing listings merged with persisted Foursquare results -> relevant-existing-first recommendations -> select listing UUIDs -> register -> auto-login -> project completion -> project created -> vendors linked -> user sees project Convo
+anonymous intake -> reasoning vendor searches -> relevant existing listings merged with persisted Foursquare results -> relevant-existing-first recommendations -> select listing UUIDs -> register -> auto-login -> project completion -> project created -> vendors linked -> user sees project Chat
 ```
 
 Failure scenarios:
@@ -1470,7 +1470,7 @@ Use Playwright for:
 - Recommendation UI shows claimed/onboarded and consumer-owned/unverified states accurately.
 - Registration auto-login redirects correctly.
 - Project completion form is prefilled.
-- Project creation redirects to the project page and opens the default Convo experience.
+- Project creation redirects to the project page and opens the default Chat experience.
 
 ---
 
@@ -1517,7 +1517,7 @@ Use Playwright for:
 - Attach vendors to project.
 - Adopt ownerless no-email search listings when first added.
 - Mark draft consumed.
-- Redirect to the default project Convo experience.
+- Redirect to the default project Chat experience.
 
 ### Step 7: Ownership And Availability
 

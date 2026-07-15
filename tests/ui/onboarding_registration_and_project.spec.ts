@@ -284,7 +284,7 @@ test.describe('first project completion', () => {
     await expect(page.getByRole('checkbox')).toHaveCount(0)
   })
 
-  test('submits the canonical project payload without a token, clears browser state, and opens Convo', async ({
+  test('submits the canonical project payload without a token, clears browser state, and opens Chat', async ({
     page,
   }) => {
     await mockInertiaPage(page, '/onboarding/project', 'onboarding/project', activeProjectProps)

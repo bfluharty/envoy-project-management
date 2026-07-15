@@ -95,8 +95,8 @@
     if (!projectDescription.trim()) {
       descError = 'Describe what you need.';
       valid = false;
-    } else if (projectDescription.trim().length < 20) {
-      descError = 'Please enter at least 20 characters.';
+    } else if (projectDescription.trim().length < 5) {
+      descError = 'Please enter at least 5 characters.';
       valid = false;
     }
     if (!postalCode.trim()) {
@@ -273,7 +273,7 @@
   <div class="flex items-center justify-between gap-3">
     <h2 class="text-lg font-semibold flex items-center gap-2">
       <SearchIcon class="size-5 text-primary-500" />
-      Find vendors
+      Find additional contacts
     </h2>
     <button
       type="button"
