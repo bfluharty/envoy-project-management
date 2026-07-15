@@ -4,6 +4,7 @@ import { DateTime } from 'luxon'
 import { validate as validateUuid, version as uuidVersion, v4 as uuidv4 } from 'uuid'
 import AnonymousOnboardingDraft from '#models/anonymous_onboarding_draft'
 import VendorListing from '#models/vendor_listing'
+import VendorService from '#services/vendor_service'
 
 export const ANONYMOUS_ONBOARDING_SESSION_KEY = 'onboarding.anonymous_session_uuid'
 export const ONBOARDING_TOKEN_SESSION_KEY = 'onboarding.token'
@@ -189,14 +190,36 @@ export default class OnboardingDraftService {
     }
 
     const draft = await this.getActiveDraftOrFail(token)
-    const recommendedSet = new Set(draft.recommendedVendorListingUuids ?? [])
-    if (selectedVendorListingUuids.some((uuid) => !recommendedSet.has(uuid))) {
+    const canonicalRecommendedUuids: string[] = []
+    const allowedSelectionUuids = new Set(draft.recommendedVendorListingUuids ?? [])
+    for (const recommendedUuid of draft.recommendedVendorListingUuids ?? []) {
+      const canonical = await VendorService.resolveCanonicalListing(recommendedUuid)
+      if (!canonical?.isActive) continue
+      allowedSelectionUuids.add(canonical.uuid)
+      if (!canonicalRecommendedUuids.includes(canonical.uuid)) {
+        canonicalRecommendedUuids.push(canonical.uuid)
+      }
+    }
+
+    if (selectedVendorListingUuids.some((uuid) => !allowedSelectionUuids.has(uuid))) {
       logger.warn({ draftUuid: draft.uuid }, 'Rejected unknown onboarding vendor selection')
       throw new OnboardingDraftError('Selected vendor does not exist in this draft')
     }
 
-    await this.assertAvailableListingUuids(selectedVendorListingUuids)
-    draft.selectedVendorListingUuids = selectedVendorListingUuids
+    const canonicalSelectedUuids: string[] = []
+    for (const selectedUuid of selectedVendorListingUuids) {
+      const canonical = await VendorService.resolveCanonicalListing(selectedUuid)
+      if (!canonical?.isActive) {
+        throw new OnboardingDraftError('One or more vendor listings are unavailable')
+      }
+      if (canonicalSelectedUuids.includes(canonical.uuid)) {
+        throw new OnboardingDraftError('Selected vendors must resolve to unique listings')
+      }
+      canonicalSelectedUuids.push(canonical.uuid)
+    }
+
+    draft.recommendedVendorListingUuids = canonicalRecommendedUuids
+    draft.selectedVendorListingUuids = canonicalSelectedUuids
     await draft.save()
     logger.info(
       { draftUuid: draft.uuid, selectedVendorCount: draft.selectedVendorListingUuids.length },

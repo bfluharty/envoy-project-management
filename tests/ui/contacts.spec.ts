@@ -1,39 +1,82 @@
-import { test, expect } from '@playwright/test'
-import { login, goToProject, PROJECT_ALPHA_UUID } from './helpers.js'
+import { expect, test, type Page } from '@playwright/test'
+import { goToProject, login, PROJECT_ALPHA_UUID } from './helpers.js'
 
 // Acme Corp — Alice's seeded contact
 const ACME_UUID = 'f1e2d3c4-b5a6-4c7d-8e9f-0a1b2c3d4e5f'
 
-async function goToContacts(page: import('@playwright/test').Page) {
+async function goToContacts(page: Page) {
   await page.goto('/contacts')
-  await page.waitForLoadState('networkidle')
+  await expect(page.getByRole('heading', { name: 'Contacts', exact: true })).toBeVisible()
 }
 
-async function ensureContactForInlineEdit(page: import('@playwright/test').Page) {
-  if ((await page.getByRole('button', { name: 'Edit' }).count()) > 0) return
+async function mockNoTrustedMatches(page: Page) {
+  await page.route('**/api/vendors/trusted-matches?**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: '{"vendors":[]}',
+    })
+  )
+}
 
-  const newUuid = 'inline-edit-seed-0000-0000-000000000001'
+async function enterContactsEditMode(page: Page) {
+  const doneButton = page.getByRole('button', { name: 'Done', exact: true })
+  if (await doneButton.isVisible().catch(() => false)) return
+
+  await page
+    .getByRole('heading', { name: 'Contacts', exact: true })
+    .locator('..')
+    .getByRole('button', { name: 'Edit', exact: true })
+    .click()
+  await expect(doneButton).toBeVisible()
+}
+
+async function openContactsNewContactForm(page: Page) {
+  await enterContactsEditMode(page)
+  await page.getByRole('button', { name: '+ New contact', exact: true }).click()
+  await expect(page.locator('#addName')).toBeVisible()
+}
+
+function contactRow(page: Page, name = 'Acme Corp') {
+  return page
+    .locator('li')
+    .filter({ has: page.getByText(name, { exact: true }) })
+    .first()
+}
+
+async function ensureContactForInlineEdit(page: Page) {
+  if ((await page.getByText('Acme Corp', { exact: true }).count()) > 0) return
+
+  await mockNoTrustedMatches(page)
   await page.route('/contacts', async (route) => {
-    if (route.request().method() === 'POST') {
-      await route.fulfill({
-        status: 201,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          contact: { uuid: newUuid, name: 'Inline Contact', email: 'inline@example.com' },
-        }),
-      })
-    } else {
-      await route.continue()
+    if (route.request().method() !== 'POST') {
+      await route.fallback()
+      return
     }
+
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        contact: { uuid: ACME_UUID, name: 'Acme Corp', email: 'contact@acme.com' },
+      }),
+    })
   })
 
-  await page.getByPlaceholder('Name').last().fill('Inline Contact')
-  await page.getByPlaceholder('Email').last().fill('inline@example.com')
+  await openContactsNewContactForm(page)
+  await page.locator('#addName').fill('Acme Corp')
+  await page.locator('#addEmail').fill('contact@acme.com')
   await page.getByRole('button', { name: 'Add Contact' }).click()
-  await expect(page.getByText('Inline Contact')).toBeVisible()
+  await expect(page.getByText('Acme Corp', { exact: true })).toBeVisible()
 }
 
-// ── Navigation ────────────────────────────────────────────────────────────────
+async function openProjectNewContactForm(page: Page) {
+  await goToProject(page)
+  await page.getByRole('radio', { name: 'overview' }).click({ force: true })
+  await enterContactsEditMode(page)
+  await page.getByRole('button', { name: '+ New contact', exact: true }).click()
+  await expect(page.locator('#newContactName')).toBeVisible()
+}
 
 test('sidebar has a Contacts link that navigates to /contacts', async ({ page }) => {
   await login(page)
@@ -42,87 +85,95 @@ test('sidebar has a Contacts link that navigates to /contacts', async ({ page })
   await expect(page.getByRole('heading', { name: 'Contacts' })).toBeVisible()
 })
 
-// ── Page load ─────────────────────────────────────────────────────────────────
-
 test.describe('contacts page load', () => {
   test('shows seeded contact for Alice', async ({ page }) => {
     await login(page)
     await goToContacts(page)
-    await expect(page.getByText('Acme Corp')).toBeVisible()
-    await expect(page.getByText('contact@acme.com')).toBeVisible()
+    await expect(page.getByText('Acme Corp', { exact: true })).toBeVisible()
+    await expect(page.getByText('contact@acme.com', { exact: true })).toBeVisible()
   })
 
-  test('shows Add Contact form', async ({ page }) => {
+  test('reveals the labeled new-contact form from page edit mode', async ({ page }) => {
     await login(page)
     await goToContacts(page)
-    await expect(page.getByRole('heading', { name: 'Add Contact' })).toBeVisible()
-    await expect(page.getByPlaceholder('Name')).toBeVisible()
-    await expect(page.getByPlaceholder('Email')).toBeVisible()
+
+    await expect(page.getByRole('button', { name: '+ New contact', exact: true })).toHaveCount(0)
+    await openContactsNewContactForm(page)
+
+    await expect(page.locator('#addName')).toHaveAccessibleName('Name')
+    await expect(page.locator('#addEmail')).toHaveAccessibleName('Email')
     await expect(page.getByRole('button', { name: 'Add Contact' })).toBeVisible()
   })
 })
-
-// ── Add contact ───────────────────────────────────────────────────────────────
 
 test.describe('add contact', () => {
   test('new contact appears in list after successful submit', async ({ page }) => {
     await login(page)
     await goToContacts(page)
+    await mockNoTrustedMatches(page)
 
     const newUuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
     await page.route('/contacts', async (route) => {
-      if (route.request().method() === 'POST') {
-        await route.fulfill({
-          status: 201,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            contact: { uuid: newUuid, name: 'Bob Smith', email: 'bob@example.com' },
-          }),
-        })
-      } else {
-        await route.continue()
+      if (route.request().method() !== 'POST') {
+        await route.fallback()
+        return
       }
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          contact: { uuid: newUuid, name: 'Bob Smith', email: 'bob@example.com' },
+        }),
+      })
     })
 
-    // Use last() because there are two Name/Email inputs (list edit + add form)
-    await page.getByPlaceholder('Name').last().fill('Bob Smith')
-    await page.getByPlaceholder('Email').last().fill('bob@example.com')
+    await openContactsNewContactForm(page)
+    await page.locator('#addName').fill('Bob Smith')
+    await page.locator('#addEmail').fill('bob@example.com')
     await page.getByRole('button', { name: 'Add Contact' }).click()
 
-    await expect(page.getByText('Bob Smith')).toBeVisible()
-    await expect(page.getByText('bob@example.com')).toBeVisible()
+    await expect(page.getByText('Bob Smith', { exact: true })).toBeVisible()
+    await expect(page.getByText('bob@example.com', { exact: true })).toBeVisible()
   })
 
-  test('form clears after successful submit', async ({ page }) => {
+  test('form resets after successful submit', async ({ page }) => {
     await login(page)
     await goToContacts(page)
+    await mockNoTrustedMatches(page)
 
     await page.route('/contacts', async (route) => {
-      if (route.request().method() === 'POST') {
-        await route.fulfill({
-          status: 201,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            contact: { uuid: 'new-uuid-1234', name: 'Alice Two', email: 'alice2@example.com' },
-          }),
-        })
-      } else {
-        await route.continue()
+      if (route.request().method() !== 'POST') {
+        await route.fallback()
+        return
       }
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          contact: {
+            uuid: 'new-uuid-1234',
+            name: 'Alice Two',
+            email: 'alice2@example.com',
+          },
+        }),
+      })
     })
 
-    await page.getByPlaceholder('Name').last().fill('Alice Two')
-    await page.getByPlaceholder('Email').last().fill('alice2@example.com')
+    await openContactsNewContactForm(page)
+    await page.locator('#addName').fill('Alice Two')
+    await page.locator('#addEmail').fill('alice2@example.com')
     await page.getByRole('button', { name: 'Add Contact' }).click()
 
-    await expect(page.getByText('Alice Two')).toBeVisible()
-    await expect(page.getByPlaceholder('Name').last()).toHaveValue('')
-    await expect(page.getByPlaceholder('Email').last()).toHaveValue('')
+    await expect(page.getByText('Alice Two', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: '+ New contact', exact: true }).click()
+    await expect(page.locator('#addName')).toHaveValue('')
+    await expect(page.locator('#addEmail')).toHaveValue('')
   })
 
-  test('submit button is disabled while request is in-flight', async ({ page }) => {
+  test('submit button is disabled while request is in flight', async ({ page }) => {
     await login(page)
     await goToContacts(page)
+    await mockNoTrustedMatches(page)
 
     let resolveRequest: () => void
     const requestHeld = new Promise<void>((resolve) => {
@@ -130,39 +181,38 @@ test.describe('add contact', () => {
     })
 
     await page.route('/contacts', async (route) => {
-      if (route.request().method() === 'POST') {
-        await requestHeld
-        await route.fulfill({
-          status: 201,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            contact: { uuid: 'in-flight-uuid', name: 'In Flight', email: 'flight@example.com' },
-          }),
-        })
-      } else {
-        await route.continue()
+      if (route.request().method() !== 'POST') {
+        await route.fallback()
+        return
       }
+      await requestHeld
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          contact: { uuid: 'in-flight-uuid', name: 'In Flight', email: 'flight@example.com' },
+        }),
+      })
     })
 
-    await page.getByPlaceholder('Name').last().fill('In Flight')
-    await page.getByPlaceholder('Email').last().fill('flight@example.com')
+    await openContactsNewContactForm(page)
+    await page.locator('#addName').fill('In Flight')
+    await page.locator('#addEmail').fill('flight@example.com')
     await page.getByRole('button', { name: 'Add Contact' }).click()
 
     await expect(page.getByRole('button', { name: /Adding/ })).toBeDisabled()
-
     resolveRequest!()
-    await expect(page.getByText('In Flight')).toBeVisible()
+    await expect(page.getByText('In Flight', { exact: true })).toBeVisible()
   })
 })
-
-// ── Add contact validation ─────────────────────────────────────────────────────
 
 test.describe('add contact validation', () => {
   test('shows error when name is empty', async ({ page }) => {
     await login(page)
     await goToContacts(page)
+    await openContactsNewContactForm(page)
 
-    await page.getByPlaceholder('Email').last().fill('valid@example.com')
+    await page.locator('#addEmail').fill('valid@example.com')
     await page.getByRole('button', { name: 'Add Contact' }).click()
 
     await expect(page.getByText('Name is required.')).toBeVisible()
@@ -171,8 +221,9 @@ test.describe('add contact validation', () => {
   test('shows error when email is empty', async ({ page }) => {
     await login(page)
     await goToContacts(page)
+    await openContactsNewContactForm(page)
 
-    await page.getByPlaceholder('Name').last().fill('Valid Name')
+    await page.locator('#addName').fill('Valid Name')
     await page.getByRole('button', { name: 'Add Contact' }).click()
 
     await expect(page.getByText('Email is required.')).toBeVisible()
@@ -181,81 +232,84 @@ test.describe('add contact validation', () => {
   test('shows error for invalid email format', async ({ page }) => {
     await login(page)
     await goToContacts(page)
+    await openContactsNewContactForm(page)
 
-    await page.getByPlaceholder('Name').last().fill('Valid Name')
-    await page.getByPlaceholder('Email').last().fill('not-an-email')
+    await page.locator('#addName').fill('Valid Name')
+    await page.locator('#addEmail').fill('not-an-email')
     await page.getByRole('button', { name: 'Add Contact' }).click()
 
     await expect(page.getByText('Must be a valid email address.')).toBeVisible()
   })
 })
 
-// ── Inline edit ───────────────────────────────────────────────────────────────
-
 test.describe('inline edit', () => {
-  test('Edit button shows editable fields', async ({ page }) => {
+  test('row Edit button shows labeled editable fields', async ({ page }) => {
     await login(page)
     await goToContacts(page)
     await ensureContactForInlineEdit(page)
+    await enterContactsEditMode(page)
 
-    await page.getByRole('button', { name: 'Edit' }).first().click()
+    await contactRow(page).getByRole('button', { name: 'Edit', exact: true }).click()
 
-    await expect(page.getByPlaceholder('Name').first()).toBeVisible()
-    await expect(page.getByPlaceholder('Email').first()).toBeVisible()
+    await expect(page.locator(`#edit-name-${ACME_UUID}`)).toBeVisible()
+    await expect(page.locator(`#edit-email-${ACME_UUID}`)).toBeVisible()
     await expect(page.getByRole('button', { name: 'Save' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible()
   })
 
-  test('Cancel returns to read mode without changes', async ({ page }) => {
+  test('Cancel returns the row to read mode without changes', async ({ page }) => {
     await login(page)
     await goToContacts(page)
     await ensureContactForInlineEdit(page)
+    await enterContactsEditMode(page)
 
-    await page.getByRole('button', { name: 'Edit' }).first().click()
-    await page.getByPlaceholder('Name').first().fill('Changed Name')
+    await contactRow(page).getByRole('button', { name: 'Edit', exact: true }).click()
+    await page.locator(`#edit-name-${ACME_UUID}`).fill('Changed Name')
     await page.getByRole('button', { name: 'Cancel' }).click()
 
-    await expect(page.getByText('Acme Corp')).toBeVisible()
-    await expect(page.getByText('Changed Name')).not.toBeVisible()
-    await expect(page.getByRole('button', { name: 'Save' })).not.toBeVisible()
+    await expect(page.getByText('Acme Corp', { exact: true })).toBeVisible()
+    await expect(page.getByText('Changed Name', { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Save' })).toHaveCount(0)
   })
 
-  test('Save updates name and email in list', async ({ page }) => {
+  test('Save updates name and email in the row', async ({ page }) => {
     await login(page)
     await goToContacts(page)
     await ensureContactForInlineEdit(page)
+    await enterContactsEditMode(page)
 
     await page.route(`/contacts/${ACME_UUID}`, async (route) => {
-      if (route.request().method() === 'PATCH') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            contact: { uuid: ACME_UUID, name: 'Acme Corp Renamed', email: 'new@acme.com' },
-          }),
-        })
-      } else {
-        await route.continue()
+      if (route.request().method() !== 'PATCH') {
+        await route.fallback()
+        return
       }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          contact: { uuid: ACME_UUID, name: 'Acme Corp Renamed', email: 'new@acme.com' },
+        }),
+      })
     })
 
-    await page.getByRole('button', { name: 'Edit' }).first().click()
-    await page.getByPlaceholder('Name').first().fill('Acme Corp Renamed')
-    await page.getByPlaceholder('Email').first().fill('new@acme.com')
+    await contactRow(page).getByRole('button', { name: 'Edit', exact: true }).click()
+    await page.locator(`#edit-name-${ACME_UUID}`).fill('Acme Corp Renamed')
+    await page.locator(`#edit-email-${ACME_UUID}`).fill('new@acme.com')
     await page.getByRole('button', { name: 'Save' }).click()
 
-    await expect(page.getByText('Acme Corp Renamed')).toBeVisible()
-    await expect(page.getByText('new@acme.com')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Save' })).not.toBeVisible()
+    await expect(page.getByText('Acme Corp Renamed', { exact: true })).toBeVisible()
+    await expect(page.getByText('new@acme.com', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Save' })).toHaveCount(0)
   })
 
-  test('Save shows field error when name is cleared', async ({ page }) => {
+  test('Save shows a field error when name is cleared', async ({ page }) => {
     await login(page)
     await goToContacts(page)
     await ensureContactForInlineEdit(page)
+    await enterContactsEditMode(page)
 
-    await page.getByRole('button', { name: 'Edit' }).first().click()
-    await page.getByPlaceholder('Name').first().fill('')
+    await contactRow(page).getByRole('button', { name: 'Edit', exact: true }).click()
+    await page.locator(`#edit-name-${ACME_UUID}`).fill('')
     await page.getByRole('button', { name: 'Save' }).click()
 
     await expect(page.getByText('Name is required.')).toBeVisible()
@@ -263,119 +317,118 @@ test.describe('inline edit', () => {
   })
 })
 
-// ── Deactivate ────────────────────────────────────────────────────────────────
-
 test.describe('deactivate contact', () => {
-  test('Remove button removes contact from list', async ({ page }) => {
+  test('Remove requires confirmation and then removes the contact row', async ({ page }) => {
     await login(page)
     await goToContacts(page)
+    await ensureContactForInlineEdit(page)
+    await enterContactsEditMode(page)
 
-    const beforeCount = await page.getByRole('button', { name: 'Remove' }).count()
-    expect(beforeCount).toBeGreaterThan(0)
-
+    let deleteCalled = false
     await page.route(`/contacts/${ACME_UUID}`, async (route) => {
-      if (route.request().method() === 'DELETE') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ success: true }),
-        })
-      } else {
-        await route.continue()
+      if (route.request().method() !== 'DELETE') {
+        await route.fallback()
+        return
       }
+      deleteCalled = true
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true }),
+      })
     })
 
-    await page.getByRole('button', { name: 'Remove' }).first().click()
+    await page.getByRole('button', { name: 'Remove Acme Corp', exact: true }).click()
+    await expect(
+      page.getByRole('button', { name: 'Confirm remove Acme Corp', exact: true })
+    ).toBeVisible()
+    expect(deleteCalled).toBe(false)
 
-    await expect(page.getByRole('button', { name: 'Remove' })).toHaveCount(beforeCount - 1)
+    await page.getByRole('button', { name: 'Confirm remove Acme Corp', exact: true }).click()
+
+    await expect(page.getByText('Acme Corp', { exact: true })).toHaveCount(0)
+    expect(deleteCalled).toBe(true)
   })
 })
 
-// ── Add contact from project overview ─────────────────────────────────────────
-
 test.describe('add contact from project overview', () => {
-  test('+ New contact button opens inline form', async ({ page }) => {
+  test('+ New contact button opens the labeled inline form', async ({ page }) => {
     await login(page)
-    await goToProject(page)
-    await page.getByRole('radio', { name: 'overview' }).click({ force: true })
+    await openProjectNewContactForm(page)
 
-    await page.getByRole('button', { name: '+ New contact' }).click()
-
+    await expect(page.locator('#newContactName')).toHaveAccessibleName('Name')
+    await expect(page.locator('#newContactEmail')).toHaveAccessibleName('Email')
     await expect(page.getByRole('button', { name: 'Add & Attach' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Cancel' }).last()).toBeVisible()
   })
 
   test('Cancel hides the new contact form', async ({ page }) => {
     await login(page)
-    await goToProject(page)
-    await page.getByRole('radio', { name: 'overview' }).click({ force: true })
+    await openProjectNewContactForm(page)
 
-    await page.getByRole('button', { name: '+ New contact' }).click()
-    await page.getByRole('button', { name: 'Cancel' }).last().click()
+    const form = page.locator('#panel-new-contact')
+    await form.getByRole('button', { name: 'Cancel' }).click()
 
-    await expect(page.getByRole('button', { name: 'Add & Attach' })).not.toBeVisible()
-    await expect(page.getByRole('button', { name: '+ New contact' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Add & Attach' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '+ New contact', exact: true })).toBeVisible()
   })
 
   test('new contact is created and linked to project', async ({ page }) => {
     await login(page)
-    await goToProject(page, PROJECT_ALPHA_UUID)
-    await page.getByRole('radio', { name: 'overview' }).click({ force: true })
+    await mockNoTrustedMatches(page)
 
     const newUuid = 'cccccccc-dddd-eeee-ffff-000000000000'
-
     await page.route('/contacts', async (route) => {
-      if (route.request().method() === 'POST') {
-        await route.fulfill({
-          status: 201,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            contact: { uuid: newUuid, name: 'New Vendor', email: 'vendor@new.com' },
-          }),
-        })
-      } else {
-        await route.continue()
+      if (route.request().method() !== 'POST') {
+        await route.fallback()
+        return
       }
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          contact: {
+            uuid: newUuid,
+            vendorUuid: newUuid,
+            vendorListingUuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+            name: 'New Vendor',
+            email: 'vendor@new.com',
+          },
+        }),
+      })
     })
 
     await page.route(`/projects/${PROJECT_ALPHA_UUID}`, async (route) => {
-      if (route.request().method() === 'PATCH') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            project: { uuid: PROJECT_ALPHA_UUID },
-            linkedVendors: [
-              { uuid: ACME_UUID, name: 'Acme Corp', email: 'contact@acme.com' },
-              { uuid: newUuid, name: 'New Vendor', email: 'vendor@new.com' },
-            ],
-          }),
-        })
-      } else {
-        await route.continue()
+      if (route.request().method() !== 'PATCH') {
+        await route.fallback()
+        return
       }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          project: { uuid: PROJECT_ALPHA_UUID },
+          linkedVendors: [
+            { uuid: ACME_UUID, name: 'Acme Corp', email: 'contact@acme.com' },
+            { uuid: newUuid, name: 'New Vendor', email: 'vendor@new.com' },
+          ],
+        }),
+      })
     })
 
-    await page.getByRole('button', { name: '+ New contact' }).click()
-    // There are multiple Name/Email placeholders in the page; target the form specifically
-    const newContactForm = page
-      .locator('form')
-      .filter({ has: page.getByRole('button', { name: 'Add & Attach' }) })
-    await newContactForm.getByPlaceholder('Name').fill('New Vendor')
-    await newContactForm.getByPlaceholder('Email').fill('vendor@new.com')
+    await openProjectNewContactForm(page)
+    await page.locator('#newContactName').fill('New Vendor')
+    await page.locator('#newContactEmail').fill('vendor@new.com')
     await page.getByRole('button', { name: 'Add & Attach' }).click()
 
-    await expect(page.getByText('New Vendor')).toBeVisible()
-    await expect(page.getByText('vendor@new.com')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Add & Attach' })).not.toBeVisible()
+    await expect(page.getByText('New Vendor', { exact: true })).toBeVisible()
+    await expect(page.getByText('vendor@new.com', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Add & Attach' })).toHaveCount(0)
   })
 
   test('shows field errors when name or email is blank', async ({ page }) => {
     await login(page)
-    await goToProject(page)
-    await page.getByRole('radio', { name: 'overview' }).click({ force: true })
+    await openProjectNewContactForm(page)
 
-    await page.getByRole('button', { name: '+ New contact' }).click()
     await page.getByRole('button', { name: 'Add & Attach' }).click()
 
     await expect(page.getByText('Name is required.')).toBeVisible()

@@ -6,8 +6,15 @@ import AuthController from '#controllers/web/auth_controller'
 import User from '#models/user'
 import UserInboxConnection from '#models/user_inbox_connection'
 import EmailAuthorizationConsent from '#models/email_authorization_consent'
+import AnonymousOnboardingDraft from '#models/anonymous_onboarding_draft'
 import { buildEmailAuthorizationState } from '#services/email_authorization_state_service'
 import { decryptConnectionAccessToken } from '#services/oauth_token_encryption_service'
+import EntitlementService from '#services/entitlement_service'
+import OnboardingDraftService, {
+  ONBOARDING_TOKEN_SESSION_KEY,
+} from '#services/onboarding_draft_service'
+import UserRoleService from '#services/user_role_service'
+import { v4 as uuidv4 } from 'uuid'
 
 type SocialProvider = 'google' | 'microsoft'
 
@@ -57,7 +64,9 @@ function clearSocialEnv() {
 function makeSocialCallbackContext(
   provider: SocialProvider,
   socialUser: Record<string, unknown>,
-  intendedUrl?: string
+  intendedUrl?: string,
+  accountType: 'consumer' | 'vendor' = 'consumer',
+  onboardingToken?: string
 ) {
   const sessionValues = new Map<string, unknown>()
   const flashes = new Map<string, string>()
@@ -66,6 +75,9 @@ function makeSocialCallbackContext(
 
   if (intendedUrl) {
     sessionValues.set('auth.intended_url', intendedUrl)
+  }
+  if (onboardingToken) {
+    sessionValues.set(ONBOARDING_TOKEN_SESSION_KEY, onboardingToken)
   }
 
   const ctx = {
@@ -124,7 +136,7 @@ function makeSocialCallbackContext(
     provider,
     flow: 'registration',
     termsAccepted: true,
-    accountType: 'consumer',
+    accountType,
     returnPath: intendedUrl,
   })
 
@@ -198,7 +210,7 @@ test.group('social auth routes', () => {
         })
         .redirects(0)
       registerResponse.assertFound()
-      registerResponse.assertHeader('location', '/register')
+      registerResponse.assertHeader('location', '/register?accountType=consumer')
     } finally {
       await User.query().where('email', 'password.disabled@example.com').delete()
       restoreEnv()
@@ -253,9 +265,13 @@ test.group('social auth routes', () => {
 
 test.group('social auth callback', (group) => {
   const socialEmail = 'social.microsoft@example.com'
+  const socialVendorEmail = 'social.vendor.microsoft@example.com'
+  const existingVendorEmail = 'social.existing.vendor.microsoft@example.com'
 
   group.each.teardown(async () => {
-    await User.query().where('email', socialEmail).delete()
+    await User.query()
+      .whereIn('email', [socialEmail, socialVendorEmail, existingVendorEmail])
+      .delete()
   })
 
   test('creates user, primary inbox connection, and consent from registration callback', async () => {
@@ -306,5 +322,92 @@ test.group('social auth callback', (group) => {
       .firstOrFail()
     assert.equal(consent.email, socialEmail)
     assert.equal(consent.termsVersion, '2026-06-26-email-access-v1')
+  })
+
+  test('vendor registration callback discards consumer onboarding and routes to pending', async () => {
+    const { tokenUuid, draft } = await OnboardingDraftService.createDraft({
+      projectDescription: 'I need a commercial electrician for a new restaurant.',
+      postalCode: '23230',
+      anonymousSessionUuid: uuidv4(),
+    })
+    const controller = new AuthController()
+    const callback = makeSocialCallbackContext(
+      'microsoft',
+      {
+        id: 'microsoft-vendor-user-1',
+        mail: socialVendorEmail,
+        displayName: 'Social Vendor',
+        token: {
+          token: 'microsoft-vendor-access-token',
+          refreshToken: 'microsoft-vendor-refresh-token',
+          scope: 'openid profile email User.Read Mail.Read Mail.Send',
+          expiresIn: 3600,
+        },
+      },
+      undefined,
+      'vendor',
+      tokenUuid
+    )
+
+    try {
+      const result = await controller.socialCallback(callback.ctx)
+
+      assert.deepEqual(result, { type: 'path', path: '/vendor/pending' })
+      assert.equal(callback.sessionValues.has(ONBOARDING_TOKEN_SESSION_KEY), false)
+
+      const user = await User.findByOrFail('email', socialVendorEmail)
+      assert.equal(await UserRoleService.getCanonicalName(user), 'VENDOR')
+      assert.equal(user.vendorApprovalStatus, 'PENDING')
+      const reloadedDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
+      assert.equal(reloadedDraft.registeredUserUuid, null)
+    } finally {
+      await AnonymousOnboardingDraft.query().where('token_uuid', tokenUuid).delete()
+    }
+  })
+
+  test('callback routes by an existing user role instead of the requested account type', async () => {
+    const vendorEntitlementId = await EntitlementService.getIdByCanonicalName('VENDOR')
+    await User.create({
+      fullName: 'Existing Approved Vendor',
+      email: existingVendorEmail,
+      password: 'Password123!',
+      entitlementId: vendorEntitlementId,
+      vendorApprovalStatus: 'APPROVED',
+      isActive: true,
+    })
+    const { tokenUuid, draft } = await OnboardingDraftService.createDraft({
+      projectDescription: 'I need a commercial electrician for a new restaurant.',
+      postalCode: '23230',
+      anonymousSessionUuid: uuidv4(),
+    })
+    const controller = new AuthController()
+    const callback = makeSocialCallbackContext(
+      'microsoft',
+      {
+        id: 'microsoft-existing-vendor-user-1',
+        mail: existingVendorEmail,
+        displayName: 'Existing Approved Vendor',
+        token: {
+          token: 'microsoft-existing-vendor-access-token',
+          refreshToken: 'microsoft-existing-vendor-refresh-token',
+          scope: 'openid profile email User.Read Mail.Read Mail.Send',
+          expiresIn: 3600,
+        },
+      },
+      '/account',
+      'consumer',
+      tokenUuid
+    )
+
+    try {
+      const result = await controller.socialCallback(callback.ctx)
+
+      assert.deepEqual(result, { type: 'path', path: '/vendor/listing' })
+      assert.equal(callback.sessionValues.has(ONBOARDING_TOKEN_SESSION_KEY), false)
+      const reloadedDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
+      assert.equal(reloadedDraft.registeredUserUuid, null)
+    } finally {
+      await AnonymousOnboardingDraft.query().where('token_uuid', tokenUuid).delete()
+    }
   })
 })

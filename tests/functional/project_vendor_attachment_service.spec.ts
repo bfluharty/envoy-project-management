@@ -237,7 +237,7 @@ test.group('ProjectVendorAttachmentService', (group) => {
     const listing = await createSearchListing('api-attachment@example.com')
     const success = await client
       .post(`/api/projects/${firstProject.uuid}/vendors`)
-      .header('x-user-id', firstUser.uuid)
+      .loginAs(firstUser)
       .json({ vendorListingUuids: [listing.uuid] })
 
     success.assertStatus(200)
@@ -246,14 +246,14 @@ test.group('ProjectVendorAttachmentService', (group) => {
     const unavailableUuid = uuidv4()
     const unavailable = await client
       .post(`/api/projects/${firstProject.uuid}/vendors`)
-      .header('x-user-id', firstUser.uuid)
+      .loginAs(firstUser)
       .json({ vendorListingUuids: [unavailableUuid] })
     unavailable.assertStatus(422)
     unavailable.assertBodyContains({ unavailableVendorListingUuids: [unavailableUuid] })
 
     const unauthorized = await client
       .post(`/api/projects/${firstProject.uuid}/vendors`)
-      .header('x-user-id', secondUser.uuid)
+      .loginAs(secondUser)
       .json({ vendorListingUuids: [listing.uuid] })
     unauthorized.assertStatus(404)
 
@@ -272,7 +272,7 @@ test.group('ProjectVendorAttachmentService', (group) => {
     })
     const vendorAccountResponse = await client
       .post(`/api/projects/${vendorProject.uuid}/vendors`)
-      .header('x-user-id', vendorUser.uuid)
+      .loginAs(vendorUser)
       .json({ vendorListingUuids: [listing.uuid] })
     vendorAccountResponse.assertStatus(403)
   })

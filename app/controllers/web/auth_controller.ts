@@ -30,6 +30,7 @@ import OnboardingDraftService, {
   OnboardingDraftError,
   isUuidV4,
 } from '#services/onboarding_draft_service'
+import UserRoleService from '#services/user_role_service'
 import { safeError } from '#utils/safe_error'
 
 const SOCIAL_AUTH_PROVIDERS = ['google', 'microsoft'] as const
@@ -289,6 +290,18 @@ export default class AuthController {
     }))
   }
 
+  private getRegistrationFormProps(accountType: EmailAuthorizationAccountType) {
+    return {
+      socialAuthProviders: this.getSocialAuthOptions({
+        flow: 'registration',
+        accountType,
+        emailTermsAccepted: true,
+      }),
+      passwordAuthEnabled: passwordAuthEnabled(),
+      accountType,
+    }
+  }
+
   private consumePostLoginRedirect(session: HttpContext['session']) {
     const intendedUrl = session.get('auth.intended_url')
     session.forget('auth.intended_url')
@@ -321,6 +334,39 @@ export default class AuthController {
     }
   }
 
+  private async resolveAuthenticatedUserRedirect(
+    user: User,
+    session: HttpContext['session'],
+    returnPath?: string | null
+  ) {
+    const role = await UserRoleService.getCanonicalName(user)
+
+    if (role === 'VENDOR') {
+      session.forget(ONBOARDING_TOKEN_SESSION_KEY)
+      session.forget('auth.intended_url')
+      return user.vendorApprovalStatus === 'APPROVED' ? '/vendor/listing' : '/vendor/pending'
+    }
+
+    if (role === 'CONSUMER') {
+      const onboardingToken = this.getSessionOnboardingToken(session)
+      if (
+        onboardingToken &&
+        (await this.associateOnboardingDraftForUser(onboardingToken, user.uuid, session))
+      ) {
+        return '/onboarding/project'
+      }
+    } else {
+      session.forget(ONBOARDING_TOKEN_SESSION_KEY)
+    }
+
+    const intendedUrl = this.consumePostLoginRedirect(session)
+    if (intendedUrl) {
+      return intendedUrl
+    }
+
+    return returnPath || '/dashboard'
+  }
+
   /**
    * Show the login form
    */
@@ -349,13 +395,7 @@ export default class AuthController {
       session.put('auth.login_method', 'password')
 
       session.flash('success', 'Welcome back!')
-
-      const intendedUrl = this.consumePostLoginRedirect(session)
-      if (intendedUrl) {
-        return response.redirect(intendedUrl)
-      }
-
-      return response.redirect().toRoute('dashboard')
+      return response.redirect(await this.resolveAuthenticatedUserRedirect(user, session))
     } catch (error) {
       // For Inertia requests, we need to return back to the login page with errors
       return inertia.render('auth/login', {
@@ -376,13 +416,7 @@ export default class AuthController {
 
     return inertia.render('auth/register', {
       flashMessage: this.getFlashMessage(session),
-      socialAuthProviders: this.getSocialAuthOptions({
-        flow: 'registration',
-        accountType,
-        emailTermsAccepted: true,
-      }),
-      passwordAuthEnabled: passwordAuthEnabled(),
-      accountType,
+      ...this.getRegistrationFormProps(accountType),
     })
   }
 
@@ -392,7 +426,8 @@ export default class AuthController {
   async register({ auth, request, response, session, inertia }: HttpContext) {
     if (!passwordAuthEnabled()) {
       session.flash('error', 'Email and password registration is not available right now.')
-      return response.redirect().toRoute('auth.register')
+      const accountType = normalizeAccountType(request.input('accountType'))
+      return response.redirect(`/register?accountType=${accountType}`)
     }
 
     const body = request.body()
@@ -406,9 +441,10 @@ export default class AuthController {
     }
 
     const data = await registerValidator.validate(body)
+    const accountType = data.accountType ?? 'consumer'
+    const registrationFormProps = this.getRegistrationFormProps(accountType)
 
     try {
-      const accountType = data.accountType ?? 'consumer'
       const entitlementId = await EntitlementService.getIdByCanonicalName(
         accountType === 'vendor' ? 'VENDOR' : 'CONSUMER'
       )
@@ -427,6 +463,8 @@ export default class AuthController {
       session.flash('success', 'Welcome!')
 
       if (accountType === 'vendor') {
+        session.forget(ONBOARDING_TOKEN_SESSION_KEY)
+        session.forget('auth.intended_url')
         return response.redirect('/vendor/pending')
       }
 
@@ -447,15 +485,13 @@ export default class AuthController {
             message: 'An account with that email already exists. Try signing in instead.',
           },
           errors: { email: 'An account with this email already exists.' },
-          socialAuthProviders: this.getSocialAuthOptions(),
-          passwordAuthEnabled: passwordAuthEnabled(),
+          ...registrationFormProps,
         })
       }
       logger.error(error, 'Registration failed')
       return inertia.render('auth/register', {
         flashMessage: { type: 'error', message: 'Something went wrong. Please try again.' },
-        socialAuthProviders: this.getSocialAuthOptions(),
-        passwordAuthEnabled: passwordAuthEnabled(),
+        ...registrationFormProps,
       })
     }
   }
@@ -599,25 +635,9 @@ export default class AuthController {
       await auth.use('web').login(user)
       session.put('auth.login_method', provider)
       session.flash('success', 'Welcome!')
-
-      const onboardingToken = this.getSessionOnboardingToken(session)
-      if (
-        onboardingToken &&
-        (await this.associateOnboardingDraftForUser(onboardingToken, user.uuid, session))
-      ) {
-        return response.redirect('/onboarding/project')
-      }
-
-      const intendedUrl = this.consumePostLoginRedirect(session)
-      if (intendedUrl) {
-        return response.redirect(intendedUrl)
-      }
-
-      if (emailAuthState.returnPath) {
-        return response.redirect(emailAuthState.returnPath)
-      }
-
-      return response.redirect().toRoute('dashboard')
+      return response.redirect(
+        await this.resolveAuthenticatedUserRedirect(user, session, emailAuthState.returnPath)
+      )
     } catch (error) {
       logger.error({ err: safeError(error), provider }, 'Social auth callback failed')
       session.flash(

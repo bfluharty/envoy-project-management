@@ -32,7 +32,7 @@ export const http = defineConfig({
   cookie: {
     domain: '',
     path: '/',
-    maxAge: '2h',
+    maxAge: '24h',
     httpOnly: true,
     secure: app.inProduction,
     sameSite: 'lax',

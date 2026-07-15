@@ -198,10 +198,6 @@ export default class VendorService {
         return !!postcode && nearbyPostalCodes.has(postcode)
       })
       .sort((left, right) => {
-        const claimDelta =
-          Number(right.claimStatus === 'CLAIMED') - Number(left.claimStatus === 'CLAIMED')
-        if (claimDelta !== 0) return claimDelta
-
         const categoryDelta =
           right.fsqCategoryIds.filter((categoryId) => requestedCategoryIds.has(categoryId)).length -
           left.fsqCategoryIds.filter((categoryId) => requestedCategoryIds.has(categoryId)).length
@@ -375,16 +371,7 @@ export default class VendorService {
 
   public static async insertOrReuseSearchListing(candidate: SearchVendorCandidate) {
     const existing = await this.findExistingSearchListing(candidate)
-    if (existing) {
-      const mergedCategoryIds = [
-        ...new Set([...(existing.fsqCategoryIds ?? []), ...(candidate.fsqCategoryIds ?? [])]),
-      ]
-      if (mergedCategoryIds.length !== (existing.fsqCategoryIds?.length ?? 0)) {
-        existing.fsqCategoryIds = mergedCategoryIds
-        await existing.save()
-      }
-      return existing
-    }
+    if (existing) return existing
 
     try {
       return await VendorListing.create({

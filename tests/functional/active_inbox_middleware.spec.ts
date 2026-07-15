@@ -42,15 +42,25 @@ async function createActivePrimaryInbox(user: User) {
 test.group('active inbox middleware', (group) => {
   group.setup(() => testUtils.db().truncate())
 
-  test('redirects authenticated app routes when no active primary inbox exists', async ({
-    client,
-  }) => {
+  test('allows the dashboard without an active primary inbox', async ({ client }) => {
     const user = await createConsumer()
 
-    const response = await client.get('/dashboard').loginAs(user).redirects(0)
+    const response = await client.get('/dashboard').loginAs(user).withInertia()
 
-    response.assertFound()
-    response.assertHeader('location', '/account#email-accounts')
+    response.assertOk()
+    response.assertBodyContains({ component: 'home' })
+  })
+
+  test('still requires an active primary inbox for outreach operations', async ({ client }) => {
+    const user = await createConsumer()
+
+    const response = await client.get(`/api/projects/${uuidv4()}/outreach`).loginAs(user)
+
+    response.assertStatus(409)
+    response.assertBodyContains({
+      error: 'Envoy requires an active connected email account.',
+      reconnectUrl: '/account#email-accounts',
+    })
   })
 
   test('allows authenticated app routes with an active primary inbox', async ({ client }) => {

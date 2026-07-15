@@ -110,10 +110,10 @@ export default class OnboardingProjectController {
       }
 
       if (result.status === 'CREATED') {
-        if (result.errors?.length) {
+        if (result.warnings?.length) {
           session.flash(
             'partial_success',
-            'Project created with errors: ' + result.errors.join('; ')
+            'Project created with a warning: ' + result.warnings.join('; ')
           )
         } else {
           session.flash('success', 'Project created successfully!')

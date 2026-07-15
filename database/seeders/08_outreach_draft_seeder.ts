@@ -45,15 +45,15 @@ Ryan`,
     ]
 
     for (const v of vendors) {
-      let convo = await VendorConversation.findBy('projectVendorUuid', v.projectVendorUuid)
+      let chat = await VendorConversation.findBy('projectVendorUuid', v.projectVendorUuid)
 
-      if (convo) {
-        convo.channel = 'email'
-        convo.userId = ryan.id
-        convo.vendorUuid = v.vendorUuid
-        await convo.save()
+      if (chat) {
+        chat.channel = 'email'
+        chat.userId = ryan.id
+        chat.vendorUuid = v.vendorUuid
+        await chat.save()
       } else {
-        convo = await VendorConversation.create({
+        chat = await VendorConversation.create({
           uuid: v.uuid,
           channel: 'email',
           userId: ryan.id,
@@ -63,10 +63,10 @@ Ryan`,
       }
 
       await OutreachDraft.updateOrCreate(
-        { vendorConversationUuid: convo.uuid },
+        { vendorConversationUuid: chat.uuid },
         {
           projectVendorUuid: v.projectVendorUuid,
-          vendorConversationUuid: convo.uuid,
+          vendorConversationUuid: chat.uuid,
           subject: v.subject,
           body: v.body,
           status: 'draft',

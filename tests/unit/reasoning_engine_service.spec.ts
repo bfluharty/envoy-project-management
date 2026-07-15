@@ -31,12 +31,14 @@ function makeResponse(payload: ResponsePayload) {
 function makePlanningResponse(input: Partial<ReasoningAgentResponse> = {}): ReasoningAgentResponse {
   return {
     agentId: 'PLANNING',
+    planningStatus: 'COLLECTING_DETAILS',
     message: 'Planning response',
     data: null,
     readyForNextStep: false,
     missingFields: [],
     turn: {
       agentId: 'PLANNING',
+      planningStatus: 'COLLECTING_DETAILS',
       userPrompt: 'What should we do?',
       modelResponse: 'Planning response',
       timestamp: '2026-07-05T12:00:00.000Z',
@@ -178,9 +180,22 @@ test.group('ReasoningEngineService', (group) => {
     )
   })
 
-  test('handleReasoningChat can return unsaved greeting text when saveToHistory is false', async () => {
+  test('handleReasoningChat persists an assistant-only greeting and returns plain text', async () => {
     const responsePayload: ResponsePayload = {}
-    stubRequestAgent(makePlanningResponse({ message: 'Hello stakeholder.' }))
+    const saveCalls: unknown[] = []
+    const agentResponse = makePlanningResponse({
+      message: 'Hello stakeholder.',
+      planningStatus: 'AWAITING_FINAL_DETAILS',
+      turn: {
+        agentId: 'PLANNING',
+        planningStatus: 'AWAITING_FINAL_DETAILS',
+        userPrompt: 'Internal greeting instruction',
+        modelResponse: 'Hello stakeholder.',
+        timestamp: '2026-07-05T12:00:00.000Z',
+      },
+    })
+    stubRequestAgent(agentResponse)
+    stubSaveConversationTurn(saveCalls)
 
     await ReasoningEngineService.handleReasoningChat(
       {
@@ -189,11 +204,20 @@ test.group('ReasoningEngineService', (group) => {
       },
       { uuid: 'project-1', conversations: [{ uuid: 'conversation-1' }] } as any,
       makeResponse(responsePayload) as any,
-      { saveToHistory: false }
+      { historyUserPrompt: '', plainTextResponse: true }
     )
 
     assert.equal(responsePayload.statusCode, 200)
     assert.equal(responsePayload.sent, 'Hello stakeholder.')
+    assert.deepEqual(saveCalls, [
+      {
+        conversationUuid: 'conversation-1',
+        turn: {
+          ...agentResponse.turn,
+          userPrompt: '',
+        },
+      },
+    ])
   })
 
   test('handleReasoningChat saves non-ready planning turns without generating outreach drafts', async () => {
@@ -201,8 +225,10 @@ test.group('ReasoningEngineService', (group) => {
     const saveCalls: unknown[] = []
     const agentResponse = makePlanningResponse({
       message: null,
+      planningStatus: 'AWAITING_FINAL_DETAILS',
       turn: {
         agentId: 'PLANNING',
+        planningStatus: 'AWAITING_FINAL_DETAILS',
         userPrompt: 'Budget is $40,000.',
         modelResponse: 'Need the timeline before outreach.',
         timestamp: '2026-07-05T12:00:00.000Z',
@@ -222,6 +248,44 @@ test.group('ReasoningEngineService', (group) => {
 
     assert.equal(responsePayload.statusCode, 200)
     assert.equal(responsePayload.body, 'Need the timeline before outreach.')
+    assert.deepEqual(saveCalls, [
+      {
+        conversationUuid: 'conversation-1',
+        turn: agentResponse.turn,
+      },
+    ])
+  })
+
+  test('does not generate drafts until the planning status is READY_FOR_OUTREACH', async () => {
+    const responsePayload: ResponsePayload = {}
+    const saveCalls: unknown[] = []
+    const agentResponse = makePlanningResponse({
+      planningStatus: 'AWAITING_FINAL_DETAILS',
+      readyForNextStep: true,
+      message: 'Anything else to include?',
+      turn: {
+        agentId: 'PLANNING',
+        planningStatus: 'AWAITING_FINAL_DETAILS',
+        userPrompt: 'We have enough information.',
+        modelResponse: 'Anything else to include?',
+        timestamp: '2026-07-05T12:00:00.000Z',
+      },
+    })
+    stubRequestAgent(agentResponse)
+    stubSaveConversationTurn(saveCalls)
+
+    await ReasoningEngineService.handleReasoningChat(
+      {
+        agentId: 'PLANNING',
+        planningStatus: 'COLLECTING_DETAILS',
+        promptData: { prompt: 'We have enough information.' },
+      },
+      { uuid: 'project-1', conversations: [{ uuid: 'conversation-1' }] } as any,
+      makeResponse(responsePayload) as any
+    )
+
+    assert.equal(responsePayload.statusCode, 200)
+    assert.equal(responsePayload.body, 'Anything else to include?')
     assert.deepEqual(saveCalls, [
       {
         conversationUuid: 'conversation-1',

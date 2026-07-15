@@ -4,7 +4,7 @@
 
 Envoy currently routes public visitors to a simple landing page with login and registration calls to action. After registration or login, users land on the dashboard and can create a project through the existing project creation flow.
 
-This feature changes the first-time consumer experience into a guided project intake and vendor discovery flow. Anonymous consumers describe their project, provide a ZIP code, review recommended vendors returned from Foursquare, select vendors they like, register, complete the first project details, and then continue into the project's default Convo experience.
+This feature changes the first-time consumer experience into a guided project intake and vendor discovery flow. Anonymous consumers describe their project, provide a ZIP code, review recommended vendors returned from Foursquare, select vendors they like, register, complete the first project details, and then continue into the project's default Chat experience.
 
 The same public entry point also gives vendors a clear "For pros" path into registration. Vendor onboarding and business verification are intentionally split into a later phase, but the data model should be prepared for future claimed listings.
 
@@ -72,14 +72,14 @@ Relevant current behavior:
 2. Let anonymous consumers describe a project and enter a ZIP code.
 3. Use the reasoning-engine to infer up to four relevant vendor search classifications and Foursquare search queries.
 4. Use project-management to call Foursquare through the existing vendor search service.
-5. Show up to eight Foursquare vendor results, prioritizing vendors with email while retaining high-ranking vendors without email when needed to fill the result set.
+5. Show up to eight vendor results. Existing Envoy listings that match an inferred category and the search postal-code radius rank first regardless of claim status; remaining results prioritize vendors with email while retaining high-ranking vendors without email when needed to fill the result set.
 6. Persist every normalized Foursquare result as a global `vendor_listing`, then store recommended and selected listing UUIDs on the anonymous draft for 24 hours.
 7. Let consumers register and auto-login.
 8. After registration, send onboarding users directly to a first-project completion screen with project details prefilled.
 9. Create the project only after the user finishes the details form.
 10. Preserve listing origin and enforce claim-aware, single-owner edit authorization.
 11. Attach selected vendors to the project, assigning consumer ownership only when an ownerless search listing without email is first added to a project.
-12. Route the user to the created project's default Convo page.
+12. Route the user to the created project's default Chat page.
 13. Let the established project conversation gather more project context before any later outreach drafting workflow.
 14. Add a vendor registration path, role, and placeholder verification status without building full vendor verification in MVP.
 
@@ -252,8 +252,9 @@ Project-management inserts or reuses vendor_listings for every normalized result
   v
 Top recommendation list
   - up to eight results
-  - results with email first, then results without email
-  - each email group sorted by date_refreshed desc, then Foursquare relevance
+  - relevant existing Envoy listings first, whether claimed or unclaimed
+  - within that tier and the remaining live-result tier, results with email first, then results without email
+  - each email group sorted by date_refreshed desc, then source relevance
   - "Onboarded to Envoy" only when claim_status = CLAIMED
   - consumer-owned listings show an unverified ownership warning
   |
@@ -286,7 +287,7 @@ Project-management:
   - assigns ownership when an ownerless, email-less SEARCH listing is first added
   |
   v
-Project page default Convo experience
+Project page default Chat experience
 ```
 
 ---
@@ -302,7 +303,7 @@ Required fields:
 
 Recommended validation:
 
-- Project blurb: required, min 20 characters, max 2,000 characters.
+- Project blurb: required, min 5 characters, max 2,000 characters.
 - ZIP code: required, permissive postal-code string. Do not hard-limit to US-only formats.
 
 Primary action:
@@ -357,7 +358,7 @@ Project-management:
 - Inserts or reuses `vendor_listings` for every normalized search result.
 - Stores recommended and selected vendor listing UUIDs on the draft instead of vendor payloads.
 - Creates the project, user vendor mappings, and project-vendor mappings after registration.
-- Routes the completed project to its default Convo experience.
+- Routes the completed project to its default Chat experience.
 
 ### 8.2 Why Project-Management Calls Foursquare
 
@@ -374,12 +375,13 @@ Project-management should call Foursquare directly because:
 
 Return at most eight recommendations. Priority should be:
 
-1. Results with email before results without email.
-2. Within each email-presence group, `date_refreshed` descending.
-3. Foursquare relevance order.
-4. Name ascending for stable ordering.
+1. Existing active, non-superseded Envoy listings that match an inferred Foursquare category ID and a postal code in the configured search radius.
+2. Within the relevant-existing tier and then within the remaining live-result tier, results with email before results without email.
+3. Within each email-presence group, `date_refreshed` descending.
+4. Source relevance order.
+5. Name ascending for stable ordering.
 
-For example, if five eligible results have email and five do not, return all five with email followed by the top three without email.
+Claim status alone never grants ranking priority: an unrelated claimed listing is excluded, while a relevant unclaimed listing receives the same relevant-existing boost as a relevant claimed listing. Apply the eight-result cap only after merging and deduplicating relevant existing listings with newly persisted live results.
 
 Deduplication:
 
@@ -462,7 +464,7 @@ After the user submits the first-project completion form:
 2. Any selected, ownerless `SEARCH` listing without email is atomically assigned to the creating consumer if it is still ownerless.
 3. The transaction commits the project, vendor links, ownership changes, and consumed draft state.
 4. Envoy routes the user directly to `/projects/:projectUuid`.
-5. The project page opens its established default Convo experience.
+5. The project page opens its established default Chat experience.
 
 No outreach-preparing page or initial outreach preparation endpoint is part of onboarding. No outreach drafts are automatically created at project completion. The existing project conversation should gather additional project context before a later user- or agent-initiated outreach workflow. Having the agent gather missing vendor contact details is explicitly out of scope for this phase.
 
@@ -611,7 +613,7 @@ Keep the committed project and vendor links. Return the canonical `/projects/:pr
 - Limit inferred vendor types/classifications to 4.
 - Normalize Foursquare results.
 - Insert or reuse a `vendor_listing` for every normalized result.
-- Rank email-bearing results first, then results without email.
+- Rank relevant existing listings first regardless of claim status, then rank each result tier with email-bearing results before results without email.
 - Return at most eight recommendations while retaining no-email results when needed.
 - Store recommended and selected vendor listing UUID arrays on the onboarding draft.
 - Merge, rank, and dedupe search-originated recommendations without forcing dedupe on manual consumer listings.
@@ -624,7 +626,7 @@ Keep the committed project and vendor links. Return the canonical `/projects/:pr
 - Create user vendor mappings from selected listing UUIDs.
 - Attach vendors to project.
 - Atomically assign consumer ownership when an ownerless, email-less search listing is first added to a project.
-- Redirect to the project page's default Convo experience.
+- Redirect to the project page's default Chat experience.
 
 ### Phase 5: Listing Ownership And Availability
 
@@ -659,6 +661,6 @@ The first shippable MVP should include:
 - UUID-only recommendation and selection references in the onboarding draft.
 - Project-vendor attachment.
 - Claim-aware ownership and edit authorization.
-- Default project Convo handoff after project creation.
+- Default project Chat handoff after project creation.
 
 Vendor onboarding should be prepared in the data model and registration role selection, but full verification and claim management should ship after the consumer path is stable.

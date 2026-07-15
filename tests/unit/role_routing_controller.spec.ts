@@ -115,14 +115,19 @@ test.group('role-aware onboarding routing', (group) => {
 
     const result = await new VendorOnboardingController().pending({
       auth: {
-        getUserOrFail: () => ({ uuid: 'pending-vendor', vendorApprovalStatus: 'PENDING' }),
+        getUserOrFail: () => ({
+          uuid: 'pending-vendor',
+          fullName: 'Pending Vendor',
+          vendorApprovalStatus: 'PENDING',
+        }),
       },
+      inertia: makeInertia(),
       response: makeResponse(),
     } as any)
 
     assert.deepEqual(result, {
-      statusCode: 200,
-      payload: { status: 'PENDING', vendorApprovalStatus: 'PENDING' },
+      component: 'vendors/pending',
+      props: { vendorName: 'Pending Vendor', vendorApprovalStatus: 'PENDING' },
     })
   })
 

@@ -2,7 +2,6 @@ import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
 import AnonymousOnboardingDraft from '#models/anonymous_onboarding_draft'
-import ProjectReasoningWorkflowService from '#services/project_reasoning_workflow_service'
 import ProjectService from '#services/project_service'
 import ProjectVendorAttachmentService from '#services/project_vendor_attachment_service'
 import type { ProjectRequest } from '../../types/request.js'
@@ -22,7 +21,8 @@ export type OnboardingProjectCompletionResult =
       status: 'CREATED' | 'ALREADY_CONSUMED'
       projectUuid: string
       linkedVendorCount: number
-      errors?: string[]
+      warnings?: string[]
+      unavailableVendorListingUuids?: string[]
     }
   | {
       status: 'EXPIRED'
@@ -97,7 +97,8 @@ export default class OnboardingProjectCompletionService {
         userUuid,
         project.uuid,
         draft.selectedVendorListingUuids ?? [],
-        trx
+        trx,
+        { skipUnavailable: true }
       )
 
       draft.useTransaction(trx)
@@ -110,25 +111,18 @@ export default class OnboardingProjectCompletionService {
         status: 'CREATED',
         projectUuid: project.uuid,
         linkedVendorCount: attachment.vendors.length,
+        unavailableVendorListingUuids: attachment.unavailableVendorListingUuids,
+        warnings:
+          attachment.unavailableVendorListingUuids.length > 0
+            ? [
+                `${attachment.unavailableVendorListingUuids.length} selected vendor${
+                  attachment.unavailableVendorListingUuids.length === 1 ? '' : 's'
+                } could not be linked because the listing was no longer available.`,
+              ]
+            : undefined,
       }
     })
 
-    if (result.status !== 'CREATED') {
-      return result
-    }
-
-    const intakeResult = await ProjectReasoningWorkflowService.runIntakeForProject(
-      result.projectUuid,
-      userUuid
-    )
-
-    if (intakeResult.success) {
-      return result
-    }
-
-    return {
-      ...result,
-      errors: [intakeResult.error ?? 'Project intake failed'],
-    }
+    return result
   }
 }

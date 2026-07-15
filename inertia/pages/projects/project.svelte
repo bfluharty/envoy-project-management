@@ -6,6 +6,7 @@ import Logo from '#components/logo.svelte';
 import UserAvatar, { type AvatarData } from '#components/user_avatar.svelte';
 import LocationSearch from '#components/location_search.svelte';
 import type { LocationData } from '#components/location_search.svelte';
+import VendorSearch from '#components/vendor_search.svelte';
 import { page } from '@inertiajs/svelte';
 import { RefreshCwIcon } from '@lucide/svelte';
 import { onDestroy, onMount, untrack } from 'svelte';
@@ -27,7 +28,22 @@ interface Vendor {
     vendorUuid?: string | null;
     vendorListingUuid?: string | null;
     name: string;
-    email: string;
+    email: string | null;
+}
+
+interface TrustedVendorMatch {
+    vendorListingUuid: string;
+    name: string;
+    categories: string[];
+    location: {
+        address?: string | null;
+        locality?: string | null;
+        region?: string | null;
+        postcode?: string | null;
+        country?: string | null;
+        formatted_address?: string | null;
+    } | null;
+    onboardedToEnvoy: boolean;
 }
 
 interface Project {
@@ -106,13 +122,13 @@ const {
 
 // ── Tab state ──────────────────────────────────────────────
 const getTabKey = () => `tab-${project.uuid}`;
-const VALID_TABS = ['convo', 'outreach', 'overview'] as const;
+const VALID_TABS = ['chat', 'outreach', 'overview'] as const;
 type ProjectTab = typeof VALID_TABS[number];
 const isReload = typeof performance !== 'undefined' &&
     (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload';
 const storedTab = isReload && typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(getTabKey()) : null;
 let activeTab = $state<ProjectTab>(
-    VALID_TABS.includes(storedTab as any) ? (storedTab as ProjectTab) : 'convo'
+    VALID_TABS.includes(storedTab as any) ? (storedTab as ProjectTab) : 'chat'
 );
 
 function handleTabChange(tab: ProjectTab) {
@@ -257,6 +273,13 @@ let replyReviseInstructions = $state('');
 let replyRevisionOriginalBody = $state('');
 let replyRevisionSuggestedBody = $state('');
 let currentUser = $derived(($page.props.user as SharedUser | undefined) ?? undefined);
+let flash = $derived(
+    ($page.props.flash as {
+        success?: string | null;
+        error?: string | null;
+        partial_success?: string | null;
+    } | undefined) ?? {}
+);
 let currentUserName = $derived(currentUser?.fullName ?? 'You');
 let currentUserAvatar = $derived(
     currentUser?.avatar ?? {
@@ -667,6 +690,13 @@ let localProject = $state(untrack(() => ({ ...project })));
 let savedProject = $state(untrack(() => ({ ...project })));
 let localLinked = $state<Vendor[]>(untrack(() => [...linkedVendors]));
 let localAllVendors = $state<Vendor[]>(untrack(() => [...allVendors]));
+
+// Partial Inertia reloads are used after marketplace attachment. Keep the
+// locally rendered lists aligned with the refreshed server props.
+$effect(() => {
+    localLinked = [...linkedVendors];
+    localAllVendors = [...allVendors];
+});
 let editMode = $state(false);
 let saving = $state(false);
 let saveError = $state<string | null>(null);
@@ -677,17 +707,27 @@ let isAttachingVendors = $state(false);
 let selectedVendorUuids = $state(new Set<string>());
 let contactSearchQuery = $state('');
 let contactEditMode = $state(false);
-let activeContactPanel = $state<'attach' | 'new' | null>(null);
+let activeContactPanel = $state<'attach' | 'new' | 'find-vendors' | null>(null);
 let newContactName = $state('');
 let newContactEmail = $state('');
 let newContactErrors = $state<{ name?: string; email?: string }>({});
 let creatingContact = $state(false);
+let trustedContactMatches = $state<TrustedVendorMatch[]>([]);
+let trustedContactMatchError = $state('');
+let selectingTrustedListingUuid = $state<string | null>(null);
 let opSuccessMsg = $state('');
+let postCreateVendorWarning = $state('');
 let opSuccessTimer: ReturnType<typeof setTimeout> | null = null;
 let deleteDialogEl = $state<HTMLDialogElement | null>(null)
 let deleteProcessing = $state(false)
 let deleteError = $state<string | null>(null)
 let deleteButtonEl = $state<HTMLButtonElement | null>(null)
+
+onMount(() => {
+    const warningKey = `project-vendor-attach-warning:${project.uuid}`;
+    postCreateVendorWarning = sessionStorage.getItem(warningKey) ?? '';
+    sessionStorage.removeItem(warningKey);
+});
 
 function openDeleteDialog() {
     deleteError = null
@@ -706,7 +746,7 @@ async function deleteProject() {
             : 'Failed to delete project. Please try again.'
         return
         }
-        window.location.replace('/dashboard', { replace: true })
+        window.location.replace('/dashboard')
     } catch {
         deleteError = 'Failed to delete project. Please try again.'
     } finally {
@@ -725,15 +765,37 @@ function setOperationSuccess(message: string) {
     }, 3000);
 }
 
+function clearTrustedContactMatches() {
+    trustedContactMatches = [];
+    trustedContactMatchError = '';
+}
+
+function formatTrustedLocation(match: TrustedVendorMatch) {
+    if (!match.location) return '';
+    return match.location.formatted_address
+        || [match.location.address, match.location.locality, match.location.region, match.location.postcode, match.location.country]
+            .filter(Boolean)
+            .join(', ');
+}
+
 let unlinkedVendors = $derived(
     localAllVendors.filter((v) => !localLinked.some((l) => l.uuid === v.uuid))
+);
+
+// Listing UUIDs already attached — used by VendorSearch to show "already in project" state
+let attachedListingUuids = $derived(
+    localLinked.flatMap((v) => v.vendorListingUuid ? [v.vendorListingUuid] : [])
+);
+
+let outreachEligibleContacts = $derived(
+    localLinked.filter((vendor): vendor is Vendor & { email: string } => Boolean(vendor.email))
 );
 
 let filteredUnlinked = $derived(
     contactSearchQuery.trim()
         ? unlinkedVendors.filter((v) =>
             v.name.toLowerCase().includes(contactSearchQuery.toLowerCase()) ||
-            v.email.toLowerCase().includes(contactSearchQuery.toLowerCase()))
+            (v.email ?? '').toLowerCase().includes(contactSearchQuery.toLowerCase()))
         : unlinkedVendors
 );
 
@@ -845,9 +907,10 @@ async function detachVendor(vendorUuid: string) {
     }
 }
 
-async function createAndAttachContact(e: Event) {
-    e.preventDefault();
+async function createAndAttachContact(e?: Event, skipTrustedCheck = false) {
+    e?.preventDefault();
     newContactErrors = {};
+    trustedContactMatchError = '';
     if (!newContactName.trim()) newContactErrors.name = 'Name is required.';
     if (!newContactEmail.trim()) newContactErrors.email = 'Email is required.';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newContactEmail.trim())) newContactErrors.email = 'Must be a valid email address.';
@@ -855,6 +918,24 @@ async function createAndAttachContact(e: Event) {
 
     creatingContact = true;
     try {
+        if (!skipTrustedCheck) {
+            const params = new URLSearchParams({
+                name: newContactName.trim(),
+                email: newContactEmail.trim(),
+            });
+            const matchRes = await fetch(`/api/vendors/trusted-matches?${params.toString()}`, {
+                headers: { Accept: 'application/json' },
+            });
+            if (!matchRes.ok) {
+                trustedContactMatchError = 'We could not check for an existing verified listing. Retry, or create a separate contact anyway.';
+                return;
+            }
+
+            const matchData = await matchRes.json().catch(() => ({}));
+            trustedContactMatches = (matchData.vendors ?? []).slice(0, 5);
+            if (trustedContactMatches.length > 0) return;
+        }
+
         const createRes = await fetch('/contacts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
@@ -881,6 +962,7 @@ async function createAndAttachContact(e: Event) {
             localAllVendors = [...localAllVendors, linkedContact];
             newContactName = '';
             newContactEmail = '';
+            clearTrustedContactMatches();
             activeContactPanel = null;
             setOperationSuccess('Contact created and attached.');
         } else {
@@ -890,8 +972,40 @@ async function createAndAttachContact(e: Event) {
             activeContactPanel = 'attach';
             vendorError = 'Contact created but could not be attached. Select them from the dropdown and click Attach.';
         }
+    } catch {
+        trustedContactMatchError = 'We could not create and attach this contact. Check your connection and try again.';
     } finally {
         creatingContact = false;
+    }
+}
+
+async function attachTrustedContact(match: TrustedVendorMatch) {
+    if (selectingTrustedListingUuid) return;
+    selectingTrustedListingUuid = match.vendorListingUuid;
+    trustedContactMatchError = '';
+
+    try {
+        const res = await fetch(`/api/projects/${project.uuid}/vendors`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ vendorListingUuids: [match.vendorListingUuid] }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            trustedContactMatchError = data?.error ?? 'Could not attach this listing. Please try again.';
+            return;
+        }
+
+        newContactName = '';
+        newContactEmail = '';
+        clearTrustedContactMatches();
+        activeContactPanel = null;
+        setOperationSuccess('Trusted listing attached.');
+        router.reload({ only: ['linkedVendors', 'allVendors'] });
+    } catch {
+        trustedContactMatchError = 'Could not attach this listing. Please try again.';
+    } finally {
+        selectingTrustedListingUuid = null;
     }
 }
 
@@ -915,15 +1029,29 @@ onDestroy(() => {
 <!-- Screen reader live region for operation feedback -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">{opSuccessMsg}</div>
 
-<!-- Convo tab -->
-{#if activeTab === 'convo'}
+{#if flash.partial_success || postCreateVendorWarning}
+    <aside class="m-4 mb-0 rounded-xl border border-warning-500/30 bg-warning-500/10 p-4 text-sm text-warning-700-300" role="status">
+        {flash.partial_success || postCreateVendorWarning}
+    </aside>
+{:else if flash.error}
+    <aside class="m-4 mb-0 rounded-xl border border-error-500/30 bg-error-500/10 p-4 text-sm text-error-500" role="alert">
+        {flash.error}
+    </aside>
+{:else if flash.success}
+    <aside class="m-4 mb-0 rounded-xl border border-success-500/30 bg-success-500/10 p-4 text-sm text-success-700-300" role="status">
+        {flash.success}
+    </aside>
+{/if}
+
+<!-- Chat tab -->
+{#if activeTab === 'chat'}
 <div class="flex min-h-0 min-w-0 flex-col flex-1 overflow-hidden w-full">
     <div class="min-h-0 flex-1 overflow-y-auto"
-         aria-live="polite" aria-atomic="false" aria-label="Conversation">
+         aria-live="polite" aria-atomic="false" aria-label="Chat">
         <ProjectSectionChrome
             activeTab={activeTab}
             onSelectTab={handleTabChange}
-            sectionLabel="Conversation"
+            sectionLabel="Chat"
             projectName={project.name}
             description="Use Envoy to capture missing details, refine the brief, and keep project planning in one thread."
         />
@@ -1039,10 +1167,14 @@ onDestroy(() => {
                 <div class="rounded-xl border border-dashed border-surface-200-800 bg-surface-50-950/30 p-4 text-sm text-surface-600-400">
                     No contacts are linked to this project yet. Add one in the Overview tab, then create your first outreach message.
                 </div>
+            {:else if outreachEligibleContacts.length === 0}
+                <div class="rounded-xl border border-dashed border-surface-200-800 bg-surface-50-950/30 p-4 text-sm text-surface-600-400">
+                    Your linked vendors do not have email contact details yet. Add an email in Contacts before starting outreach.
+                </div>
             {/if}
             <ProjectOutreachPanel
                 cards={outreachCards}
-                contacts={localLinked}
+                contacts={outreachEligibleContacts}
                 currentUserName={currentUserName}
                 selectedCard={selectedOutreachCard}
                 composeCard={composeOutreachCard}
@@ -1311,7 +1443,7 @@ onDestroy(() => {
                     Edit
                 </button>
             {:else}
-                <button class="btn btn-sm preset-tonal" onclick={() => { contactEditMode = false; activeContactPanel = null; contactSearchQuery = ''; selectedVendorUuids = new Set(); newContactName = ''; newContactEmail = ''; newContactErrors = {}; pendingDetach = null; vendorError = null; }}>
+                <button class="btn btn-sm preset-tonal" onclick={() => { contactEditMode = false; activeContactPanel = null; contactSearchQuery = ''; selectedVendorUuids = new Set(); newContactName = ''; newContactEmail = ''; newContactErrors = {}; clearTrustedContactMatches(); pendingDetach = null; vendorError = null; }}>
                     Done
                 </button>
             {/if}
@@ -1323,21 +1455,28 @@ onDestroy(() => {
 
         {#if contactEditMode}
             <!-- Action buttons -->
-            <div class="flex gap-2 mb-3" role="group" aria-label="Add contact options">
+            <div class="flex gap-2 mb-3 flex-wrap" role="group" aria-label="Add contact options">
                 <button
                     class="btn btn-sm {activeContactPanel === 'attach' ? 'preset-filled-primary-500' : 'preset-tonal'}"
                     aria-expanded={activeContactPanel === 'attach'}
                     aria-controls="panel-attach-contact"
                     disabled={unlinkedVendors.length === 0}
-                    onclick={() => { activeContactPanel = activeContactPanel === 'attach' ? null : 'attach'; newContactName = ''; newContactEmail = ''; newContactErrors = {}; }}>
+                    onclick={() => { activeContactPanel = activeContactPanel === 'attach' ? null : 'attach'; newContactName = ''; newContactEmail = ''; newContactErrors = {}; clearTrustedContactMatches(); }}>
                     + Attach existing
                 </button>
                 <button
                     class="btn btn-sm {activeContactPanel === 'new' ? 'preset-filled-primary-500' : 'preset-tonal'}"
                     aria-expanded={activeContactPanel === 'new'}
                     aria-controls="panel-new-contact"
-                    onclick={() => { activeContactPanel = activeContactPanel === 'new' ? null : 'new'; contactSearchQuery = ''; selectedVendorUuids = new Set(); }}>
+                    onclick={() => { activeContactPanel = activeContactPanel === 'new' ? null : 'new'; contactSearchQuery = ''; selectedVendorUuids = new Set(); clearTrustedContactMatches(); }}>
                     + New contact
+                </button>
+                <button
+                    class="btn btn-sm {activeContactPanel === 'find-vendors' ? 'preset-filled-primary-500' : 'preset-tonal'}"
+                    aria-expanded={activeContactPanel === 'find-vendors'}
+                    aria-controls="panel-find-vendors"
+                    onclick={() => { activeContactPanel = activeContactPanel === 'find-vendors' ? null : 'find-vendors'; contactSearchQuery = ''; selectedVendorUuids = new Set(); newContactName = ''; newContactEmail = ''; newContactErrors = {}; clearTrustedContactMatches(); }}>
+                    🔍 Find new contacts
                 </button>
             </div>
 
@@ -1362,10 +1501,10 @@ onDestroy(() => {
                                             checked={selectedVendorUuids.has(v.uuid)}
                                             onchange={() => toggleVendorSelection(v.uuid)}
                                             disabled={isAttachingVendors}
-                                            aria-label="{v.name}, {v.email}" />
+                                            aria-label="{v.name}, {v.email || 'contact details needed'}" />
                                         <span class="flex-1 text-sm">
                                             <span class="font-medium">{v.name}</span>
-                                            <span class="text-surface-600-400 ml-2 text-xs">{v.email}</span>
+                                            <span class="text-surface-600-400 ml-2 text-xs">{v.email || 'Contact details needed'}</span>
                                         </span>
                                     </label>
                                 </li>
@@ -1394,6 +1533,7 @@ onDestroy(() => {
                     <label class="label" for="newContactName">
                         <span class="text-sm">Name</span>
                         <input id="newContactName" class="input w-full" type="text" bind:value={newContactName}
+                            oninput={clearTrustedContactMatches}
                             disabled={creatingContact} />
                         {#if newContactErrors.name}
                             <p class="text-error-500 text-sm">{newContactErrors.name}</p>
@@ -1402,21 +1542,88 @@ onDestroy(() => {
                     <label class="label" for="newContactEmail">
                         <span class="text-sm">Email</span>
                         <input id="newContactEmail" class="input w-full" type="email" bind:value={newContactEmail}
+                            oninput={clearTrustedContactMatches}
                             disabled={creatingContact} />
                         {#if newContactErrors.email}
                             <p class="text-error-500 text-sm">{newContactErrors.email}</p>
                         {/if}
                     </label>
+                    {#if trustedContactMatchError}
+                        <aside class="card preset-tonal-error p-3 text-sm" role="alert">
+                            <p>{trustedContactMatchError}</p>
+                            <div class="mt-2 flex flex-wrap gap-2">
+                                <button class="btn btn-sm preset-tonal" type="button" onclick={() => createAndAttachContact(undefined, false)} disabled={creatingContact}>
+                                    Retry check
+                                </button>
+                                <button class="btn btn-sm preset-tonal" type="button" onclick={() => createAndAttachContact(undefined, true)} disabled={creatingContact}>
+                                    Create separate contact
+                                </button>
+                            </div>
+                        </aside>
+                    {/if}
+                    {#if trustedContactMatches.length > 0}
+                        <aside class="card preset-tonal-primary-500 p-3 space-y-3" aria-label="Existing trusted listings">
+                            <div>
+                                <p class="font-medium text-sm">A trusted listing may already exist</p>
+                                <p class="text-xs text-surface-600-400">Attach the existing vendor-controlled listing, or create your own separate contact.</p>
+                            </div>
+                            <ul class="space-y-2">
+                                {#each trustedContactMatches as match (match.vendorListingUuid)}
+                                    <li class="rounded-lg border border-surface-200-800 p-3 flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <p class="font-medium text-sm">{match.name}</p>
+                                            {#if match.onboardedToEnvoy}
+                                                <p class="text-xs text-primary-500">Onboarded to Envoy</p>
+                                            {/if}
+                                            {#if formatTrustedLocation(match)}
+                                                <p class="text-xs text-surface-600-400">{formatTrustedLocation(match)}</p>
+                                            {/if}
+                                            {#if match.categories.length > 0}
+                                                <p class="text-xs text-surface-600-400">{match.categories.join(' · ')}</p>
+                                            {/if}
+                                        </div>
+                                        <button
+                                            class="btn btn-sm preset-filled-primary-500 shrink-0"
+                                            type="button"
+                                            onclick={() => attachTrustedContact(match)}
+                                            disabled={selectingTrustedListingUuid !== null}
+                                        >
+                                            {selectingTrustedListingUuid === match.vendorListingUuid ? 'Attaching…' : 'Use listing'}
+                                        </button>
+                                    </li>
+                                {/each}
+                            </ul>
+                            <button class="btn btn-sm preset-tonal" type="button" onclick={() => createAndAttachContact(undefined, true)} disabled={creatingContact || selectingTrustedListingUuid !== null}>
+                                Create separate contact
+                            </button>
+                        </aside>
+                    {/if}
                     <div class="flex gap-2">
                         <button class="btn btn-sm preset-filled-primary-500" type="submit" disabled={creatingContact}>
                             {creatingContact ? 'Adding…' : 'Add & Attach'}
                         </button>
                         <button class="btn btn-sm preset-tonal" type="button"
-                            onclick={() => { activeContactPanel = null; newContactName = ''; newContactEmail = ''; newContactErrors = {}; }}>
+                            onclick={() => { activeContactPanel = null; newContactName = ''; newContactEmail = ''; newContactErrors = {}; clearTrustedContactMatches(); }}>
                             Cancel
                         </button>
                     </div>
                 </form>
+            {/if}
+
+            <!-- Find vendors panel -->
+            {#if activeContactPanel === 'find-vendors'}
+                <div id="panel-find-vendors" class="card preset-outlined-surface-200-800 border border-surface-200-800 bg-surface-50-950/50 backdrop-blur-md p-4 mb-4">
+                    <VendorSearch
+                        context="project"
+                        projectUuid={project.uuid}
+                        projectVendors={attachedListingUuids}
+                        onClose={() => { activeContactPanel = null; }}
+                        onAttached={(_uuids) => {
+                            activeContactPanel = null;
+                            router.reload({ only: ['linkedVendors', 'allVendors'] });
+                        }}
+                    />
+                </div>
             {/if}
         {/if}
 
@@ -1431,7 +1638,7 @@ onDestroy(() => {
                     <li class="flex items-center justify-between py-2">
                         <div>
                             <p class="text-sm font-medium">{vendor.name}</p>
-                            <p class="text-xs text-surface-600-400">{vendor.email}</p>
+                            <p class="text-xs text-surface-600-400">{vendor.email || 'Contact details needed'}</p>
                         </div>
                         {#if contactEditMode}
                             {#if pendingDetach === vendor.uuid}

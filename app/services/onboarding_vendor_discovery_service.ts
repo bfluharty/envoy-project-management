@@ -37,6 +37,7 @@ export default class OnboardingVendorDiscoveryService {
     vendors: PublicVendorRecommendation[]
     expiresAt: string | null
     emptyStateReason?: string
+    liveSearchUnavailable?: boolean
   }> {
     logger.info(
       {
@@ -77,6 +78,7 @@ export default class OnboardingVendorDiscoveryService {
       vendors,
       expiresAt: freshDraft.expiresAt.toISO(),
       emptyStateReason: discovery.emptyStateReason,
+      liveSearchUnavailable: discovery.liveSearchUnavailable,
     }
   }
 }

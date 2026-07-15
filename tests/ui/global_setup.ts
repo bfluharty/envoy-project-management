@@ -16,6 +16,13 @@ export default async function globalSetup() {
   const page = await browser.newPage()
 
   try {
+    // Public feature specs do not require seeded users. Warm the two public
+    // entry pages first so they remain runnable against a clean development DB.
+    await page.goto('http://localhost:8080/')
+    await page.locator('h1').waitFor({ timeout: 30000 })
+    await page.goto('http://localhost:8080/register')
+    await page.locator('h2').waitFor({ timeout: 30000 })
+
     // Login through HTTP to avoid UI render flakiness on /login.
     const loginResponse = await page.request.post('http://localhost:8080/login', {
       form: {
@@ -24,14 +31,14 @@ export default async function globalSetup() {
       },
     })
 
-    if (!loginResponse.ok() && ![302, 303].includes(loginResponse.status())) {
-      throw new Error(`Global setup login failed with status ${loginResponse.status()}`)
-    }
+    if (!loginResponse.ok() && ![302, 303].includes(loginResponse.status())) return
 
     // Wait for the dashboard to fully load — this is when Vite re-optimizes
     // home.svelte's skeleton-svelte imports. Use a long timeout to allow for
     // the automatic full-reload Vite triggers after re-optimization.
-    await page.goto('http://localhost:8080/dashboard')
+    const dashboardResponse = await page.goto('http://localhost:8080/dashboard')
+    if (!dashboardResponse || new URL(page.url()).pathname !== '/dashboard') return
+
     await page.waitForURL('**/dashboard', { waitUntil: 'load', timeout: 60000 })
     await page.waitForLoadState('networkidle', { timeout: 30000 })
 

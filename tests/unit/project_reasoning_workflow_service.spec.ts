@@ -148,6 +148,7 @@ test.group('ProjectReasoningWorkflowService', (group) => {
         },
       },
       context: {
+        planningStatus: 'AWAITING_FINAL_DETAILS',
         projectInsights: [
           {
             uuid: 'insight-1',
@@ -174,6 +175,7 @@ test.group('ProjectReasoningWorkflowService', (group) => {
 
     assert.deepEqual(request, {
       agentId: 'PLANNING',
+      planningStatus: 'AWAITING_FINAL_DETAILS',
       promptData: {
         prompt: 'What should we ask vendors?',
         planningAgent: {

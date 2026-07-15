@@ -220,12 +220,13 @@ test.group('VendorService ownership and availability', (group) => {
     assert.equal('sourcePayload' in recommendation, false)
   })
 
-  test('reused search listings merge category IDs without refreshing other details', async () => {
+  test('reused search listings remain completely unchanged', async () => {
     const fsqPlaceId = `no-refresh-${uuidv4()}`
+    const email = `original-${uuidv4()}@example.com`
     const original = await VendorService.insertOrReuseSearchListing({
       fsqPlaceId,
       name: 'Original Search Name',
-      email: 'original@example.com',
+      email,
       categories: ['Original Category'],
       fsqCategoryIds: ['original-category-id'],
       phoneNumber: null,
@@ -235,9 +236,9 @@ test.group('VendorService ownership and availability', (group) => {
       sourcePayload: { version: 1 },
     })
     const reused = await VendorService.insertOrReuseSearchListing({
-      fsqPlaceId,
+      fsqPlaceId: `alternate-${uuidv4()}`,
       name: 'Refreshed Search Name',
-      email: 'original@example.com',
+      email,
       categories: ['Changed Category'],
       fsqCategoryIds: ['original-category-id', 'new-category-id'],
       phoneNumber: null,
@@ -249,9 +250,9 @@ test.group('VendorService ownership and availability', (group) => {
 
     assert.equal(reused.uuid, original.uuid)
     assert.equal(reused.name, 'Original Search Name')
-    assert.equal(reused.email, 'original@example.com')
+    assert.equal(reused.email, email)
     assert.deepEqual(reused.categories, ['Original Category'])
-    assert.deepEqual(reused.fsqCategoryIds, ['original-category-id', 'new-category-id'])
+    assert.deepEqual(reused.fsqCategoryIds, ['original-category-id'])
     assert.deepEqual(reused.sourcePayload, { version: 1 })
   })
 })

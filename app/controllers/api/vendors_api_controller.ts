@@ -13,7 +13,7 @@ import {
   authenticatedVendorSearchValidator,
 } from '#validators/vendors_validator'
 import { getVendorsValidator } from '#validators/vendors_validator'
-import { isOnlyActivatingRecord, validateUser } from '../../utils/controller_utils.js'
+import { isOnlyActivatingRecord } from '../../utils/controller_utils.js'
 import UserRoleService from '#services/user_role_service'
 import {
   adminVendorSearchRateLimitRules,
@@ -22,16 +22,16 @@ import {
 } from '#utils/rate_limit_utils'
 
 export default class VendorsAPIController {
-  async search({ request, response }: HttpContext) {
-    const userId = request.header('x-user-id') || ''
-    try {
-      const user = await validateUser(userId)
-      if (!user || !(await UserRoleService.isConsumer(user))) {
-        return response.status(403).json({ error: 'User is not authorized' })
-      }
-    } catch (error) {
-      return response.status(401).json({ error: error.message })
-    }
+  private async getConsumer(auth: HttpContext['auth']) {
+    const user = auth.getUserOrFail()
+    if (!user.isActive || !(await UserRoleService.isConsumer(user))) return null
+    return user
+  }
+
+  async search({ auth, request, response }: HttpContext) {
+    const user = await this.getConsumer(auth)
+    if (!user) return response.status(403).json({ error: 'User is not authorized' })
+    const userId = user.uuid
 
     const input = await request.validateUsing(authenticatedVendorSearchValidator)
     const rateLimitResponse = await rejectWhenRateLimited(
@@ -57,6 +57,7 @@ export default class VendorsAPIController {
           VendorService.toAuthenticatedRecommendation(listing, mappings.get(listing.uuid))
         ),
         emptyStateReason: discovery.emptyStateReason,
+        liveSearchUnavailable: discovery.liveSearchUnavailable,
       })
     } catch (error) {
       if (error instanceof VendorDiscoveryDependencyError) {
@@ -66,9 +67,8 @@ export default class VendorsAPIController {
     }
   }
 
-  async getAvailable({ request, response }: HttpContext) {
-    const userId = request.header('x-user-id') || ''
-    if (!(await validateUser(userId))) {
+  async getAvailable({ auth, request, response }: HttpContext) {
+    if (!(await this.getConsumer(auth))) {
       return response.status(403).json({ error: 'User is not authorized' })
     }
 
@@ -82,9 +82,8 @@ export default class VendorsAPIController {
     })
   }
 
-  async getTrustedMatches({ request, response }: HttpContext) {
-    const userId = request.header('x-user-id') || ''
-    if (!(await validateUser(userId))) {
+  async getTrustedMatches({ auth, request, response }: HttpContext) {
+    if (!(await this.getConsumer(auth))) {
       return response.status(403).json({ error: 'User is not authorized' })
     }
 
@@ -95,11 +94,10 @@ export default class VendorsAPIController {
     })
   }
 
-  async selectAvailable({ request, response }: HttpContext) {
-    const userId = request.header('x-user-id') || ''
-    if (!(await validateUser(userId))) {
-      return response.status(403).json({ error: 'User is not authorized' })
-    }
+  async selectAvailable({ auth, request, response }: HttpContext) {
+    const user = await this.getConsumer(auth)
+    if (!user) return response.status(403).json({ error: 'User is not authorized' })
+    const userId = user.uuid
 
     const { uuid: vendorListingUuid } = await requestParamsValidator.validate(request.params())
     const listing = await VendorService.resolveCanonicalListing(vendorListingUuid)
@@ -122,20 +120,10 @@ export default class VendorsAPIController {
   /**
    * Display all vendors
    */
-  async getAll({ request, response }: HttpContext) {
-    // Validate user
-    const userId = request.header('x-user-id') || ''
-    try {
-      const isValidUser = await validateUser(userId)
-      if (!isValidUser) {
-        return response.status(403).json({
-          error: 'User is not authorized',
-          developerText: 'User is not active or does not exist',
-        })
-      }
-    } catch (error) {
-      return response.status(401).json({ error: error.message })
-    }
+  async getAll({ auth, request, response }: HttpContext) {
+    const user = await this.getConsumer(auth)
+    if (!user) return response.status(403).json({ error: 'User is not authorized' })
+    const userId = user.uuid
 
     // Validate request
     const { limit, offset } = await request.validateUsing(getVendorsValidator)
@@ -161,20 +149,10 @@ export default class VendorsAPIController {
   /**
    * Get a single vendor
    */
-  async getByUuid({ request, response }: HttpContext) {
-    // Validate user
-    const userId = request.header('x-user-id') || ''
-    try {
-      const isValidUser = await validateUser(userId)
-      if (!isValidUser) {
-        return response.status(403).json({
-          error: 'User is not authorized',
-          developerText: 'User is not active or does not exist',
-        })
-      }
-    } catch (error) {
-      return response.status(401).json({ error: error.message })
-    }
+  async getByUuid({ auth, request, response }: HttpContext) {
+    const user = await this.getConsumer(auth)
+    if (!user) return response.status(403).json({ error: 'User is not authorized' })
+    const userId = user.uuid
 
     // Validate request
     const { uuid: vendorUuid } = await requestParamsValidator.validate(request.params())
@@ -198,20 +176,10 @@ export default class VendorsAPIController {
   /**
    * Create a new vendor
    */
-  async create({ request, response }: HttpContext) {
-    // Validate user
-    const userId = request.header('x-user-id') || ''
-    try {
-      const isValidUser = await validateUser(userId)
-      if (!isValidUser) {
-        return response.status(403).json({
-          error: 'User is not authorized',
-          developerText: 'User is not active or does not exist',
-        })
-      }
-    } catch (error) {
-      return response.status(401).json({ error: error.message })
-    }
+  async create({ auth, request, response }: HttpContext) {
+    const user = await this.getConsumer(auth)
+    if (!user) return response.status(403).json({ error: 'User is not authorized' })
+    const userId = user.uuid
 
     // Validate request
     const validatedRequest = await request.validateUsing(createVendorValidator)
@@ -236,20 +204,10 @@ export default class VendorsAPIController {
   /**
    * Update a vendor
    */
-  async update({ request, response }: HttpContext) {
-    // Validate user
-    const userId = request.header('x-user-id') || ''
-    try {
-      const isValidUser = await validateUser(userId)
-      if (!isValidUser) {
-        return response.status(403).json({
-          error: 'User is not authorized',
-          developerText: 'User is not active or does not exist',
-        })
-      }
-    } catch (error) {
-      return response.status(401).json({ error: error.message })
-    }
+  async update({ auth, request, response }: HttpContext) {
+    const user = await this.getConsumer(auth)
+    if (!user) return response.status(403).json({ error: 'User is not authorized' })
+    const userId = user.uuid
 
     // Validate request
     const { uuid: vendorUuid } = await requestParamsValidator.validate(request.params())

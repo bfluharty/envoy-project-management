@@ -8,7 +8,10 @@ const AVATAR_PNG = Buffer.from(
 
 test('landing page', async ({ page }) => {
   await page.goto('/')
-  await expect(page.locator('h1')).toContainText('Welcome to Envoy')
+  await expect(page.locator('h1')).toContainText('Plan any project')
+  await expect(page.getByLabel('What are you planning?')).toBeVisible()
+  await expect(page.getByLabel(/ZIP or postal code/i)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Find vendors' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Sign In' })).toBeVisible()
 })
 
@@ -44,7 +47,7 @@ test('dashboard page', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Account' })).toBeVisible()
 })
 
-test('project page - convo tab', async ({ page }) => {
+test('project page - chat tab', async ({ page }) => {
   await login(page)
   await goToProject(page)
   await expect(page.getByPlaceholder('Type your message...')).toBeVisible()
