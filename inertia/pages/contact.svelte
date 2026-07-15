@@ -9,10 +9,7 @@
 >
   <article class="space-y-3">
     <p class="text-surface-600-400">
-      General: <a href="mailto:hello@envoy.local" class="text-primary-500 hover:text-primary-400">hello@envoy.local</a>
-    </p>
-    <p class="text-surface-600-400">
-      Support: <a href="mailto:support@envoy.local" class="text-primary-500 hover:text-primary-400">support@envoy.local</a>
+      <a href="mailto:contact@hello-envoy.com" class="text-primary-500 hover:text-primary-400">contact@hello-envoy.com</a>
     </p>
   </article>
 
