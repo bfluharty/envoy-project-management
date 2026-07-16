@@ -153,10 +153,17 @@ test.group('onboarding project completion', (group) => {
       .json({ ...validProjectRequest, onboardingToken: draft.tokenUuid })
     tokenResponse.assertStatus(422)
 
+    const completionRequest = {
+      ...validProjectRequest,
+      selectedVendorListingUuids: [listing.uuid],
+      vendorEmailUpdates: [
+        { vendorListingUuid: listing.uuid, email: 'completion-contact@example.com' },
+      ],
+    }
     const firstResponse = await client
       .post('/onboarding/project')
       .loginAs(consumer)
-      .json(validProjectRequest)
+      .json(completionRequest)
       .redirects(0)
     firstResponse.assertFound()
 
@@ -190,6 +197,7 @@ test.group('onboarding project completion', (group) => {
     )
     await listing.refresh()
     assert.equal(listing.ownerUserUuid, consumer.uuid)
+    assert.equal(listing.email, 'completion-contact@example.com')
     assert.equal(listing.originator, 'SEARCH')
     assert.ok(
       await Vendor.query()
@@ -211,6 +219,63 @@ test.group('onboarding project completion', (group) => {
         .count('* as total')
         .then((rows) => Number(rows[0].$extras.total)),
       outreachDraftCountBefore
+    )
+  })
+
+  test('requires contact details for selected no-email vendors before completion', async ({
+    client,
+  }) => {
+    const consumer = await createUser('CONSUMER')
+    const listing = await createSearchListing(null)
+    await createAssociatedDraft(consumer, [listing])
+
+    const response = await client
+      .post('/onboarding/project')
+      .loginAs(consumer)
+      .json({
+        ...validProjectRequest,
+        selectedVendorListingUuids: [listing.uuid],
+      })
+      .redirects(0)
+
+    response.assertStatus(422)
+    assert.match(response.body().error, /Add contact email or remove/)
+    await listing.refresh()
+    assert.equal(listing.email, null)
+    assert.equal(await Project.findBy('userUuid', consumer.uuid), null)
+  })
+
+  test('completes with a removed no-email vendor when another selected vendor is valid', async () => {
+    const consumer = await createUser('CONSUMER')
+    const validListing = await createSearchListing('valid-selected@example.com')
+    const noEmailListing = await createSearchListing(null)
+    const draft = await createAssociatedDraft(consumer, [validListing, noEmailListing])
+
+    const result = await OnboardingProjectCompletionService.completeProject(
+      consumer.uuid,
+      validProjectRequest,
+      { selectedVendorListingUuids: [validListing.uuid] }
+    )
+
+    assert.equal(result.status, 'CREATED')
+    if (result.status !== 'CREATED') return
+    assert.equal(result.linkedVendorCount, 1)
+    await draft.refresh()
+    assert.deepEqual(draft.selectedVendorListingUuids, [validListing.uuid])
+    assert.ok(
+      await Vendor.query()
+        .where('user_uuid', consumer.uuid)
+        .where('vendor_listing_uuid', validListing.uuid)
+        .where('is_active', true)
+        .first()
+    )
+    assert.equal(
+      await Vendor.query()
+        .where('user_uuid', consumer.uuid)
+        .where('vendor_listing_uuid', noEmailListing.uuid)
+        .where('is_active', true)
+        .first(),
+      null
     )
   })
 
@@ -261,7 +326,12 @@ test.group('onboarding project completion', (group) => {
     try {
       await assert.rejects(
         () =>
-          OnboardingProjectCompletionService.completeProject(consumer.uuid, validProjectRequest),
+          OnboardingProjectCompletionService.completeProject(consumer.uuid, validProjectRequest, {
+            selectedVendorListingUuids: [listing.uuid],
+            vendorEmailUpdates: [
+              { vendorListingUuid: listing.uuid, email: 'rollback-contact@example.com' },
+            ],
+          }),
         /forced onboarding attachment failure/
       )
     } finally {
@@ -273,6 +343,7 @@ test.group('onboarding project completion', (group) => {
     assert.equal(draft.status, 'ACTIVE')
     assert.equal(draft.consumedProjectUuid, null)
     assert.equal(listing.ownerUserUuid, null)
+    assert.equal(listing.email, null)
     assert.equal(await Project.findBy('userUuid', consumer.uuid), null)
     assert.equal(
       await Vendor.query()

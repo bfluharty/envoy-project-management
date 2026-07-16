@@ -7,6 +7,7 @@
   import { onMount, untrack } from 'svelte';
   import { Steps } from '@skeletonlabs/skeleton-svelte';
   import { AlertTriangleIcon } from '@lucide/svelte';
+  import { isValidEmail } from '../../utils/format';
 
   interface ProjectPrefill {
     title?: string;
@@ -19,17 +20,32 @@
     vendorSearchUrl: string;
   }
 
+  interface SelectedVendor {
+    vendorListingUuid: string;
+    name: string;
+    categories: string[];
+    location: Record<string, unknown> | null;
+    hasEmail?: boolean;
+    onboardedToEnvoy: boolean;
+    consumerOwned: boolean;
+    ownershipWarning: string | null;
+  }
+
   type OnboardingLocationData = LocationData & { postalCode?: string };
 
   // ── Props from backend ─────────────────────────────────────────────────────
   const {
     state: onboardingState = 'active',
     project = null,
+    selectedVendors = [],
+    selectedVendorListingUuids = [],
     currencies = [],
     recovery = null,
   }: {
     state?: 'active' | 'expired';
     project?: ProjectPrefill | null;
+    selectedVendors?: SelectedVendor[];
+    selectedVendorListingUuids?: string[];
     currencies?: { code: string; name: string }[];
     recovery?: RecoveryLinks | null;
   } = $props();
@@ -63,6 +79,8 @@
   let errors        = $state<Record<string, string>>({});
 
   const initialProject = untrack(() => project);
+  const initialSelectedVendors = untrack(() => selectedVendors);
+  const initialSelectedVendorListingUuids = untrack(() => selectedVendorListingUuids);
   let title          = $state(initialProject?.title ?? '');
   let description    = $state(initialProject?.description ?? '');
   let location       = $state<OnboardingLocationData | null>(normalizeProjectLocation(initialProject?.location));
@@ -72,6 +90,21 @@
   let budgetAmount   = $state('');
   let budgetCurrency = $state('USD');
   let goals          = $state('');
+  let selectedVendorDetails = $state<SelectedVendor[]>(initialSelectedVendors);
+  let selectedVendorUuidFallback = $state<string[]>(initialSelectedVendorListingUuids);
+  let vendorEmailInputs = $state<Record<string, string>>({});
+  let contactDetailErrors = $state<Record<string, string>>({});
+  let contactDetailsWarning = $state('');
+
+  const missingEmailVendors = $derived(
+    selectedVendorDetails.filter((vendor) => vendor.hasEmail === false)
+  );
+  const unresolvedMissingEmailVendors = $derived(
+    missingEmailVendors.filter(
+      (vendor) => !isValidEmail(vendorEmailInputs[vendor.vendorListingUuid] ?? '')
+    )
+  );
+  const contactDetailsResolved = $derived(unresolvedMissingEmailVendors.length === 0);
 
   function normalizeProjectLocation(
     value: Record<string, unknown> | null | undefined
@@ -129,10 +162,82 @@
     }
   });
 
+  function updateVendorEmail(vendorListingUuid: string, value: string) {
+    vendorEmailInputs = { ...vendorEmailInputs, [vendorListingUuid]: value };
+    contactDetailErrors = { ...contactDetailErrors, [vendorListingUuid]: '' };
+    contactDetailsWarning = '';
+  }
+
+  function removeRecord<T extends Record<string, unknown>>(record: T, key: string): T {
+    const nextRecord: Record<string, unknown> = { ...record };
+    delete nextRecord[key];
+    return nextRecord as T;
+  }
+
+  function hasOtherValidSelectedVendor(vendorListingUuid: string) {
+    return selectedVendorDetails.some(
+      (vendor) =>
+        vendor.vendorListingUuid !== vendorListingUuid &&
+        (vendor.hasEmail !== false ||
+          isValidEmail(vendorEmailInputs[vendor.vendorListingUuid] ?? ''))
+    );
+  }
+
+  function removeSelectedVendor(vendorListingUuid: string) {
+    if (!hasOtherValidSelectedVendor(vendorListingUuid)) {
+      contactDetailsWarning =
+        'At least one selected vendor needs contact details. Add an email before removing this vendor.';
+      return;
+    }
+
+    selectedVendorDetails = selectedVendorDetails.filter(
+      (vendor) => vendor.vendorListingUuid !== vendorListingUuid
+    );
+    selectedVendorUuidFallback = selectedVendorUuidFallback.filter(
+      (uuid) => uuid !== vendorListingUuid
+    );
+    vendorEmailInputs = removeRecord(vendorEmailInputs, vendorListingUuid);
+    contactDetailErrors = removeRecord(contactDetailErrors, vendorListingUuid);
+    contactDetailsWarning = '';
+  }
+
+  function validateContactDetails() {
+    if (contactDetailsResolved) {
+      contactDetailErrors = {};
+      contactDetailsWarning = '';
+      return true;
+    }
+
+    const nextErrors: Record<string, string> = {};
+    for (const vendor of missingEmailVendors) {
+      const email = vendorEmailInputs[vendor.vendorListingUuid] ?? '';
+      if (!email.trim()) {
+        nextErrors[vendor.vendorListingUuid] = 'Email is required or remove this vendor.';
+      } else if (!isValidEmail(email)) {
+        nextErrors[vendor.vendorListingUuid] = 'Enter a valid email address.';
+      }
+    }
+
+    contactDetailErrors = nextErrors;
+    contactDetailsWarning = 'Add contact details or remove vendors before continuing.';
+    return false;
+  }
+
+  function getSelectedVendorListingUuids() {
+    if (selectedVendorDetails.length > 0) {
+      return selectedVendorDetails.map((vendor) => vendor.vendorListingUuid);
+    }
+
+    return selectedVendorUuidFallback;
+  }
+
   // ── Step nav ───────────────────────────────────────────────────────────────
   function nextStep() {
     if (currentStep === 0 && !title.trim()) {
       errors = { title: 'Project title is required.' };
+      return;
+    }
+    if (currentStep === 0 && !validateContactDetails()) {
       return;
     }
     errors = {};
@@ -146,6 +251,14 @@
 
   // ── Submit ─────────────────────────────────────────────────────────────────
   function buildPayload() {
+    const selectedVendorUuids = getSelectedVendorListingUuids();
+    const vendorEmailUpdates = missingEmailVendors
+      .map((vendor) => ({
+        vendorListingUuid: vendor.vendorListingUuid,
+        email: vendorEmailInputs[vendor.vendorListingUuid]?.trim() ?? '',
+      }))
+      .filter((update) => update.email.length > 0);
+
     return {
       title: title.trim(),
       ...(description.trim() ? { description: description.trim() } : {}),
@@ -156,6 +269,8 @@
       ...(budgetAmount !== '' ? { budgetAmount: Number(budgetAmount) } : {}),
       ...(budgetCurrency ? { budgetCurrency } : {}),
       ...(goals.trim() ? { goals: goals.trim() } : {}),
+      ...(selectedVendorUuids.length > 0 ? { selectedVendorListingUuids: selectedVendorUuids } : {}),
+      ...(vendorEmailUpdates.length > 0 ? { vendorEmailUpdates } : {}),
     };
   }
 
@@ -163,6 +278,10 @@
     if (processing) return;
     if (!title.trim()) {
       errors = { title: 'Project title is required.' };
+      currentStep = 0;
+      return;
+    }
+    if (!validateContactDetails()) {
       currentStep = 0;
       return;
     }
@@ -272,6 +391,74 @@
           {/each}
         </Steps.List>
 
+        {#if currentStep === 0 && missingEmailVendors.length > 0}
+          <section
+            class="space-y-4 rounded-xl border border-warning-500/30 bg-warning-500/5 p-4"
+            aria-label="Additional vendor contact details"
+          >
+            <div class="flex items-start gap-3">
+              <AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-warning-500" />
+              <div class="space-y-1">
+                <h2 class="text-base font-semibold">Additional contact details required</h2>
+                <p class="text-sm text-surface-600-400">
+                  Add an email for each selected vendor below, or remove the vendor if another
+                  selected vendor already has contact details.
+                </p>
+              </div>
+            </div>
+
+            {#if contactDetailsWarning}
+              <aside class="card preset-tonal-warning p-3 text-sm" role="alert">
+                {contactDetailsWarning}
+              </aside>
+            {/if}
+
+            <ul class="space-y-3" role="list">
+              {#each missingEmailVendors as vendor (vendor.vendorListingUuid)}
+                <li class="space-y-3 rounded-lg border border-surface-200-800 bg-surface-50-950/40 p-3">
+                  <div class="min-w-0">
+                    <p class="truncate text-sm font-semibold">{vendor.name}</p>
+                    {#if vendor.categories.length > 0}
+                      <p class="text-xs text-surface-500">{vendor.categories.join(' - ')}</p>
+                    {/if}
+                  </div>
+                  <div class="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+                    <label class="label" for={`vendor-email-${vendor.vendorListingUuid}`}>
+                      <span>Email for {vendor.name}</span>
+                      <input
+                        id={`vendor-email-${vendor.vendorListingUuid}`}
+                        class="input"
+                        class:input-error={!!contactDetailErrors[vendor.vendorListingUuid]}
+                        type="email"
+                        value={vendorEmailInputs[vendor.vendorListingUuid] ?? ''}
+                        placeholder="vendor@example.com"
+                        aria-invalid={contactDetailErrors[vendor.vendorListingUuid] ? 'true' : undefined}
+                        oninput={(event) =>
+                          updateVendorEmail(
+                            vendor.vendorListingUuid,
+                            (event.currentTarget as HTMLInputElement).value
+                          )}
+                      />
+                      {#if contactDetailErrors[vendor.vendorListingUuid]}
+                        <p class="text-sm text-error-500">
+                          {contactDetailErrors[vendor.vendorListingUuid]}
+                        </p>
+                      {/if}
+                    </label>
+                    <button
+                      type="button"
+                      class="btn preset-tonal"
+                      onclick={() => removeSelectedVendor(vendor.vendorListingUuid)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/if}
+
         <!-- Step content -->
         <div class="@container card preset-outlined-surface-200-800 border border-surface-200-800 bg-surface-50-950/50 backdrop-blur-md p-4 sm:p-6">
           <Steps.Content index={0} class="space-y-6">
@@ -294,7 +481,14 @@
               </div>
             </section>
             <footer class="flex justify-end pt-2">
-              <button class="btn preset-filled-primary-500" type="button" onclick={nextStep}>Continue</button>
+              <button
+                class="btn preset-filled-primary-500"
+                type="button"
+                onclick={nextStep}
+                disabled={!contactDetailsResolved}
+              >
+                Continue
+              </button>
             </footer>
           </Steps.Content>
 
@@ -333,7 +527,12 @@
             <footer class="flex justify-between items-center pt-2">
               <button class="btn preset-tonal" type="button" onclick={prevStep}>Back</button>
               <div class="flex gap-2">
-                <button class="btn preset-tonal" type="button" onclick={submitProject} disabled={processing}>
+                <button
+                  class="btn preset-tonal"
+                  type="button"
+                  onclick={submitProject}
+                  disabled={processing || !contactDetailsResolved}
+                >
                   {processing ? 'Creating...' : 'Skip & create'}
                 </button>
                 <button class="btn preset-filled-primary-500" type="button" onclick={nextStep}>Continue</button>
@@ -364,7 +563,12 @@
             <footer class="flex justify-between items-center pt-2">
               <button class="btn preset-tonal" type="button" onclick={prevStep}>Back</button>
               <div class="flex gap-2">
-                <button class="btn preset-tonal" type="button" onclick={submitProject} disabled={processing}>
+                <button
+                  class="btn preset-tonal"
+                  type="button"
+                  onclick={submitProject}
+                  disabled={processing || !contactDetailsResolved}
+                >
                   {processing ? 'Creating...' : 'Skip & create'}
                 </button>
                 <button class="btn preset-filled-primary-500" type="button" onclick={nextStep}>Continue</button>
@@ -386,7 +590,12 @@
             </section>
             <footer class="flex justify-between items-center pt-2">
               <button class="btn preset-tonal" type="button" onclick={prevStep}>Back</button>
-              <button class="btn preset-filled-primary-500" type="button" onclick={submitProject} disabled={processing}>
+              <button
+                class="btn preset-filled-primary-500"
+                type="button"
+                onclick={submitProject}
+                disabled={processing || !contactDetailsResolved}
+              >
                 {processing ? 'Creating project...' : 'Create project'}
               </button>
             </footer>

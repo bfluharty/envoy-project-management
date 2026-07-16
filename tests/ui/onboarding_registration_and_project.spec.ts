@@ -59,6 +59,15 @@ const activeProjectProps = {
   user: consumerUser,
 }
 
+const missingEmailProjectProps = {
+  ...activeProjectProps,
+  selectedVendors: [
+    { ...selectedVendors[0], hasEmail: true },
+    { ...selectedVendors[1], hasEmail: false },
+  ],
+  selectedVendorListingUuids: selectedVendors.map((vendor) => vendor.vendorListingUuid),
+}
+
 const projectPageProps = {
   project: {
     uuid: PROJECT_UUID,
@@ -366,6 +375,75 @@ test.describe('first project completion', () => {
     await expect(page.getByText('Consumer Managed Design')).toHaveCount(0)
     await expect(page.getByText(/No email on file/i)).toHaveCount(0)
     await expect(page.getByRole('checkbox')).toHaveCount(0)
+  })
+
+  test('requires missing vendor emails before continuing and submits them with completion', async ({
+    page,
+  }) => {
+    await mockInertiaPage(
+      page,
+      '/onboarding/project',
+      'onboarding/project',
+      missingEmailProjectProps
+    )
+    await mockInertiaPage(page, `/projects/${PROJECT_UUID}`, 'projects/project', projectPageProps)
+
+    let completionBody: Record<string, unknown> | undefined
+    await page.route('/onboarding/project', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.fallback()
+        return
+      }
+      completionBody = route.request().postDataJSON()
+      await fulfillInertiaPage(
+        route,
+        'projects/project',
+        `/projects/${PROJECT_UUID}`,
+        projectPageProps
+      )
+    })
+
+    await page.goto('/onboarding/project')
+    await expect(
+      page.getByRole('heading', { name: 'Additional contact details required' })
+    ).toBeVisible()
+    const continueButton = page.getByRole('button', { name: 'Continue', exact: true })
+    await expect(continueButton).toBeDisabled()
+
+    await page.getByLabel('Title').fill('Restaurant Renovation')
+    await page.getByLabel('Email for Consumer Managed Design').fill('design@example.com')
+    await expect(continueButton).toBeEnabled()
+    await continueButton.click()
+    await page.getByRole('button', { name: /Skip & create/i }).click()
+
+    await page.waitForURL(`**/projects/${PROJECT_UUID}`)
+    expect(completionBody).toMatchObject({
+      selectedVendorListingUuids: selectedVendors.map((vendor) => vendor.vendorListingUuid),
+      vendorEmailUpdates: [
+        {
+          vendorListingUuid: selectedVendors[1].vendorListingUuid,
+          email: 'design@example.com',
+        },
+      ],
+    })
+  })
+
+  test('warns before removing the only selected vendor without contact details', async ({
+    page,
+  }) => {
+    await mockInertiaPage(page, '/onboarding/project', 'onboarding/project', {
+      ...activeProjectProps,
+      selectedVendors: [{ ...selectedVendors[1], hasEmail: false }],
+      selectedVendorListingUuids: [selectedVendors[1].vendorListingUuid],
+    })
+
+    await page.goto('/onboarding/project')
+    await page.getByRole('button', { name: 'Remove' }).click()
+
+    await expect(page.getByRole('alert')).toContainText(
+      'At least one selected vendor needs contact details'
+    )
+    await expect(page.getByLabel('Email for Consumer Managed Design')).toBeVisible()
   })
 
   test('submits the canonical project payload without a token, clears browser state, and opens Chat', async ({

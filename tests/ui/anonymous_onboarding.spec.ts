@@ -15,6 +15,7 @@ type VendorRecommendation = {
     country?: string
     formatted_address?: string
   } | null
+  hasEmail: boolean
   onboardedToEnvoy: boolean
   consumerOwned: boolean
   ownershipWarning: string | null
@@ -33,6 +34,7 @@ const recommendations: VendorRecommendation[] = [
       country: 'US',
       formatted_address: '456 Broad St, Richmond, VA 23220',
     },
+    hasEmail: true,
     onboardedToEnvoy: true,
     consumerOwned: false,
     ownershipWarning: null,
@@ -46,6 +48,7 @@ const recommendations: VendorRecommendation[] = [
       region: 'VA',
       postcode: '23220',
     },
+    hasEmail: true,
     onboardedToEnvoy: false,
     consumerOwned: true,
     ownershipWarning: 'This listing is consumer-managed and has not been verified by the vendor.',
@@ -55,6 +58,7 @@ const recommendations: VendorRecommendation[] = [
     name: 'No Email Plumbing',
     categories: ['Plumber'],
     location: null,
+    hasEmail: false,
     onboardedToEnvoy: false,
     consumerOwned: false,
     ownershipWarning: null,
@@ -215,6 +219,7 @@ test.describe('anonymous vendor discovery', () => {
     ).toBeVisible()
     await expect(page.getByText('Onboarded to Envoy')).toBeVisible()
     await expect(page.getByText(/Unverified listing/i)).toBeVisible()
+    await expect(page.getByText('Additional contact details required')).toHaveCount(2)
     await expect(page.getByText('Electrician · Commercial Contractor')).toBeVisible()
     await expect(page.getByText(/@example\.com|555-0100|https:\/\//)).toHaveCount(0)
     expect(await cards.count()).toBeGreaterThanOrEqual(0)

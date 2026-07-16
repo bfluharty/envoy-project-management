@@ -17,6 +17,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import {
+    AlertTriangleIcon,
     CheckCircleIcon,
     LoaderCircleIcon,
     ShieldAlertIcon,
@@ -674,6 +675,12 @@
         <span class="inline-flex items-center gap-1 text-xs font-medium text-warning-500 bg-warning-500/10 rounded-full px-2 py-0.5">
           <ShieldAlertIcon class="size-3" />
           Unverified listing
+        </span>
+      {/if}
+      {#if p.vendor.hasEmail === false}
+        <span class="inline-flex items-center gap-1 text-xs font-medium text-warning-500 bg-warning-500/10 rounded-full px-2 py-0.5">
+          <AlertTriangleIcon class="size-3" />
+          Additional contact details required
         </span>
       {/if}
       {#if p.isInContacts}

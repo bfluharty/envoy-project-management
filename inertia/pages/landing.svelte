@@ -4,7 +4,7 @@
   import PublicFooter from '#components/public_footer.svelte';
   import { page } from '@inertiajs/svelte';
   import { onMount } from 'svelte';
-  import { CheckCircleIcon, LoaderCircleIcon, ShieldAlertIcon, MapPinIcon } from '@lucide/svelte';
+  import { AlertTriangleIcon, CheckCircleIcon, LoaderCircleIcon, ShieldAlertIcon, MapPinIcon } from '@lucide/svelte';
   import { groupVendorsByPrimaryClassification } from '../utils/vendor_grouping';
 
   // ── Types ──────────────────────────────────────────────────────────────────
@@ -22,6 +22,7 @@
     name: string;
     location: VendorLocation | null;
     categories: string[];
+    hasEmail?: boolean;
     onboardedToEnvoy: boolean;
     consumerOwned: boolean;
     ownershipWarning: string | null;
@@ -539,6 +540,11 @@
                       <li class="flex items-start justify-between gap-3 rounded-lg border border-surface-200-800 bg-surface-100-900/20 p-3">
                         <div class="min-w-0 space-y-1">
                           <p class="font-semibold text-sm">{vendor.name}</p>
+                          {#if vendor.hasEmail === false}
+                            <p class="text-xs font-medium text-warning-600-400">
+                              Additional contact details required
+                            </p>
+                          {/if}
                           {#if vendor.location}
                             <p class="text-xs text-surface-600-400 flex items-center gap-1">
                               <MapPinIcon class="size-3 shrink-0" />
@@ -601,6 +607,12 @@
                               <span class="inline-flex items-center gap-1 text-xs font-medium text-warning-500 bg-warning-500/10 rounded-full px-2 py-0.5">
                                 <ShieldAlertIcon class="size-3" />
                                 Unverified listing
+                              </span>
+                            {/if}
+                            {#if vendor.hasEmail === false}
+                              <span class="inline-flex items-center gap-1 text-xs font-medium text-warning-500 bg-warning-500/10 rounded-full px-2 py-0.5">
+                                <AlertTriangleIcon class="size-3" />
+                                Additional contact details required
                               </span>
                             {/if}
                           </div>
