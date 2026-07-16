@@ -1,5 +1,5 @@
 <!-- Shared legal copy. Keep the public page and consent dialog on this single source. -->
-  <article class="space-y-8 text-surface-600-400">
+  <article class="space-y-8 text-sm leading-6 text-surface-600-400 dark:text-white">
     <header class="space-y-4">
       <div class="space-y-1 text-sm">
         <p><strong class="text-surface-950-50">Effective Date:</strong> June 15, 2026</p>

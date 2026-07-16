@@ -9,7 +9,8 @@ import type { LocationData } from '#components/location_search.svelte';
 import VendorSearch from '#components/vendor_search.svelte';
 import { page } from '@inertiajs/svelte';
 import { RefreshCwIcon } from '@lucide/svelte';
-import { onDestroy, onMount, untrack } from 'svelte';
+import { onDestroy, onMount, tick, untrack } from 'svelte';
+import { fly } from 'svelte/transition';
 import { formatDate, formatCurrency } from '../../utils/format';
 import { router } from '@inertiajs/svelte'
 import { Trash2Icon } from '@lucide/svelte'
@@ -149,6 +150,7 @@ let messages = $state<ChatMessage[]>(
 );
 let input = $state('');
 let inputEl = $state<HTMLTextAreaElement | null>(null);
+let chatScrollEl = $state<HTMLDivElement | null>(null);
 const MAX_INPUT_HEIGHT = 200;
 let isLoading = $state(false);
 
@@ -157,6 +159,19 @@ $effect(() => {
     if (!inputEl) return;
     inputEl.style.height = 'auto';
     inputEl.style.height = Math.min(inputEl.scrollHeight, MAX_INPUT_HEIGHT) + 'px';
+});
+
+$effect(() => {
+    messages.length;
+    greetingLoading;
+    if (activeTab !== 'chat' || !chatScrollEl) return;
+
+    tick().then(() => {
+        chatScrollEl?.scrollTo({
+            top: chatScrollEl.scrollHeight,
+            behavior: 'smooth',
+        });
+    });
 });
 
 function handleInputKeydown(e: KeyboardEvent) {
@@ -280,6 +295,7 @@ let flash = $derived(
         partial_success?: string | null;
     } | undefined) ?? {}
 );
+let flashSuccessVisible = $state(false);
 let currentUserName = $derived(currentUser?.fullName ?? 'You');
 let currentUserAvatar = $derived(
     currentUser?.avatar ?? {
@@ -718,6 +734,7 @@ let selectingTrustedListingUuid = $state<string | null>(null);
 let opSuccessMsg = $state('');
 let postCreateVendorWarning = $state('');
 let opSuccessTimer: ReturnType<typeof setTimeout> | null = null;
+let flashSuccessTimer: ReturnType<typeof setTimeout> | null = null;
 let deleteDialogEl = $state<HTMLDialogElement | null>(null)
 let deleteProcessing = $state(false)
 let deleteError = $state<string | null>(null)
@@ -727,6 +744,14 @@ onMount(() => {
     const warningKey = `project-vendor-attach-warning:${project.uuid}`;
     postCreateVendorWarning = sessionStorage.getItem(warningKey) ?? '';
     sessionStorage.removeItem(warningKey);
+
+    if (flash.success) {
+        flashSuccessVisible = true;
+        flashSuccessTimer = setTimeout(() => {
+            flashSuccessVisible = false;
+            flashSuccessTimer = null;
+        }, 3500);
+    }
 });
 
 function openDeleteDialog() {
@@ -1015,6 +1040,10 @@ onDestroy(() => {
         clearTimeout(opSuccessTimer);
         opSuccessTimer = null;
     }
+    if (flashSuccessTimer) {
+        clearTimeout(flashSuccessTimer);
+        flashSuccessTimer = null;
+    }
 });
 </script>
 
@@ -1037,8 +1066,12 @@ onDestroy(() => {
     <aside class="m-4 mb-0 rounded-xl border border-error-500/30 bg-error-500/10 p-4 text-sm text-error-500" role="alert">
         {flash.error}
     </aside>
-{:else if flash.success}
-    <aside class="m-4 mb-0 rounded-xl border border-success-500/30 bg-success-500/10 p-4 text-sm text-success-700-300" role="status">
+{:else if flash.success && flashSuccessVisible}
+    <aside
+        class="m-4 mb-0 rounded-xl border border-success-500/30 bg-success-500/10 p-4 text-sm text-success-700-300"
+        role="status"
+        transition:fly={{ y: -12, duration: 180 }}
+    >
         {flash.success}
     </aside>
 {/if}
@@ -1047,6 +1080,7 @@ onDestroy(() => {
 {#if activeTab === 'chat'}
 <div class="flex min-h-0 min-w-0 flex-col flex-1 overflow-hidden w-full">
     <div class="min-h-0 flex-1 overflow-y-auto"
+         bind:this={chatScrollEl}
          aria-live="polite" aria-atomic="false" aria-label="Chat">
         <ProjectSectionChrome
             activeTab={activeTab}

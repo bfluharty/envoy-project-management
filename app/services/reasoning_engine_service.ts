@@ -5,11 +5,14 @@ import { generateInitialOutreachDrafts } from '#services/project_outreach_servic
 import ProjectPromptService from '#services/project_prompt_service'
 import { ReasoningAgentResponse, ReasoningRequest } from '../../types/request.js'
 import Project from '#models/project'
+import ProjectVendor from '#models/project_vendor'
 import { HttpContext } from '@adonisjs/core/http'
 import { getReasoningChatUrl, getVendorDiscoveryUrl } from '#utils/reasoning_engine_urls'
 
 const OUTREACH_DRAFTING_NOTICE =
   'I am generating draft emails for all vendors attached to this project, and you can review them in the Outreach tab.'
+const NO_OUTREACH_VENDORS_NOTICE =
+  'I have the project details needed for outreach, but there are no vendors attached to this project yet. Add vendors to the project before Envoy can prepare outreach drafts.'
 
 export default class ReasoningEngineService {
   public static async requestVendorDiscovery(input: { projectDescription: string }) {
@@ -127,6 +130,10 @@ export default class ReasoningEngineService {
       })
     }
 
+    if (!(await this.hasActiveProjectVendors(project.uuid))) {
+      return NO_OUTREACH_VENDORS_NOTICE
+    }
+
     const draftResult = await generateInitialOutreachDrafts(project.userUuid, project.uuid)
     message = this.ensureDraftingNotice(message)
 
@@ -139,6 +146,15 @@ export default class ReasoningEngineService {
     }
 
     return message
+  }
+
+  private static async hasActiveProjectVendors(projectUuid: string): Promise<boolean> {
+    const projectVendor = await ProjectVendor.query()
+      .where('project_uuid', projectUuid)
+      .where('is_active', true)
+      .first()
+
+    return !!projectVendor
   }
 
   private static ensureDraftingNotice(message: string): string {

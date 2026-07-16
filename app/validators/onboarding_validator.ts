@@ -13,7 +13,7 @@ export const vendorSelectionValidator = vine.compile(
     onboardingToken: onboardingToken(),
     selectedVendorListingUuids: vine
       .array(vine.string().uuid({ version: [4] }))
-      .minLength(1)
+      .minLength(0)
       .maxLength(8),
   })
 )

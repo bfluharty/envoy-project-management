@@ -158,7 +158,7 @@ test.describe('anonymous vendor discovery', () => {
     expect(await page.evaluate(() => localStorage.getItem('envoy_seen'))).toBeNull()
 
     search.release()
-    await expect(page.getByText('Email First Electric')).toBeVisible()
+    await expect(page.getByRole('button', { name: /Email First Electric/i })).toBeVisible()
 
     expect(requestBody).toEqual({
       projectDescription: PROJECT_DESCRIPTION,
@@ -193,7 +193,9 @@ test.describe('anonymous vendor discovery', () => {
 
     const cards = page.getByRole('button').filter({ has: page.locator('[aria-pressed]') })
     const names = await page
-      .locator('section[aria-label="Vendor recommendations"] li button')
+      .locator(
+        'section[aria-label="Vendor recommendations"] section[data-vendor-classification] li button'
+      )
       .allTextContents()
     expect(names[0]).toContain('Email First Electric')
     expect(names[2]).toContain('No Email Plumbing')
@@ -206,7 +208,11 @@ test.describe('anonymous vendor discovery', () => {
         nodes.map((node) => node.getAttribute('data-vendor-classification'))
       )
     ).toEqual(['Electrician', 'General Contractor', 'Plumber'])
-    await expect(page.getByText('456 Broad St, Richmond, VA 23220')).toBeVisible()
+    await expect(
+      page
+        .getByRole('button', { name: /Email First Electric/i })
+        .getByText('456 Broad St, Richmond, VA 23220')
+    ).toBeVisible()
     await expect(page.getByText('Onboarded to Envoy')).toBeVisible()
     await expect(page.getByText(/Unverified listing/i)).toBeVisible()
     await expect(page.getByText('Electrician · Commercial Contractor')).toBeVisible()
@@ -226,13 +232,16 @@ test.describe('anonymous vendor discovery', () => {
         body: JSON.stringify({ selectedCount: 1, expiresAt: '2026-07-14T12:00:00.000Z' }),
       })
     })
-    await completeSearch(page)
+    await completeSearch(page, recommendations)
 
     const noEmailVendor = page.getByRole('button', { name: /No Email Plumbing/i })
+    await page.getByRole('button', { name: 'Deselect all' }).click()
     await noEmailVendor.click()
 
     await expect(noEmailVendor).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByRole('button', { name: /Continue with 1 vendor/i })).toBeEnabled()
+    await expect(
+      page.getByRole('button', { name: 'Continue with 1 vendor', exact: true })
+    ).toBeEnabled()
     await expect
       .poll(() => selectionBody)
       .toEqual({
@@ -263,7 +272,6 @@ test.describe('anonymous vendor discovery', () => {
     await expect(page.getByRole('button', { name: /Vendor 9/i })).toHaveCount(0)
     for (let index = 1; index <= 8; index += 1) {
       const card = page.getByRole('button', { name: new RegExp(`Vendor ${index}`) })
-      await card.click({ force: true })
       await expect(card).toHaveAttribute('aria-pressed', 'true')
     }
     await expect(page.getByText('8 of 8 selected')).toBeVisible()
@@ -292,14 +300,12 @@ test.describe('anonymous vendor discovery', () => {
     await page.route('**/register?accountType=consumer', (route) =>
       route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Register</h1>' })
     )
-    await completeSearch(page)
+    await completeSearch(page, recommendations)
 
-    await page.getByRole('button', { name: /Email First Electric/i }).click()
-    await page.getByRole('button', { name: /Continue with 1 vendor/i }).click()
+    await page.getByRole('button', { name: 'Continue with 3 vendors', exact: true }).click()
 
     await page.waitForURL('**/register?accountType=consumer')
     expect(calls.map((call) => call.path)).toEqual([
-      '/onboarding/vendor-selection',
       '/onboarding/vendor-selection',
       '/onboarding/registration-handoff',
     ])
@@ -314,10 +320,9 @@ test.describe('anonymous vendor discovery', () => {
     await page.route('/onboarding/registration-handoff', (route) =>
       route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"failed"}' })
     )
-    await completeSearch(page)
+    await completeSearch(page, recommendations)
 
-    await page.getByRole('button', { name: /Email First Electric/i }).click()
-    await page.getByRole('button', { name: /Continue with 1 vendor/i }).click()
+    await page.getByRole('button', { name: 'Continue with 3 vendors', exact: true }).click()
 
     await expect(page).toHaveURL(/\/$/)
     await expect(page.getByRole('alert')).toContainText(/try again|could not/i)

@@ -135,7 +135,7 @@
               />
               <div
                 id="required-consent-label"
-                class="flex flex-wrap items-baseline gap-x-1 text-sm leading-6 sm:text-base"
+                class="flex flex-wrap items-baseline gap-x-1 text-sm leading-6"
               >
                 {#if !privacyReackOnly}
                   <label for="termsAccepted">I agree to Envoy's</label>
@@ -180,11 +180,11 @@
                   bind:checked={modelTrainingOptIn}
                   aria-describedby="model-training-details"
                 />
-                <div class="space-y-2">
+                <div class="space-y-2 text-sm">
                   <label for="modelTrainingOptIn" class="block font-medium leading-6">
                     {MODEL_TRAINING_CONTROL_TEXT}
                   </label>
-                  <p id="model-training-details" class="text-sm leading-6 text-surface-600-400">
+                  <p id="model-training-details" class="text-xs leading-5 text-surface-600-400">
                     {MODEL_TRAINING_SUPPORTING_TEXT}
                   </p>
                 </div>

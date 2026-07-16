@@ -14,7 +14,7 @@ import {
 const PREFERENCES_TABLE = 'envoy_schema.user_consent_preferences'
 const EVENTS_TABLE = 'envoy_schema.user_consent_events'
 const EXPECTED_ONBOARDING_TRAINING_DISCLOSURE =
-  'Allow Envoy to use eligible content I submit to improve and train Envoy models. This is optional, does not affect access to Envoy, and can be changed later in Account Settings. When enabled, eligible historical and future Envoy-native data may be used. Connected Google or Microsoft mailbox data is always excluded. Turning this off stops new training-data extractions but may not reverse training that has already completed.'
+  'Allow Envoy to use eligible content I submit to improve Envoy models. This is optional, does not affect access to Envoy, and can be changed later in Account Settings. When enabled, eligible historical and future Envoy-native data may be used. Connected Google or Microsoft mailbox data is always excluded. Turning this off stops new training-data extractions but may not reverse training that has already completed.'
 
 async function createConsumer(label: string) {
   const entitlement = await UserEntitlement.findByOrFail('canonicalName', 'CONSUMER')

@@ -679,7 +679,7 @@
             <div class="space-y-1">
               <h2 class="text-xl font-semibold">Data &amp; Privacy</h2>
               <p class="text-sm text-surface-600-400">
-                Control whether eligible Envoy content may help improve and train Envoy models.
+                Control whether eligible Envoy content may help improve Envoy models.
               </p>
             </div>
           </div>
@@ -697,7 +697,7 @@
                   aria-describedby="model-training-account-details"
                 />
                 <span class="font-medium leading-6">
-                  Allow Envoy to use my eligible Envoy content to improve and train Envoy models.
+                  Allow Envoy to use my eligible Envoy content to improve Envoy models.
                 </span>
               </label>
               <p

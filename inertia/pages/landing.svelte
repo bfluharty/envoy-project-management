@@ -4,7 +4,7 @@
   import PublicFooter from '#components/public_footer.svelte';
   import { page } from '@inertiajs/svelte';
   import { onMount } from 'svelte';
-  import { CheckCircleIcon, ShieldAlertIcon, MapPinIcon } from '@lucide/svelte';
+  import { CheckCircleIcon, LoaderCircleIcon, ShieldAlertIcon, MapPinIcon } from '@lucide/svelte';
   import { groupVendorsByPrimaryClassification } from '../utils/vendor_grouping';
 
   // ── Types ──────────────────────────────────────────────────────────────────
@@ -45,6 +45,7 @@
   // ── localStorage keys ──────────────────────────────────────────────────────
   const TOKEN_KEY = 'envoy_onboarding_token';
   const SEEN_KEY  = 'envoy_seen';
+  const MAX_SELECTED_VENDORS = 8;
 
   // ── State ──────────────────────────────────────────────────────────────────
   let blurb         = $state('');
@@ -65,6 +66,13 @@
   let seen          = $state(false);
   let restoring     = $state(false);
   const recommendationGroups = $derived(groupVendorsByPrimaryClassification(recommendations));
+  const selectedRecommendations = $derived(
+    recommendations.filter((vendor) => selected.has(vendor.vendorListingUuid))
+  );
+  const allRecommendationsSelected = $derived(
+    recommendations.length > 0 &&
+      recommendations.every((vendor) => selected.has(vendor.vendorListingUuid))
+  );
 
   // ── Restore on mount ───────────────────────────────────────────────────────
   function clearStoredDraft() {
@@ -183,7 +191,7 @@
       const data: VendorSearchResponse = await res.json();
       token = data.onboardingToken;
       recommendations = (data.vendors ?? []).slice(0, 8);
-      selected = new Set();
+      selected = new Set(recommendations.map((vendor) => vendor.vendorListingUuid));
       selectionError = '';
 
       // Persist token and mark seen
@@ -198,31 +206,10 @@
   }
 
   // ── Selection ──────────────────────────────────────────────────────────────
-  async function toggleSelection(uuid: string) {
-    if (persistingSelection || continuing) return;
-
-    const previous = new Set(selected);
-    const next = new Set(selected);
-    if (next.has(uuid)) {
-      if (next.size === 1) {
-        selectionError = 'Select another vendor before removing your final selection.';
-        return;
-      }
-      next.delete(uuid);
-    } else {
-      if (next.size >= 8) {
-        selectionError = 'You can select up to 8 vendors.';
-        return;
-      }
-      next.add(uuid);
-    }
-    selectionError = '';
-    selected = next;
-
+  async function persistSelection(next: Set<string>) {
     if (!token) {
-      selected = previous;
       selectionError = 'Your vendor search could not be found. Please search again.';
-      return;
+      return false;
     }
 
     persistingSelection = true;
@@ -241,16 +228,50 @@
           clearStoredDraft();
           searchError = 'That vendor search is no longer available. Please start a new search.';
         } else {
-          selected = previous;
           selectionError = 'We could not save your selection. Please try again.';
         }
+        return false;
       }
+      return true;
     } catch {
-      selected = previous;
       selectionError = 'We could not save your selection. Check your connection and try again.';
+      return false;
     } finally {
       persistingSelection = false;
     }
+  }
+
+  async function commitSelection(next: Set<string>) {
+    if (persistingSelection || continuing) return;
+
+    const previous = new Set(selected);
+    selectionError = '';
+    selected = next;
+
+    if (!(await persistSelection(next))) {
+      selected = previous;
+    }
+  }
+
+  async function toggleSelection(uuid: string) {
+    const next = new Set(selected);
+    if (next.has(uuid)) {
+      next.delete(uuid);
+    } else {
+      if (next.size >= MAX_SELECTED_VENDORS) {
+        selectionError = `You can select up to ${MAX_SELECTED_VENDORS} vendors.`;
+        return;
+      }
+      next.add(uuid);
+    }
+    await commitSelection(next);
+  }
+
+  async function toggleAllRecommendations() {
+    const next = allRecommendationsSelected
+      ? new Set<string>()
+      : new Set(recommendations.map((vendor) => vendor.vendorListingUuid));
+    await commitSelection(next);
   }
 
   // ── Continue to registration ───────────────────────────────────────────────
@@ -269,22 +290,7 @@
     selectionError = '';
     try {
       // Persist the exact final selection before binding the draft to the session.
-      const selectionResponse = await fetch('/onboarding/vendor-selection', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          onboardingToken: token,
-          selectedVendorListingUuids: [...selected],
-        }),
-      });
-
-      if (!selectionResponse.ok) {
-        if (isInvalidDraftResponse(selectionResponse)) {
-          clearStoredDraft();
-          searchError = 'That vendor search is no longer available. Please start a new search.';
-        } else {
-          selectionError = 'We could not save your selection. Please try again.';
-        }
+      if (!(await persistSelection(selected))) {
         return;
       }
 
@@ -368,7 +374,18 @@
         </div>
 
         <!-- Intake form -->
-        <div class="card preset-outlined-surface-200-800 border border-surface-200-800 bg-surface-50-950/50 backdrop-blur-md p-5 sm:p-7 space-y-5">
+        <div
+          class="relative card preset-outlined-surface-200-800 border border-surface-200-800 bg-surface-50-950/50 backdrop-blur-md p-5 sm:p-7 space-y-5"
+          aria-busy={searching}
+        >
+          {#if searching}
+            <div class="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-surface-50-950/80 backdrop-blur-sm">
+              <div class="flex items-center gap-3 rounded-xl border border-surface-200-800 bg-surface-50-950 px-4 py-3 shadow-lg">
+                <LoaderCircleIcon class="size-5 animate-spin text-primary-500" />
+                <span class="text-sm font-medium">Finding vendors</span>
+              </div>
+            </div>
+          {/if}
 
           <div class="space-y-1.5">
             <label class="label font-medium" for="blurb">What are you planning?</label>
@@ -380,6 +397,7 @@
               placeholder="e.g. Outdoor wedding for 150 guests in fall…"
               bind:value={blurb}
               maxlength={2000}
+              disabled={searching || restoring}
               aria-describedby={blurbError ? 'err-blurb' : undefined}
               aria-invalid={blurbError ? 'true' : undefined}
             ></textarea>
@@ -416,6 +434,7 @@
               class:input-error={!!postalError}
               placeholder="e.g. 10001 or M5H 2N2"
               bind:value={postalCode}
+              disabled={searching || restoring}
               aria-describedby={postalError ? 'err-postal' : undefined}
               aria-invalid={postalError ? 'true' : undefined}
             />
@@ -470,13 +489,78 @@
             </div>
           {:else}
             <section aria-label="Vendor recommendations" class="space-y-4">
-              <div class="flex items-center justify-between">
-                <h2 class="font-semibold text-lg">Vendors for your project</h2>
-                <span class="text-sm text-surface-500">{recommendations.length} result{recommendations.length !== 1 ? 's' : ''}</span>
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 class="font-semibold text-lg">Vendors for your project</h2>
+                  <span class="text-sm text-surface-500">
+                    {recommendations.length} result{recommendations.length !== 1 ? 's' : ''} - {selected.size} selected
+                  </span>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    class="btn btn-sm preset-tonal"
+                    onclick={toggleAllRecommendations}
+                    disabled={searching || !!searchError || persistingSelection || continuing}
+                  >
+                    {allRecommendationsSelected ? 'Deselect all' : 'Select all'}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-sm preset-filled-primary-500"
+                    onclick={handleContinue}
+                    disabled={
+                      selected.size === 0 ||
+                      searching ||
+                      !!searchError ||
+                      persistingSelection ||
+                      continuing
+                    }
+                  >
+                    {continuing
+                      ? 'Preparing registration...'
+                      : `Continue with ${selected.size > 0 ? selected.size : ''} vendor${selected.size !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
               </div>
 
               {#if selectionError}
                 <aside class="card preset-tonal-error p-3 text-sm" role="alert">{selectionError}</aside>
+              {/if}
+
+              {#if selectedRecommendations.length > 0}
+                <section class="space-y-2 rounded-xl border border-surface-200-800 bg-surface-50-950/40 p-3" aria-label="Selected vendors">
+                  <div class="flex items-center justify-between gap-3">
+                    <h3 class="text-sm font-semibold">Selected vendors</h3>
+                    <span class="text-xs text-surface-600-400">{selectedRecommendations.length} selected</span>
+                  </div>
+                  <ul class="space-y-2" role="list">
+                    {#each selectedRecommendations as vendor (vendor.vendorListingUuid)}
+                      <li class="flex items-start justify-between gap-3 rounded-lg border border-surface-200-800 bg-surface-100-900/20 p-3">
+                        <div class="min-w-0 space-y-1">
+                          <p class="font-semibold text-sm">{vendor.name}</p>
+                          {#if vendor.location}
+                            <p class="text-xs text-surface-600-400 flex items-center gap-1">
+                              <MapPinIcon class="size-3 shrink-0" />
+                              {formatLocation(vendor.location)}
+                            </p>
+                          {/if}
+                          {#if vendor.categories.length > 0}
+                            <p class="text-xs text-surface-500">{vendor.categories.join(' - ')}</p>
+                          {/if}
+                        </div>
+                        <button
+                          type="button"
+                          class="btn btn-sm preset-tonal shrink-0"
+                          onclick={() => toggleSelection(vendor.vendorListingUuid)}
+                          disabled={searching || !!searchError || persistingSelection || continuing}
+                        >
+                          Deselect
+                        </button>
+                      </li>
+                    {/each}
+                  </ul>
+                </section>
               {/if}
 
               <div class="space-y-6">
