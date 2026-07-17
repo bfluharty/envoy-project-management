@@ -186,7 +186,7 @@
   function removeSelectedVendor(vendorListingUuid: string) {
     if (!hasOtherValidSelectedVendor(vendorListingUuid)) {
       contactDetailsWarning =
-        'At least one selected vendor needs contact details. Add an email before removing this vendor.';
+        'At least one selection needs contact details. Add an email before removing.';
       return;
     }
 
@@ -212,14 +212,14 @@
     for (const vendor of missingEmailVendors) {
       const email = vendorEmailInputs[vendor.vendorListingUuid] ?? '';
       if (!email.trim()) {
-        nextErrors[vendor.vendorListingUuid] = 'Email is required or remove this vendor.';
+        nextErrors[vendor.vendorListingUuid] = 'Email is required or remove this contact.';
       } else if (!isValidEmail(email)) {
         nextErrors[vendor.vendorListingUuid] = 'Enter a valid email address.';
       }
     }
 
     contactDetailErrors = nextErrors;
-    contactDetailsWarning = 'Add contact details or remove vendors before continuing.';
+    contactDetailsWarning = 'Add contact details or remove before continuing.';
     return false;
   }
 
@@ -325,7 +325,7 @@
         <p class="text-surface-600-400">The onboarding session that brought you here has expired or already been used.</p>
         <div class="flex flex-col sm:flex-row gap-3 justify-center">
           <a href={recovery?.dashboardUrl ?? '/dashboard'} class="btn preset-filled-primary-500">Go to Dashboard</a>
-          <a href={recovery?.vendorSearchUrl ?? '/'} class="btn preset-tonal">Start a new vendor search</a>
+          <a href={recovery?.vendorSearchUrl ?? '/'} class="btn preset-tonal">Start a new search</a>
         </div>
       </div>
 
@@ -394,15 +394,14 @@
         {#if currentStep === 0 && missingEmailVendors.length > 0}
           <section
             class="space-y-4 rounded-xl border border-warning-500/30 bg-warning-500/5 p-4"
-            aria-label="Additional vendor contact details"
+            aria-label="Additional contact details"
           >
             <div class="flex items-start gap-3">
               <AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-warning-500" />
               <div class="space-y-1">
                 <h2 class="text-base font-semibold">Additional contact details required</h2>
                 <p class="text-sm text-surface-600-400">
-                  Add an email for each selected vendor below, or remove the vendor if another
-                  selected vendor already has contact details.
+                  Add an email for each selected contact below, or remove them from the project.
                 </p>
               </div>
             </div>
@@ -431,7 +430,7 @@
                         class:input-error={!!contactDetailErrors[vendor.vendorListingUuid]}
                         type="email"
                         value={vendorEmailInputs[vendor.vendorListingUuid] ?? ''}
-                        placeholder="vendor@example.com"
+                        placeholder="contact@example.com"
                         aria-invalid={contactDetailErrors[vendor.vendorListingUuid] ? 'true' : undefined}
                         oninput={(event) =>
                           updateVendorEmail(

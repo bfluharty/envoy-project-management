@@ -222,11 +222,11 @@
               body: JSON.stringify({ vendorListingUuids: vendorListingUuidsToAttach }),
             });
             if (!res.ok) {
-              attachVendorError = 'Project created, but vendors could not be added. You can retry from the project page.';
+              attachVendorError = 'Project created, but contacts could not be added. You can retry from the project page.';
               sessionStorage.setItem(warningKey, attachVendorError);
             }
           } catch {
-            attachVendorError = 'Project created, but vendors could not be added due to a network error.';
+            attachVendorError = 'Project created, but contacts could not be added due to a network error.';
             sessionStorage.setItem(warningKey, attachVendorError);
           }
           attachingVendors = false;
@@ -464,11 +464,11 @@
               <button class="btn preset-tonal" type="button" onclick={() => { errors = {}; currentStep -= 1; }}>Back</button>
               <button class="btn preset-filled-primary-500" type="button" onclick={submitProject} disabled={processing || attachingVendors}>
                 {#if attachingVendors}
-                  Adding vendors…
+                  Adding contacts…
                 {:else if processing}
                   Creating…
                 {:else}
-                  Create project{pendingVendorListingUuids.length > 0 ? ` + ${pendingVendorListingUuids.length} vendor${pendingVendorListingUuids.length !== 1 ? 's' : ''}` : ''}
+                  Create project{pendingVendorListingUuids.length > 0 ? ` + ${pendingVendorListingUuids.length} contact${pendingVendorListingUuids.length !== 1 ? 's' : ''}` : ''}
                 {/if}
               </button>
             </footer>

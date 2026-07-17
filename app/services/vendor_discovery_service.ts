@@ -155,7 +155,7 @@ export function validateVendorSearches(reasoningOutput: unknown): VendorDiscover
     typeof reasoningOutput === 'string' ? JSON.parse(reasoningOutput) : (reasoningOutput ?? {})
   const vendorSearches = (parsed as { vendorSearches?: unknown }).vendorSearches
   if (!Array.isArray(vendorSearches)) {
-    throw new VendorDiscoveryDependencyError('Reasoning response did not include vendor searches')
+    throw new VendorDiscoveryDependencyError('Reasoning response did not include searches')
   }
 
   const seenQueries = new Set<string>()
@@ -308,8 +308,8 @@ export default class VendorDiscoveryService {
       )
     } catch (error) {
       if (error instanceof VendorDiscoveryDependencyError) throw error
-      logger.error({ err: error, ...logContext }, 'Reasoning vendor discovery failed')
-      throw new VendorDiscoveryDependencyError('Reasoning engine vendor discovery failed')
+      logger.error({ err: error, ...logContext }, 'Reasoning contact discovery failed')
+      throw new VendorDiscoveryDependencyError('Reasoning engine contact discovery failed')
     }
 
     const nearbyPostalCodes = getPostalCodesWithinRadius(input.postalCode)
@@ -345,10 +345,7 @@ export default class VendorDiscoveryService {
           vendorSearch.fsqCategoryIds
         )
       } catch (error) {
-        logger.error(
-          { err: error, rawPlaceCount, ...logContext },
-          'Foursquare vendor discovery failed'
-        )
+        logger.error({ err: error, rawPlaceCount, ...logContext }, 'Foursquare discovery failed')
         foursquareFailureCount += 1
         recommendationCandidates.push(...internalCandidates)
         continue
@@ -379,7 +376,7 @@ export default class VendorDiscoveryService {
     const listings = recommendations.map(({ listing }) => listing)
 
     if (listings.length === 0 && foursquareFailureCount > 0) {
-      throw new VendorDiscoveryDependencyError('Foursquare vendor search failed')
+      throw new VendorDiscoveryDependencyError('Foursquare search failed')
     }
 
     logger.info(

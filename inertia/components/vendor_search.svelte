@@ -180,7 +180,7 @@
         const body = await res.json().catch(() => ({}));
         const isServerError = res.status >= 500;
         searchError = body?.error ?? (isServerError
-          ? 'Our vendor search is temporarily unavailable. Please try again.'
+          ? 'Search is temporarily unavailable. Please try again.'
           : 'Search failed. Please check your inputs and try again.');
         retryable = isServerError;
         return;
@@ -210,7 +210,7 @@
         }
         selected = nextSelected;
         selectionError = skippedSelection
-          ? `You can select up to ${MAX_SELECTED_VENDORS} vendors. Deselect one to add more.`
+          ? `You can select up to ${MAX_SELECTED_VENDORS} contacts. Deselect one to add more.`
           : '';
       }
       publishSelection(selected);
@@ -246,7 +246,7 @@
       next.delete(uuid);
     } else {
       if (next.size >= MAX_SELECTED_VENDORS) {
-        selectionError = `You can select up to ${MAX_SELECTED_VENDORS} vendors.`;
+        selectionError = `You can select up to ${MAX_SELECTED_VENDORS} contacts.`;
         return;
       }
       next.add(uuid);
@@ -274,7 +274,7 @@
         next.add(uuid);
       }
       selectionError = skippedSelection
-        ? `You can select up to ${MAX_SELECTED_VENDORS} vendors. Deselect one to add more.`
+        ? `You can select up to ${MAX_SELECTED_VENDORS} contacts. Deselect one to add more.`
         : '';
     }
     selected = next;
@@ -324,7 +324,7 @@
   // ── Save multiple to Contacts (contacts context action) ────────────────────
   async function saveSelectedToContacts() {
     if (selected.size === 0) {
-      selectionError = 'Select at least one vendor to save.';
+      selectionError = 'Select at least one contact to save.';
       return;
     }
     selectionError = '';
@@ -338,7 +338,7 @@
   async function attachToProject() {
     if (!projectUuid) return;
     if (selected.size === 0) {
-      selectionError = 'Select at least one vendor to add.';
+      selectionError = 'Select at least one contact to add.';
       return;
     }
 
@@ -366,7 +366,7 @@
         selected = new Set();
       } else {
         const body = await res.json().catch(() => ({}));
-        attachError     = body?.error || 'Could not add vendors to the project. None were added.';
+        attachError     = body?.error || 'Could not add contacts to the project. None were added.';
         attachRetryable = res.status >= 500;
       }
     } catch {
@@ -385,7 +385,7 @@
     <div class="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-surface-50-950/80 backdrop-blur-sm">
       <div class="flex items-center gap-3 rounded-xl border border-surface-200-800 bg-surface-50-950 px-4 py-3 shadow-lg">
         <LoaderCircleIcon class="size-5 animate-spin text-primary-500" />
-        <span class="text-sm font-medium">Finding vendors</span>
+        <span class="text-sm font-medium">Searching</span>
       </div>
     </div>
   {/if}
@@ -399,7 +399,7 @@
     <button
       type="button"
       onclick={onClose}
-      aria-label="Close vendor search"
+      aria-label="Close search"
       class="btn btn-sm preset-tonal rounded-full p-1.5"
     >
       <XIcon class="size-4" />
@@ -456,14 +456,14 @@
       disabled={searching}
       aria-busy={searching}
     >
-      {searching ? 'Finding vendors...' : hasSearched ? 'Search again' : 'Search vendors'}
+      {searching ? 'Searching...' : hasSearched ? 'Search again' : 'Search'}
     </button>
   </div>
 
   {#if context === 'new-project' && selectedVendorDetails.length > 0}
-    <section class="space-y-2 rounded-xl border border-surface-200-800 bg-surface-50-950/40 p-3" aria-label="Selected vendors">
+    <section class="space-y-2 rounded-xl border border-surface-200-800 bg-surface-50-950/40 p-3" aria-label="Selected contacts">
       <div class="flex items-center justify-between gap-3">
-        <h3 class="text-sm font-semibold">Selected vendors</h3>
+        <h3 class="text-sm font-semibold">Selected contacts</h3>
         <span class="text-xs text-surface-600-400">{selectedVendorDetails.length} selected</span>
       </div>
       <ul class="space-y-2" role="list">
@@ -489,7 +489,7 @@
   {#if hasSearched}
     {#if results.length === 0}
       <div class="text-center py-6 space-y-1" aria-live="polite">
-        <p class="font-medium">No vendors found</p>
+        <p class="font-medium">No matches found</p>
         <p class="text-sm text-surface-600-400">Try adjusting your description or location.</p>
       </div>
     {:else}
@@ -518,7 +518,7 @@
                   onclick={continueFromSearch}
                   disabled={continueDisabled}
                 >
-                  Select vendors & continue{selected.size > 0 ? ` (${selected.size})` : ''}
+                  Select contacts & continue{selected.size > 0 ? ` (${selected.size})` : ''}
                 </button>
               {/if}
             </div>
@@ -532,7 +532,7 @@
         <div class="space-y-5">
           {#each resultGroups as group}
             <section
-              aria-label={`${group.classification} vendors`}
+              aria-label={`${group.classification} contacts`}
               data-vendor-classification={group.classification}
               class="space-y-2"
             >
@@ -632,7 +632,7 @@
               onclick={attachToProject}
               disabled={attaching || selected.size === 0}
             >
-              {attaching ? 'Adding…' : `Add ${selected.size > 0 ? selected.size : ''} vendor${selected.size !== 1 ? 's' : ''} to project`}
+              {attaching ? 'Adding…' : `Add ${selected.size > 0 ? selected.size : ''} contact${selected.size !== 1 ? 's' : ''} to project`}
             </button>
           </div>
 
@@ -642,7 +642,7 @@
         {:else if context === 'new-project'}
           <div class="space-y-2 pt-2">
             <p class="text-sm text-surface-600-400 text-center">
-              {selected.size > 0 ? `${selected.size} vendor${selected.size !== 1 ? 's' : ''} selected` : 'Select vendors to add when you create the project.'}
+              {selected.size > 0 ? `${selected.size} contact${selected.size !== 1 ? 's' : ''} selected` : 'Select contacts to add when you create the project.'}
             </p>
             <button
               type="button"

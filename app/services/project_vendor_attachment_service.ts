@@ -63,7 +63,7 @@ export default class ProjectVendorAttachmentService {
     options: AttachmentOptions = {}
   ): Promise<ProjectVendorAttachmentResult> {
     if (vendorListingUuids.length < 1 || vendorListingUuids.length > MAX_VENDOR_ATTACHMENTS) {
-      throw new ProjectVendorAttachmentError('Attach between 1 and 8 vendor listings', 422)
+      throw new ProjectVendorAttachmentError('Attach between 1 and 8 listings', 422)
     }
 
     const project = await Project.query()
@@ -92,7 +92,7 @@ export default class ProjectVendorAttachmentService {
 
     if (unavailableVendorListingUuids.length > 0 && !options.skipUnavailable) {
       throw new ProjectVendorAttachmentError(
-        'One or more vendor listings are unavailable',
+        'One or more listings are unavailable',
         422,
         unavailableVendorListingUuids
       )
@@ -115,11 +115,9 @@ export default class ProjectVendorAttachmentService {
       const listing = await VendorService.resolveCanonicalListing(canonicalUuid, trx, true)
       if (!listing?.isActive || listing.supersededByVendorListingUuid) {
         if (!options.skipUnavailable) {
-          throw new ProjectVendorAttachmentError(
-            'One or more vendor listings are unavailable',
-            422,
-            [canonicalUuid]
-          )
+          throw new ProjectVendorAttachmentError('One or more listings are unavailable', 422, [
+            canonicalUuid,
+          ])
         }
         markCanonicalUnavailable(canonicalUuid)
         continue
@@ -131,11 +129,9 @@ export default class ProjectVendorAttachmentService {
       const mapping = await VendorService.ensureUserVendorMapping(userUuid, listing.uuid, trx)
       if (!mapping) {
         if (!options.skipUnavailable) {
-          throw new ProjectVendorAttachmentError(
-            'One or more vendor listings are unavailable',
-            422,
-            [listing.uuid]
-          )
+          throw new ProjectVendorAttachmentError('One or more listings are unavailable', 422, [
+            listing.uuid,
+          ])
         }
         markCanonicalUnavailable(canonicalUuid)
         continue

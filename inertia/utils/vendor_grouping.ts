@@ -7,7 +7,7 @@ export type VendorClassificationGroup<T> = {
   vendors: T[]
 }
 
-const FALLBACK_CLASSIFICATION = 'Other vendors'
+const FALLBACK_CLASSIFICATION = 'Other contacts'
 
 /**
  * Groups an already-ranked vendor list without re-sorting it.

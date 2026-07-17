@@ -109,7 +109,7 @@ export default class OnboardingProjectController {
       if (result.status === 'EXPIRED') {
         session.flash(
           'error',
-          'Your onboarding draft expired. Start a new project or run a fresh vendor search.'
+          'Your onboarding draft expired. Start a new project or run a fresh search.'
         )
         return response.redirect('/onboarding/project')
       }

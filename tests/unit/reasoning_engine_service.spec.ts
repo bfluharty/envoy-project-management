@@ -207,7 +207,7 @@ test.group('ReasoningEngineService', (group) => {
 
     await assert.rejects(
       () => ReasoningEngineService.requestVendorDiscovery({ projectDescription: 'Renovate.' }),
-      /Reasoning engine vendor discovery error/
+      /Reasoning engine discovery error/
     )
   })
 

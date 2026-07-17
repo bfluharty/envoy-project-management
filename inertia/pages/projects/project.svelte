@@ -1173,7 +1173,7 @@ onDestroy(() => {
         onSelectTab={handleTabChange}
         sectionLabel="Outreach"
         projectName={project.name}
-        description="Review drafts, send outreach, and reply to vendor threads without leaving this project."
+        description="Review drafts, initiate outreach, and reply to your contacts without leaving this project."
     >
         {#snippet actions()}
 
@@ -1203,7 +1203,7 @@ onDestroy(() => {
                 </div>
             {:else if outreachEligibleContacts.length === 0}
                 <div class="rounded-xl border border-dashed border-surface-200-800 bg-surface-50-950/30 p-4 text-sm text-surface-600-400">
-                    Your linked vendors do not have email contact details yet. Add an email in Contacts before starting outreach.
+                    Your linked contacts do not have email contact details yet. Add an email in Contacts before starting outreach.
                 </div>
             {/if}
             <ProjectOutreachPanel
@@ -1599,7 +1599,7 @@ onDestroy(() => {
                         <aside class="card preset-tonal-primary-500 p-3 space-y-3" aria-label="Existing trusted listings">
                             <div>
                                 <p class="font-medium text-sm">A trusted listing may already exist</p>
-                                <p class="text-xs text-surface-600-400">Attach the existing vendor-controlled listing, or create your own separate contact.</p>
+                                <p class="text-xs text-surface-600-400">Attach the existing verified listing, or create your own separate contact.</p>
                             </div>
                             <ul class="space-y-2">
                                 {#each trustedContactMatches as match (match.vendorListingUuid)}

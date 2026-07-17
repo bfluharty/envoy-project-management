@@ -117,7 +117,7 @@
           return;
         }
 
-        searchError = 'We could not restore your vendor search. Please try again.';
+        searchError = 'We could not restore your search. Please try again.';
         return;
       }
 
@@ -135,7 +135,7 @@
         recommendations.length > 0;
     } catch {
       // Keep the token on retryable network failures so a valid draft is not lost.
-      searchError = 'We could not restore your vendor search. Check your connection and try again.';
+      searchError = 'We could not restore your search. Check your connection and try again.';
     } finally {
       restoring = false;
     }
@@ -209,7 +209,7 @@
   // ── Selection ──────────────────────────────────────────────────────────────
   async function persistSelection(next: Set<string>) {
     if (!token) {
-      selectionError = 'Your vendor search could not be found. Please search again.';
+      selectionError = 'Your search could not be found. Please try again.';
       return false;
     }
 
@@ -227,7 +227,7 @@
       if (!res.ok) {
         if (isInvalidDraftResponse(res)) {
           clearStoredDraft();
-          searchError = 'That vendor search is no longer available. Please start a new search.';
+          searchError = 'That search is no longer available. Please start a new search.';
         } else {
           selectionError = 'We could not save your selection. Please try again.';
         }
@@ -260,7 +260,7 @@
       next.delete(uuid);
     } else {
       if (next.size >= MAX_SELECTED_VENDORS) {
-        selectionError = `You can select up to ${MAX_SELECTED_VENDORS} vendors.`;
+        selectionError = `You can select up to ${MAX_SELECTED_VENDORS} contacts.`;
         return;
       }
       next.add(uuid);
@@ -278,12 +278,12 @@
   // ── Continue to registration ───────────────────────────────────────────────
   async function handleContinue() {
     if (selected.size === 0) {
-      selectionError = 'Please select at least one vendor to continue.';
+      selectionError = 'Please select at least one contact to continue.';
       return;
     }
 
     if (!token) {
-      selectionError = 'Your vendor search could not be found. Please search again.';
+      selectionError = 'Your search could not be found. Please try again.';
       return;
     }
 
@@ -304,7 +304,7 @@
       if (!handoffResponse.ok) {
         if (isInvalidDraftResponse(handoffResponse)) {
           clearStoredDraft();
-          searchError = 'That vendor search is no longer available. Please start a new search.';
+          searchError = 'That search is no longer available. Please start a new one.';
         } else {
           selectionError = 'We could not prepare registration. Please try again.';
         }
@@ -359,7 +359,7 @@
       <div class="max-w-md w-full text-center space-y-4 mt-16">
         <Logo class="w-16 h-16 mx-auto text-primary-500" />
         <h1 class="text-3xl font-bold">Welcome back{$page.props.user.fullName ? `, ${$page.props.user.fullName.split(' ')[0]}` : ''}</h1>
-        <p class="text-surface-600-400">Head to your dashboard to manage projects and vendors.</p>
+        <p class="text-surface-600-400">Head to your dashboard to manage projects and contacts.</p>
         <a href="/dashboard" class="btn preset-filled-primary-500">Go to Dashboard</a>
       </div>
 
@@ -383,7 +383,7 @@
             <div class="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-surface-50-950/80 backdrop-blur-sm">
               <div class="flex items-center gap-3 rounded-xl border border-surface-200-800 bg-surface-50-950 px-4 py-3 shadow-lg">
                 <LoaderCircleIcon class="size-5 animate-spin text-primary-500" />
-                <span class="text-sm font-medium">Finding vendors</span>
+                <span class="text-sm font-medium">Searching</span>
               </div>
             </div>
           {/if}
@@ -469,11 +469,11 @@
             {#if restoring}
               Restoring your search…
             {:else if searching}
-              Finding vendors…
+              Searching...
             {:else if seen}
               Search again
             {:else}
-              Find vendors
+              Search
             {/if}
           </button>
         </div>
@@ -485,14 +485,14 @@
           {#if recommendations.length === 0}
             <!-- Empty state — no vendors found -->
             <div class="text-center space-y-2 py-6">
-              <p class="font-medium">No vendors found for your search.</p>
+              <p class="font-medium">No matches found for your search.</p>
               <p class="text-surface-600-400 text-sm">Try adjusting your description or location and search again.</p>
             </div>
           {:else}
-            <section aria-label="Vendor recommendations" class="space-y-4">
+            <section aria-label="Recommendations" class="space-y-4">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h2 class="font-semibold text-lg">Vendors for your project</h2>
+                  <h2 class="font-semibold text-lg">Contacts for your project</h2>
                   <span class="text-sm text-surface-500">
                     {recommendations.length} result{recommendations.length !== 1 ? 's' : ''} - {selected.size} selected
                   </span>
@@ -520,7 +520,7 @@
                   >
                     {continuing
                       ? 'Preparing registration...'
-                      : `Continue with ${selected.size > 0 ? selected.size : ''} vendor${selected.size !== 1 ? 's' : ''}`}
+                      : `Continue with ${selected.size > 0 ? selected.size : ''} contact${selected.size !== 1 ? 's' : ''}`}
                   </button>
                 </div>
               </div>
@@ -530,9 +530,9 @@
               {/if}
 
               {#if selectedRecommendations.length > 0}
-                <section class="space-y-2 rounded-xl border border-surface-200-800 bg-surface-50-950/40 p-3" aria-label="Selected vendors">
+                <section class="space-y-2 rounded-xl border border-surface-200-800 bg-surface-50-950/40 p-3" aria-label="Selected contacts">
                   <div class="flex items-center justify-between gap-3">
-                    <h3 class="text-sm font-semibold">Selected vendors</h3>
+                    <h3 class="text-sm font-semibold">Selected contacts</h3>
                     <span class="text-xs text-surface-600-400">{selectedRecommendations.length} selected</span>
                   </div>
                   <ul class="space-y-2" role="list">
@@ -572,7 +572,7 @@
               <div class="space-y-6">
                 {#each recommendationGroups as group}
                   <section
-                    aria-label={`${group.classification} vendors`}
+                    aria-label={`${group.classification} contacts`}
                     data-vendor-classification={group.classification}
                     class="space-y-3"
                   >
@@ -676,7 +676,7 @@
                 >
                   {continuing
                     ? 'Preparing registration…'
-                    : `Continue with ${selected.size > 0 ? selected.size : ''} vendor${selected.size !== 1 ? 's' : ''} →`}
+                    : `Continue with ${selected.size > 0 ? selected.size : ''} contact${selected.size !== 1 ? 's' : ''} →`}
                 </button>
 
                 <p class="text-xs text-center text-surface-500">

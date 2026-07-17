@@ -26,21 +26,21 @@ export default class ReasoningEngineService {
     try {
       reasoningResponse = await axios.post(getVendorDiscoveryUrl(), input)
     } catch (error) {
-      logger.error({ err: error }, 'Error calling reasoning engine vendor discovery')
+      logger.error({ err: error }, 'Error calling reasoning engine discovery')
       throw error
     }
 
     logger.info(
       { status: reasoningResponse.status },
-      'Reasoning engine vendor discovery response received'
+      'Reasoning engine discovery response received'
     )
 
     if (reasoningResponse.status !== 200) {
       logger.error(
         { status: reasoningResponse.status, body: reasoningResponse.data },
-        'Reasoning engine vendor discovery returned error'
+        'Reasoning engine discovery returned error'
       )
-      throw new Error('Reasoning engine vendor discovery error')
+      throw new Error('Reasoning engine discovery error')
     }
 
     logger.debug(
@@ -50,7 +50,7 @@ export default class ReasoningEngineService {
             ? Object.keys(reasoningResponse.data)
             : [],
       },
-      'Reasoning engine vendor discovery response shape'
+      'Reasoning engine discovery response shape'
     )
 
     return reasoningResponse.data

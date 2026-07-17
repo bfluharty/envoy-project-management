@@ -44,7 +44,7 @@
           </li>
           <li>
             <strong class="text-surface-950-50">Marketplace Interactions:</strong> Communications,
-            project briefs, and messages exchanged with vendors via our platform.
+            project briefs, and messages exchanged with contacts via our platform.
           </li>
           <li>
             <strong class="text-surface-950-50">Billing and Payment Data:</strong> Credit card or
@@ -69,7 +69,7 @@
           <li>
             Inbound and outbound message content and metadata for emails handled through Envoy to
             sync conversation threads, track delivery status, and maintain communication histories
-            with marketplace vendors.
+            with marketplace contacts.
           </li>
         </ul>
       </div>
@@ -99,7 +99,7 @@
       </h2>
       <p>
         Envoy’s platform integrates with Google API services and Microsoft Graph API services to
-        allow you to communicate seamlessly with project vendors.
+        allow you to communicate seamlessly with project contacts.
       </p>
       <ul class="list-disc space-y-2 pl-6">
         <li>
@@ -150,8 +150,8 @@
             href="https://www.googleapis.com/auth/gmail.readonly"
             class="text-primary-500 hover:text-primary-400 break-all underline underline-offset-2"
           >https://www.googleapis.com/auth/gmail.readonly</a>, Mail.Send, and Mail.Read) solely to
-          transmit project briefs, RFPs, or updates to vendors directly on your behalf, and to
-          securely ingest incoming vendor replies back into your platform timeline.
+          transmit project briefs, RFPs, or updates to contacts directly on your behalf, and to
+          securely ingest incoming replies back into your platform timeline.
         </li>
         <li>
           <strong class="text-surface-950-50">No Human Reading:</strong> Envoy personnel do not
@@ -223,7 +223,7 @@
             phone number unless separately de-identified under an approved process.
           </li>
           <li>
-            Private communications authored by vendors or other third parties, and any data whose
+            Private communications authored by contacts or other third parties, and any data whose
             use is restricted by law, contract, provider policy, or a deletion requirement.
           </li>
         </ul>

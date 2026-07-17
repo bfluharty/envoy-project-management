@@ -127,9 +127,9 @@
           if (response.status === 404 || response.status === 410 || response.status === 422) {
             localStorage.removeItem(TOKEN_KEY)
             localStorage.removeItem(SEEN_KEY)
-            errorMessage = 'Your vendor search is no longer available. Start a new search to continue with those vendors.'
+            errorMessage = 'Your search is no longer available. Start a new search to continue with those contacts.'
           } else {
-            errorMessage = 'We could not preserve your vendor selections. Please try again.'
+            errorMessage = 'We could not preserve your contact selections. Please try again.'
           }
           showError = true
           return
@@ -138,7 +138,7 @@
 
       window.location.assign(socialHref(provider))
     } catch {
-      errorMessage = 'We could not preserve your vendor selections. Check your connection and try again.'
+      errorMessage = 'We could not preserve your contact selections. Check your connection and try again.'
       showError = true
     } finally {
       socialProcessing = null

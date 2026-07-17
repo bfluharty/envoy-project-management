@@ -89,7 +89,7 @@
       </h2>
       <p>
         Envoy offers features that integrate with your Google/Gmail account to communicate with
-        vendors and manage project scoping.
+        contacts and manage project scoping.
       </p>
       <ul class="list-disc space-y-2 pl-6">
         <li>
@@ -117,7 +117,7 @@
       </h2>
       <p>
         Envoy offers features that integrate with your Microsoft 365 / Outlook account to
-        communicate with vendors and manage project scoping.
+        communicate with contacts and manage project scoping.
       </p>
       <ul class="list-disc space-y-2 pl-6">
         <li>

@@ -103,7 +103,7 @@ async function mockSearch(page: Page, vendors: VendorRecommendation[] = recommen
 
   return {
     release: () => releaseSearch?.(),
-    submit: () => page.getByRole('button', { name: 'Find vendors' }).click(),
+    submit: () => page.getByRole('button', { name: 'Search' }).click(),
   }
 }
 
@@ -111,7 +111,7 @@ async function completeSearch(page: Page, vendors: VendorRecommendation[] = reco
   const search = await mockSearch(page, vendors)
   await search.submit()
   search.release()
-  await expect(page.getByRole('heading', { name: 'Vendors for your project' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Contacts for your project' })).toBeVisible()
 }
 
 test.describe('anonymous vendor discovery', () => {
@@ -121,7 +121,7 @@ test.describe('anonymous vendor discovery', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Plan any project')
     await expect(page.getByLabel('What are you planning?')).toBeVisible()
     await expect(page.getByLabel(/ZIP or postal code/i)).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Find vendors' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Search' })).toBeVisible()
     await expect(page.getByRole('link', { name: /Join Envoy as a pro/i })).toHaveAttribute(
       'href',
       '/register?accountType=vendor'
@@ -140,7 +140,7 @@ test.describe('anonymous vendor discovery', () => {
   test('validates the description length and postal code accessibly', async ({ page }) => {
     await page.goto('/')
     await page.getByLabel('What are you planning?').fill('Nope')
-    await page.getByRole('button', { name: 'Find vendors' }).click()
+    await page.getByRole('button', { name: 'Search' }).click()
 
     await expect(page.getByText(/at least 5 characters/i)).toBeVisible()
     await expect(page.getByText(/postal code is required/i)).toBeVisible()
@@ -158,7 +158,7 @@ test.describe('anonymous vendor discovery', () => {
     })
 
     await search.submit()
-    await expect(page.getByRole('button', { name: /Finding vendors/i })).toBeDisabled()
+    await expect(page.getByRole('button', { name: /Searching/i })).toBeDisabled()
     expect(await page.evaluate(() => localStorage.getItem('envoy_seen'))).toBeNull()
 
     search.release()
@@ -245,7 +245,7 @@ test.describe('anonymous vendor discovery', () => {
 
     await expect(noEmailVendor).toHaveAttribute('aria-pressed', 'true')
     await expect(
-      page.getByRole('button', { name: 'Continue with 1 vendor', exact: true })
+      page.getByRole('button', { name: 'Continue with 1 contact', exact: true })
     ).toBeEnabled()
     await expect
       .poll(() => selectionBody)
@@ -307,7 +307,7 @@ test.describe('anonymous vendor discovery', () => {
     )
     await completeSearch(page, recommendations)
 
-    await page.getByRole('button', { name: 'Continue with 3 vendors', exact: true }).click()
+    await page.getByRole('button', { name: 'Continue with 3 contacts', exact: true }).click()
 
     await page.waitForURL('**/register?accountType=consumer')
     expect(calls.map((call) => call.path)).toEqual([
@@ -327,7 +327,7 @@ test.describe('anonymous vendor discovery', () => {
     )
     await completeSearch(page, recommendations)
 
-    await page.getByRole('button', { name: 'Continue with 3 vendors', exact: true }).click()
+    await page.getByRole('button', { name: 'Continue with 3 contacts', exact: true }).click()
 
     await expect(page).toHaveURL(/\/$/)
     await expect(page.getByRole('alert')).toContainText(/try again|could not/i)
@@ -432,7 +432,7 @@ test('the intake remains usable without horizontal overflow on a mobile viewport
   await page.goto('/')
 
   await expect(page.getByLabel('What are you planning?')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Find vendors' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Search' })).toBeVisible()
   const dimensions = await page.evaluate(() => ({
     scrollWidth: (globalThis as any).document.documentElement.scrollWidth,
     clientWidth: (globalThis as any).document.documentElement.clientWidth,

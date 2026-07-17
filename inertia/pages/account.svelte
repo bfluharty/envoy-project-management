@@ -92,7 +92,7 @@
   const dataPrivacyChanged = $derived(modelTrainingOptIn !== savedModelTrainingOptIn)
 
   function disconnect(id: number) {
-    if (!confirm('Disconnect this inbox? Envoy will stop listening for vendor emails from it.')) return
+    if (!confirm('Disconnect this inbox? Envoy will stop listening for emails from it.')) return
     router.post('/inbox/disconnect', { id }, { preserveScroll: true })
   }
 
@@ -340,7 +340,7 @@
           <div>
             <p class="font-medium">Connect an inbox to send outreach</p>
             <p class="mt-1 text-sm text-surface-700-300">
-              Envoy needs one active primary inbox for vendor email sync and approved sends.
+              Envoy needs one active primary inbox for email sync and approved sends.
             </p>
           </div>
         </div>
@@ -417,7 +417,7 @@
             <div>
               <h2 class="text-xl font-semibold">Connected Email Accounts</h2>
               <p class="text-sm text-surface-600-400 mt-1">
-                Envoy requires one active connected inbox for vendor outreach and reply sync.
+                Envoy requires one active connected inbox for email outreach and reply sync.
               </p>
             </div>
             <div class="flex gap-2 flex-wrap">
@@ -463,7 +463,7 @@
           {#if connections.length === 0}
             <div class="rounded-xl border border-dashed border-surface-200-800 p-5 text-sm text-surface-600-400">
               No inbox connected yet. Connect Gmail or Microsoft to send project outreach from your
-              own address and sync vendor replies back into Outreach.
+              own address and sync emails back into Outreach.
             </div>
           {:else}
             <ul class="space-y-3">

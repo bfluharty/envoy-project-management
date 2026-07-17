@@ -49,7 +49,7 @@ export async function sendReplyAndRecord(
     .where('uuid', vendorConversationUuid)
     .first()
   if (!vendorConversation) {
-    throw new Error('Vendor conversation not found')
+    throw new Error('Conversation not found')
   }
   const communication = await getOrCreateEmailCommunication(
     connection.userUuid,
@@ -57,7 +57,7 @@ export async function sendReplyAndRecord(
   )
   if (!communication) {
     throw new Error(
-      'This vendor is not linked to a project for your account. Add the vendor to a project first.'
+      'This contact is not linked to a project for your account. Add the contact to a project first.'
     )
   }
 

@@ -43,7 +43,7 @@ export type AuthenticatedVendorRecommendation = PublicVendorRecommendation & {
 export class VendorAuthorizationError extends Error {
   public readonly statusCode = 403
 
-  constructor(message = 'You do not have permission to edit this vendor listing') {
+  constructor(message = 'You do not have permission to edit this listing') {
     super(message)
     this.name = 'VendorAuthorizationError'
   }
@@ -114,7 +114,7 @@ export default class VendorService {
       onboardedToEnvoy: this.isOnboardedListing(listing),
       consumerOwned,
       ownershipWarning: consumerOwned
-        ? 'This listing is consumer-owned and has not been verified by the vendor.'
+        ? 'This listing is consumer-owned and has not yet been verified.'
         : null,
     }
   }
