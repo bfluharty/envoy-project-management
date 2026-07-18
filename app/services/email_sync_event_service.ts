@@ -248,7 +248,10 @@ async function getVendorEmailsForConnection(connection: UserInboxConnection): Pr
 
 async function syncSummaries(
   connection: UserInboxConnection,
-  summaries: InboxMessageSummary[]
+  summaries: InboxMessageSummary[],
+  options: {
+    directionHint?: 'inbound' | 'outbound'
+  } = {}
 ): Promise<{
   processed: number
   created: number
@@ -261,10 +264,14 @@ async function syncSummaries(
   const results: ProviderMessageSyncResult[] = []
 
   for (const summary of summaries) {
-    const result = await syncProviderMessageForConnection(connection, {
-      ...summary,
-      source: 'email_service',
-    })
+    const result = await syncProviderMessageForConnection(
+      connection,
+      {
+        ...summary,
+        source: 'email_service',
+      },
+      options
+    )
     results.push(result)
 
     if (result.processed) {
@@ -287,7 +294,7 @@ async function processGmailHistoryEvent(
   const summaries = await listInboxChanges(connection, {
     cursor: connection.providerCursor ?? undefined,
   })
-  const result = await syncSummaries(connection, summaries)
+  const result = await syncSummaries(connection, summaries, { directionHint: 'inbound' })
 
   if (event.providerCursor) {
     connection.providerCursor = event.providerCursor
@@ -307,7 +314,7 @@ async function processMicrosoftMessageEvent(
   const summaries = await listInboxChanges(connection, {
     messageId: event.providerMessageId,
   })
-  const result = await syncSummaries(connection, summaries)
+  const result = await syncSummaries(connection, summaries, { directionHint: 'inbound' })
   await markConnectionSuccess(connection)
   return result
 }

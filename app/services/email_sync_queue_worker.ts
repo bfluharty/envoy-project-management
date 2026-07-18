@@ -3,8 +3,9 @@ import logger from '@adonisjs/core/services/logger'
 import { processEmailSyncQueue } from '#services/email_sync_event_service'
 import { safeError } from '#utils/safe_error'
 
-const DEFAULT_INTERVAL_SECONDS = 600
-const MIN_INTERVAL_SECONDS = 30
+const DEFAULT_INTERVAL_SECONDS = 60
+const MIN_INTERVAL_SECONDS = 1
+const RECEIVE_WAIT_TIME_SECONDS = 20
 
 let stopRequested = false
 let timer: NodeJS.Timeout | null = null
@@ -32,7 +33,7 @@ async function runWorkerLoop() {
   }
 
   try {
-    const result = await processEmailSyncQueue()
+    const result = await processEmailSyncQueue({ waitTimeSeconds: RECEIVE_WAIT_TIME_SECONDS })
     logger.info(result, 'Email sync worker run completed')
   } catch (error) {
     logger.error({ err: safeError(error) }, 'Email sync worker run failed')
