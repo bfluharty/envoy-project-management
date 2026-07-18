@@ -185,7 +185,7 @@ test.describe('anonymous vendor discovery', () => {
     await search.submit()
     search.release()
 
-    await expect(page.getByText('No vendors found for your search.')).toBeVisible()
+    await expect(page.getByText('No matches found for your search.')).toBeVisible()
     await expect(page.getByRole('button', { name: /Continue with/i })).toHaveCount(0)
     expect(await page.evaluate(() => localStorage.getItem('envoy_seen'))).toBe('true')
   })
@@ -198,13 +198,13 @@ test.describe('anonymous vendor discovery', () => {
     const cards = page.getByRole('button').filter({ has: page.locator('[aria-pressed]') })
     const names = await page
       .locator(
-        'section[aria-label="Vendor recommendations"] section[data-vendor-classification] li button'
+        'section[aria-label="Recommendations"] section[data-vendor-classification] li button'
       )
       .allTextContents()
     expect(names[0]).toContain('Email First Electric')
     expect(names[2]).toContain('No Email Plumbing')
     const groups = page.locator(
-      'section[aria-label="Vendor recommendations"] section[data-vendor-classification]'
+      'section[aria-label="Recommendations"] section[data-vendor-classification]'
     )
     await expect(groups).toHaveCount(3)
     expect(

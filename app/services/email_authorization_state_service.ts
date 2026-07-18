@@ -1,6 +1,5 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import encryption from '@adonisjs/core/services/encryption'
-import env from '#start/env'
 import { randomBytes } from 'node:crypto'
 import { normalizePostAuthReturnPath } from '#services/post_auth_redirect_service'
 
@@ -32,7 +31,7 @@ function normalizeReturnPath(value: unknown): string | null {
 }
 
 function currentTermsVersion() {
-  return env.get('EMAIL_TERMS_VERSION') || '2026-06-26-email-access-v1'
+  return '2026-06-26-email-access-v1'
 }
 
 export function buildEmailAuthorizationState(

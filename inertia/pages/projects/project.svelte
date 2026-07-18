@@ -352,6 +352,7 @@ function applyOutreachState(data: OutreachStateResponse) {
         const nextCard = outreachCards[0] ?? null;
         selectedOutreachThreadUuid = nextCard?.threadUuid ?? null;
         outreachPane = getDefaultOutreachPane(nextCard);
+        composeThreadUuid = outreachPane === 'create' ? nextCard?.threadUuid ?? null : null;
     }
 
     if (composeThreadUuid && !outreachCards.some((card) => card.threadUuid === composeThreadUuid)) {

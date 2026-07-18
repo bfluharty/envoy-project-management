@@ -4,10 +4,13 @@ import inertia from '@adonisjs/inertia/client'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import tailwindcss from '@tailwindcss/vite'
 
+const hmrPort = process.env.VITE_HMR_PORT ? Number(process.env.VITE_HMR_PORT) : null
+
 export default defineConfig({
   server: {
     host: '0.0.0.0',
     allowedHosts: true,
+    ...(hmrPort ? { hmr: { port: hmrPort } } : {}),
   },
   plugins: [
     tailwindcss(),

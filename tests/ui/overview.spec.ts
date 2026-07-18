@@ -93,7 +93,7 @@ test.describe('tab behaviour', () => {
     })
 
     await page.getByRole('radio', { name: 'outreach' }).click({ force: true })
-    await expect(page.getByRole('heading', { name: 'Outreach' })).toBeVisible()
+    await expect(page.getByRole('radio', { name: 'outreach' })).toBeChecked()
     await expect(page.getByRole('heading', { name: 'Draft to Acme Corp' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Approve & Send' })).toBeVisible()
   })
@@ -175,8 +175,8 @@ test.describe('outreach interactions', () => {
     )
 
     await page.getByRole('radio', { name: 'outreach' }).click({ force: true })
-    await page.locator('input').nth(0).fill('Edited subject')
-    await page.locator('textarea').nth(0).fill('Edited body text')
+    await page.getByLabel('Subject').fill('Edited subject')
+    await page.getByLabel('Body').fill('Edited body text')
     await page.getByRole('button', { name: 'Approve & Send' }).click()
 
     expect(sentPayload).toEqual({ subject: 'Edited subject', body: 'Edited body text' })
@@ -241,8 +241,8 @@ test.describe('outreach interactions', () => {
     await page.getByRole('button', { name: 'Retry draft generation' }).click()
 
     expect(retryCalled).toBe(true)
-    await expect(page.locator('input').nth(0)).toHaveValue('Acme availability')
-    await expect(page.locator('textarea').nth(0)).toHaveValue(/Can you share availability/)
+    await expect(page.getByLabel('Subject')).toHaveValue('Acme availability')
+    await expect(page.getByLabel('Body')).toHaveValue(/Can you share availability/)
     await expect(
       page.getByText('Reasoning engine did not return an outreach draft body')
     ).not.toBeVisible()
@@ -446,20 +446,18 @@ test.describe('outreach interactions', () => {
     )
 
     await page.getByRole('radio', { name: 'outreach' }).click({ force: true })
-    await page.getByRole('button', { name: 'Reply', exact: true }).click()
-    await expect(page.locator('textarea').first()).toHaveValue('')
+    const replyBox = page.getByRole('textbox', { name: 'Reply' })
+    await expect(replyBox).toHaveValue('')
     await page.getByRole('button', { name: 'Write with AI' }).click()
     await page.getByPlaceholder(/Make it shorter/).fill('Make it clearer and concise.')
     await page.getByRole('button', { name: 'Generate draft' }).click()
-    await expect(page.locator('textarea').first()).toHaveValue('')
+    await expect(replyBox).toHaveValue('')
     await expect(page.getByRole('heading', { name: 'Revision preview' })).toBeVisible()
     await expect(page.getByLabel('Suggested revision')).toHaveValue(
       'Great, thank you! Confirming next steps.'
     )
     await page.getByRole('button', { name: 'Apply revision' }).click()
-    await expect(page.locator('textarea').first()).toHaveValue(
-      'Great, thank you! Confirming next steps.'
-    )
+    await expect(replyBox).toHaveValue('Great, thank you! Confirming next steps.')
     await page.getByRole('button', { name: 'Send reply' }).click()
 
     expect(revisePayload).toEqual({
@@ -596,8 +594,8 @@ test.describe('overview project details read mode', () => {
     await page.waitForFunction("!document.querySelector('form')")
 
     // Budget row should be hidden when value is 0
-    const budgetLabel = page.getByText('Budget', { exact: false }).filter({ hasText: 'Budget' })
-    await expect(budgetLabel).not.toBeVisible()
+    const details = page.getByRole('heading', { name: 'Project Details' }).locator('..')
+    await expect(details.locator('dt').filter({ hasText: /^Budget$/ })).toHaveCount(0)
   })
 })
 

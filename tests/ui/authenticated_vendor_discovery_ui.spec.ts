@@ -67,7 +67,7 @@ test.describe('authenticated vendor search component', () => {
     await page.getByLabel('What do you need?').fill('Nope')
     await page.getByLabel(/ZIP or postal code/i).fill('23220')
 
-    await page.getByRole('button', { name: 'Search' }).click()
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
 
     await expect(page.getByText(/at least 5 characters/i)).toBeVisible()
     await expect(page.getByLabel('What do you need?')).toHaveAttribute('aria-invalid', 'true')
@@ -99,7 +99,7 @@ test.describe('authenticated vendor search component', () => {
     await openContactsSearch(page)
     await fillVendorSearch(page)
 
-    await page.getByRole('button', { name: 'Search' }).click()
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
     await expect(page.getByText('Richmond Build Co')).toBeVisible()
     await expect(page.getByText('Onboarded to Envoy')).toBeVisible()
     await expect(page.getByText('456 Broad St, Richmond, VA 23220')).toBeVisible()
@@ -155,7 +155,7 @@ test.describe('authenticated vendor search component', () => {
     )
     await openContactsSearch(page)
     await fillVendorSearch(page)
-    await page.getByRole('button', { name: 'Search' }).click()
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
 
     const groups = page.locator(
       'section[aria-label="Search results"] section[data-vendor-classification]'
@@ -171,7 +171,7 @@ test.describe('authenticated vendor search component', () => {
     expect(renderedGroups.map((group) => group.classification)).toEqual([
       'Commercial Contractor',
       'Electrician',
-      'Other vendors',
+      'Other contacts',
     ])
     expect(renderedGroups[0].vendors[0]).toContain('First Ranked Builder')
     expect(renderedGroups[0].vendors[1]).toContain('Third Ranked Builder')
@@ -202,7 +202,7 @@ test.describe('authenticated vendor search component', () => {
     await openContactsSearch(page)
     await fillVendorSearch(page)
 
-    await page.getByRole('button', { name: 'Search' }).click()
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
     await expect(page.getByRole('alert')).toContainText(/temporarily unavailable/i)
     await page.getByRole('button', { name: 'Retry' }).click()
 
@@ -239,13 +239,17 @@ test.describe('authenticated vendor search component', () => {
     await contactsHeading.locator('..').getByRole('button', { name: 'Edit' }).click()
     await page.getByRole('button', { name: /Find new contacts/i }).click()
     await fillVendorSearch(page)
-    await page.getByRole('button', { name: 'Search' }).click()
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
 
     const result = page.getByRole('checkbox', { name: /Richmond Build Co/i })
-    await result.focus()
-    await page.keyboard.press('Space')
     await expect(result).toHaveAttribute('aria-checked', 'true')
-    await page.getByRole('button', { name: /Add 1 vendor to project/i }).click()
+    await result.focus()
+    await expect(result).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(result).toHaveAttribute('aria-checked', 'false')
+    await page.keyboard.press('Enter')
+    await expect(result).toHaveAttribute('aria-checked', 'true')
+    await page.getByRole('button', { name: /Add 1 contact to project/i }).click()
 
     await expect.poll(() => attachBody).toEqual({ vendorListingUuids: [LISTING_UUID] })
     expect(attachUserHeader).toBeUndefined()

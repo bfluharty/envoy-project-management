@@ -1,6 +1,8 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import { fulfillInertiaPage, mockInertiaPage } from './inertia_fixture.js'
 
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:18080'
+
 const consentProps = {
   termsVersion: '2026-07-15-terms-v1',
   privacyPolicyVersion: '2026-07-15-privacy-v1',
@@ -16,7 +18,7 @@ async function mockConsentPage(page: Page, privacyReackOnly = false) {
 
 async function openStaticConsentPageWithoutJavaScript(browser: Browser, html: string) {
   const context = await browser.newContext({
-    baseURL: 'http://localhost:8080',
+    baseURL: BASE_URL,
     javaScriptEnabled: false,
   })
   const page = await context.newPage()

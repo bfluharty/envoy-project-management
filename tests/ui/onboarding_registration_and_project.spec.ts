@@ -441,7 +441,7 @@ test.describe('first project completion', () => {
     await page.getByRole('button', { name: 'Remove' }).click()
 
     await expect(page.getByRole('alert')).toContainText(
-      'At least one selected vendor needs contact details'
+      'At least one selection needs contact details. Add an email before removing.'
     )
     await expect(page.getByLabel('Email for Consumer Managed Design')).toBeVisible()
   })
@@ -542,7 +542,10 @@ test.describe('first project completion', () => {
       'href',
       '/dashboard'
     )
-    await expect(page.getByRole('link', { name: /vendor search/i })).toHaveAttribute('href', '/')
+    await expect(page.getByRole('link', { name: 'Start a new search' })).toHaveAttribute(
+      'href',
+      '/'
+    )
     await expect(page.getByRole('button', { name: /Create project/i })).toHaveCount(0)
   })
 })

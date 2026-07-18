@@ -7,9 +7,6 @@ services:
     environment:
       - DB_HOST=postgres
       - HOST=0.0.0.0
-      - REASONING_ENGINE_URL_LOCAL=http://reasoning-engine:8081
-      - REASONING_ENGINE_URL_DEV=http://reasoning-engine:8081
-      - EMAIL_SERVICE_URL=http://email-service:8083
       - CHOKIDAR_USEPOLLING=true
     ports:
       - '8080:8080'
@@ -30,22 +27,14 @@ services:
     ports:
       - '8083:8083'
     env_file:
-      - .env
-    environment:
-      - EMAIL_SERVICE_API_KEY=${EMAIL_SERVICE_API_KEY}
-      - EMAIL_SYNC_QUEUE_URL=${EMAIL_SYNC_QUEUE_URL}
-      - GMAIL_PUBSUB_TOPIC=${GMAIL_PUBSUB_TOPIC}
-      - MICROSOFT_GRAPH_NOTIFICATION_URL=${MICROSOFT_GRAPH_NOTIFICATION_URL}
-      - MICROSOFT_GRAPH_LIFECYCLE_URL=${MICROSOFT_GRAPH_LIFECYCLE_URL}
-      - MICROSOFT_GRAPH_CLIENT_STATE_SECRET=${MICROSOFT_GRAPH_CLIENT_STATE_SECRET}
-
+      - ../envoy-email-service/.env
+      
   reasoning-engine:
     build:
       context: ../reasoning-engine
       dockerfile: Dockerfile.dev
     image: reasoning-engine:latest
     environment:
-      - DB_HOST=postgres
       - CHOKIDAR_USEPOLLING=true
     ports:
       - '8081:8081'

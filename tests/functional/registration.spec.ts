@@ -179,6 +179,7 @@ test.group('registration', (group) => {
   test('consumer login preserves a session handoff token until consent is accepted', async ({
     client,
   }) => {
+    await User.query().where('email', CONSUMER_LOGIN_EMAIL).delete()
     const entitlementId = await EntitlementService.getIdByCanonicalName('CONSUMER')
     const user = await User.create({
       fullName: 'Returning Consumer',
@@ -222,6 +223,7 @@ test.group('registration', (group) => {
   test('privacy re-ack login preserves onboarding state until acknowledgment', async ({
     client,
   }) => {
+    await User.query().where('email', PRIVACY_REACK_LOGIN_EMAIL).delete()
     const entitlementId = await EntitlementService.getIdByCanonicalName('CONSUMER')
     const user = await User.create({
       fullName: 'Privacy Reack Consumer',
@@ -274,6 +276,7 @@ test.group('registration', (group) => {
   test('vendor login requires consent before discarding a consumer handoff and routing to pending', async ({
     client,
   }) => {
+    await User.query().where('email', VENDOR_LOGIN_EMAIL).delete()
     const entitlementId = await EntitlementService.getIdByCanonicalName('VENDOR')
     const vendor = await User.create({
       fullName: 'Returning Vendor',
@@ -519,6 +522,7 @@ test.group('registration', (group) => {
   test('sad path: duplicate email re-renders the register page with an error message', async ({
     client,
   }) => {
+    await User.query().where('email', DUPLICATE_EMAIL).delete()
     const consumerEntitlementId = await EntitlementService.getIdByCanonicalName('CONSUMER')
     const previousGoogleClientId = env.get('GOOGLE_CLIENT_ID')
     const previousGoogleClientSecret = env.get('GOOGLE_CLIENT_SECRET')
