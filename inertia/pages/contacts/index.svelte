@@ -342,7 +342,7 @@ async function deactivate(uuid: string) {
             <aside class="card preset-tonal-primary-500 p-3 space-y-3" aria-label="Existing trusted listings">
               <div>
                 <p class="font-medium text-sm">A trusted listing may already exist</p>
-                <p class="text-xs text-surface-600-400">Use an existing vendor-controlled listing, or create your own separate contact.</p>
+                <p class="text-xs text-surface-600-400">Use an existing verified listing, or create your own separate contact.</p>
               </div>
               <ul class="space-y-2">
                 {#each trustedMatches as match (match.vendorListingUuid)}

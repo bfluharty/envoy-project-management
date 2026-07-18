@@ -21,6 +21,7 @@ import {
   generateInitialOutreachDrafts,
   retryInitialOutreachDraft,
 } from '#services/project_outreach_service'
+import { acceptConsentForTest } from '../helpers/user_consent.js'
 
 const PASSWORD = 'Password123!'
 
@@ -36,13 +37,15 @@ test.group('initial outreach generation', (group) => {
 
   async function createConsumer() {
     const entitlement = await UserEntitlement.findByOrFail('canonicalName', 'CONSUMER')
-    return User.create({
+    const user = await User.create({
       fullName: 'Initial Outreach User',
       email: `initial-outreach-${uuidv4()}@example.com`,
       password: PASSWORD,
       entitlementId: entitlement.id,
       isActive: true,
     })
+
+    return acceptConsentForTest(user)
   }
 
   async function createActivePrimaryInbox(user: User) {

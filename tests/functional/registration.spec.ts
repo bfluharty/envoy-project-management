@@ -6,11 +6,13 @@ import { v1 as uuidv1, v4 as uuidv4 } from 'uuid'
 import { DateTime } from 'luxon'
 import User from '#models/user'
 import testUtils from '@adonisjs/core/services/test_utils'
+import db from '@adonisjs/lucid/services/db'
 import env from '#start/env'
 import EntitlementService from '#services/entitlement_service'
 import AnonymousOnboardingDraft from '#models/anonymous_onboarding_draft'
 import OnboardingDraftService from '#services/onboarding_draft_service'
 import UserEntitlement from '#models/user_entitlement'
+import UserConsentService from '#services/user_consent_service'
 
 const NEW_EMAIL = 'registration.test.new@example.com'
 const DUPLICATE_EMAIL = 'registration.test.existing@example.com'
@@ -22,6 +24,7 @@ const INVALID_TOKEN_EMAIL = 'registration.test.invalid@example.com'
 const QUERY_TOKEN_EMAIL = 'registration.test.query@example.com'
 const VENDOR_EMAIL = 'registration.test.vendor@example.com'
 const CONSUMER_LOGIN_EMAIL = 'registration.test.consumer.login@example.com'
+const PRIVACY_REACK_LOGIN_EMAIL = 'registration.test.privacy.reack.login@example.com'
 const VENDOR_LOGIN_EMAIL = 'registration.test.vendor.login@example.com'
 const GENERAL_ERROR_EMAIL = 'registration.test.general.error@example.com'
 const VALID_PASSWORD = 'Password123!'
@@ -29,6 +32,15 @@ const VALID_PASSWORD = 'Password123!'
 function setCookieHeader(response: any) {
   const value = response.header('set-cookie')
   return Array.isArray(value) ? value.join('; ') : (value ?? '')
+}
+
+async function completeRegistrationConsent(client: any, user: User, authResponse: any) {
+  return client
+    .post('/onboarding/consent')
+    .loginAs(user)
+    .withSession(authResponse.session())
+    .json({ termsAccepted: true, modelTrainingOptIn: false })
+    .redirects(0)
 }
 
 test.group('registration', (group) => {
@@ -43,7 +55,7 @@ test.group('registration', (group) => {
     }
   })
 
-  test('happy path: new email creates account, logs in, and redirects to dashboard', async ({
+  test('happy path: new email requires consent before redirecting to dashboard', async ({
     client,
   }) => {
     await User.query().where('email', NEW_EMAIL).delete()
@@ -60,19 +72,23 @@ test.group('registration', (group) => {
         .redirects(0)
 
       response.assertFound()
-      response.assertHeader('location', '/dashboard')
+      response.assertHeader('location', '/onboarding/consent')
       assert.match(setCookieHeader(response), /HttpOnly/i)
 
       const created = await User.findBy('email', NEW_EMAIL)
       assert.ok(created, 'user record should exist in the database after successful registration')
       const entitlement = await UserEntitlement.findOrFail(created.entitlementId)
       assert.equal(entitlement.canonicalName, 'CONSUMER')
+
+      const consentResponse = await completeRegistrationConsent(client, created, response)
+      consentResponse.assertFound()
+      consentResponse.assertHeader('location', '/dashboard')
     } finally {
       await User.query().where('email', NEW_EMAIL).delete()
     }
   })
 
-  test('consumer registration associates a body onboarding token and redirects to onboarding project', async ({
+  test('consumer registration preserves a body onboarding token through consent', async ({
     client,
   }) => {
     await User.query().where('email', BODY_ONBOARDING_EMAIL).delete()
@@ -95,9 +111,16 @@ test.group('registration', (group) => {
         .redirects(0)
 
       response.assertFound()
-      response.assertHeader('location', '/onboarding/project')
+      response.assertHeader('location', '/onboarding/consent')
 
       const created = await User.findByOrFail('email', BODY_ONBOARDING_EMAIL)
+      const pendingDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
+      assert.equal(pendingDraft.registeredUserUuid, null)
+
+      const consentResponse = await completeRegistrationConsent(client, created, response)
+      consentResponse.assertFound()
+      consentResponse.assertHeader('location', '/onboarding/project')
+
       const reloadedDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
       assert.equal(reloadedDraft.registeredUserUuid, created.uuid)
     } finally {
@@ -106,7 +129,7 @@ test.group('registration', (group) => {
     }
   })
 
-  test('consumer registration associates a session handoff token and redirects to onboarding project', async ({
+  test('consumer registration preserves a session handoff token through consent', async ({
     client,
   }) => {
     await User.query().where('email', SESSION_ONBOARDING_EMAIL).delete()
@@ -135,9 +158,16 @@ test.group('registration', (group) => {
         .redirects(0)
 
       response.assertFound()
-      response.assertHeader('location', '/onboarding/project')
+      response.assertHeader('location', '/onboarding/consent')
 
       const created = await User.findByOrFail('email', SESSION_ONBOARDING_EMAIL)
+      const pendingDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
+      assert.equal(pendingDraft.registeredUserUuid, null)
+
+      const consentResponse = await completeRegistrationConsent(client, created, response)
+      consentResponse.assertFound()
+      consentResponse.assertHeader('location', '/onboarding/project')
+
       const reloadedDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
       assert.equal(reloadedDraft.registeredUserUuid, created.uuid)
     } finally {
@@ -146,9 +176,10 @@ test.group('registration', (group) => {
     }
   })
 
-  test('consumer login associates a session handoff token and resumes onboarding', async ({
+  test('consumer login preserves a session handoff token until consent is accepted', async ({
     client,
   }) => {
+    await User.query().where('email', CONSUMER_LOGIN_EMAIL).delete()
     const entitlementId = await EntitlementService.getIdByCanonicalName('CONSUMER')
     const user = await User.create({
       fullName: 'Returning Consumer',
@@ -175,7 +206,11 @@ test.group('registration', (group) => {
         .redirects(0)
 
       response.assertFound()
-      response.assertHeader('location', '/onboarding/project')
+      response.assertHeader('location', '/onboarding/consent')
+
+      const consentResponse = await completeRegistrationConsent(client, user, response)
+      consentResponse.assertFound()
+      consentResponse.assertHeader('location', '/onboarding/project')
 
       const reloadedDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
       assert.equal(reloadedDraft.registeredUserUuid, user.uuid)
@@ -185,11 +220,65 @@ test.group('registration', (group) => {
     }
   })
 
-  test('vendor login discards a consumer onboarding handoff and routes to vendor pending', async ({
+  test('privacy re-ack login preserves onboarding state until acknowledgment', async ({
     client,
   }) => {
+    await User.query().where('email', PRIVACY_REACK_LOGIN_EMAIL).delete()
+    const entitlementId = await EntitlementService.getIdByCanonicalName('CONSUMER')
+    const user = await User.create({
+      fullName: 'Privacy Reack Consumer',
+      email: PRIVACY_REACK_LOGIN_EMAIL,
+      password: VALID_PASSWORD,
+      entitlementId,
+      isActive: true,
+    })
+    await UserConsentService.completeOnboarding({
+      userUuid: user.uuid,
+      termsAccepted: true,
+      modelTrainingOptIn: true,
+    })
+    await db
+      .from('envoy_schema.user_consent_preferences')
+      .where('user_uuid', user.uuid)
+      .update({ privacy_policy_version: 'historical-privacy-version' })
+    const { tokenUuid, draft } = await OnboardingDraftService.createDraft({
+      projectDescription: 'I need a privacy-safe project handoff.',
+      postalCode: '23230',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    try {
+      const handoffResponse = await client
+        .post('/onboarding/registration-handoff')
+        .json({ onboardingToken: tokenUuid })
+      const loginResponse = await client
+        .post('/login')
+        .withSession(handoffResponse.session())
+        .form({ email: PRIVACY_REACK_LOGIN_EMAIL, password: VALID_PASSWORD })
+        .redirects(0)
+
+      loginResponse.assertFound()
+      loginResponse.assertHeader('location', '/onboarding/consent')
+      const draftBeforeAcknowledgment = await AnonymousOnboardingDraft.findOrFail(draft.id)
+      assert.equal(draftBeforeAcknowledgment.registeredUserUuid, null)
+
+      const acknowledgmentResponse = await completeRegistrationConsent(client, user, loginResponse)
+      acknowledgmentResponse.assertFound()
+      acknowledgmentResponse.assertHeader('location', '/onboarding/project')
+      const draftAfterAcknowledgment = await AnonymousOnboardingDraft.findOrFail(draft.id)
+      assert.equal(draftAfterAcknowledgment.registeredUserUuid, user.uuid)
+    } finally {
+      await AnonymousOnboardingDraft.query().where('token_uuid', tokenUuid).delete()
+      await User.query().where('email', PRIVACY_REACK_LOGIN_EMAIL).delete()
+    }
+  })
+
+  test('vendor login requires consent before discarding a consumer handoff and routing to pending', async ({
+    client,
+  }) => {
+    await User.query().where('email', VENDOR_LOGIN_EMAIL).delete()
     const entitlementId = await EntitlementService.getIdByCanonicalName('VENDOR')
-    await User.create({
+    const vendor = await User.create({
       fullName: 'Returning Vendor',
       email: VENDOR_LOGIN_EMAIL,
       password: VALID_PASSWORD,
@@ -215,7 +304,11 @@ test.group('registration', (group) => {
         .redirects(0)
 
       response.assertFound()
-      response.assertHeader('location', '/vendor/pending')
+      response.assertHeader('location', '/onboarding/consent')
+
+      const consentResponse = await completeRegistrationConsent(client, vendor, response)
+      consentResponse.assertFound()
+      consentResponse.assertHeader('location', '/vendor/pending')
 
       const reloadedDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
       assert.equal(reloadedDraft.registeredUserUuid, null)
@@ -260,9 +353,13 @@ test.group('registration', (group) => {
         .redirects(0)
 
       response.assertFound()
-      response.assertHeader('location', '/onboarding/project')
+      response.assertHeader('location', '/onboarding/consent')
 
       const created = await User.findByOrFail('email', PRECEDENCE_EMAIL)
+      const consentResponse = await completeRegistrationConsent(client, created, response)
+      consentResponse.assertFound()
+      consentResponse.assertHeader('location', '/onboarding/project')
+
       const reloadedSessionDraft = await AnonymousOnboardingDraft.findOrFail(sessionDraft.draft.id)
       const reloadedBodyDraft = await AnonymousOnboardingDraft.findOrFail(bodyDraft.draft.id)
       assert.equal(reloadedBodyDraft.registeredUserUuid, created.uuid)
@@ -300,7 +397,7 @@ test.group('registration', (group) => {
     }
   })
 
-  test('expired onboarding token does not block registration and redirects to dashboard', async ({
+  test('expired onboarding token does not block post-consent dashboard routing', async ({
     client,
   }) => {
     await User.query().where('email', EXPIRED_TOKEN_EMAIL).delete()
@@ -324,10 +421,14 @@ test.group('registration', (group) => {
         .redirects(0)
 
       response.assertFound()
-      response.assertHeader('location', '/dashboard')
+      response.assertHeader('location', '/onboarding/consent')
 
       const created = await User.findBy('email', EXPIRED_TOKEN_EMAIL)
       assert.ok(created)
+      const consentResponse = await completeRegistrationConsent(client, created, response)
+      consentResponse.assertFound()
+      consentResponse.assertHeader('location', '/dashboard')
+
       const reloadedDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
       assert.equal(reloadedDraft.status, 'EXPIRED')
       assert.equal(reloadedDraft.registeredUserUuid, null)
@@ -357,7 +458,12 @@ test.group('registration', (group) => {
         .redirects(0)
 
       response.assertFound()
-      response.assertHeader('location', '/dashboard')
+      response.assertHeader('location', '/onboarding/consent')
+
+      const created = await User.findByOrFail('email', QUERY_TOKEN_EMAIL)
+      const consentResponse = await completeRegistrationConsent(client, created, response)
+      consentResponse.assertFound()
+      consentResponse.assertHeader('location', '/dashboard')
 
       const reloadedDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
       assert.equal(reloadedDraft.registeredUserUuid, null)
@@ -367,7 +473,7 @@ test.group('registration', (group) => {
     }
   })
 
-  test('vendor registration creates a pending vendor account and redirects to vendor pending', async ({
+  test('vendor registration creates a pending account and routes there after consent', async ({
     client,
   }) => {
     await User.query().where('email', VENDOR_EMAIL).delete()
@@ -395,12 +501,16 @@ test.group('registration', (group) => {
         .redirects(0)
 
       response.assertFound()
-      response.assertHeader('location', '/vendor/pending')
+      response.assertHeader('location', '/onboarding/consent')
 
       const created = await User.findByOrFail('email', VENDOR_EMAIL)
       const entitlement = await UserEntitlement.findOrFail(created.entitlementId)
       assert.equal(entitlement.canonicalName, 'VENDOR')
       assert.equal(created.vendorApprovalStatus, 'PENDING')
+      const consentResponse = await completeRegistrationConsent(client, created, response)
+      consentResponse.assertFound()
+      consentResponse.assertHeader('location', '/vendor/pending')
+
       const reloadedDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
       assert.equal(reloadedDraft.registeredUserUuid, null)
     } finally {
@@ -412,6 +522,7 @@ test.group('registration', (group) => {
   test('sad path: duplicate email re-renders the register page with an error message', async ({
     client,
   }) => {
+    await User.query().where('email', DUPLICATE_EMAIL).delete()
     const consumerEntitlementId = await EntitlementService.getIdByCanonicalName('CONSUMER')
     const previousGoogleClientId = env.get('GOOGLE_CLIENT_ID')
     const previousGoogleClientSecret = env.get('GOOGLE_CLIENT_SECRET')
@@ -455,7 +566,7 @@ test.group('registration', (group) => {
             {
               provider: 'google',
               label: 'Google',
-              href: '/auth/google?flow=registration&accountType=vendor&emailTermsAccepted=1',
+              href: '/auth/google?flow=registration&accountType=vendor',
             },
           ],
         },
@@ -502,7 +613,7 @@ test.group('registration', (group) => {
             {
               provider: 'google',
               label: 'Google',
-              href: '/auth/google?flow=registration&accountType=vendor&emailTermsAccepted=1',
+              href: '/auth/google?flow=registration&accountType=vendor',
             },
           ],
         },

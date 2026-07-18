@@ -15,6 +15,7 @@ type VendorRecommendation = {
     country?: string
     formatted_address?: string
   } | null
+  hasEmail: boolean
   onboardedToEnvoy: boolean
   consumerOwned: boolean
   ownershipWarning: string | null
@@ -33,6 +34,7 @@ const recommendations: VendorRecommendation[] = [
       country: 'US',
       formatted_address: '456 Broad St, Richmond, VA 23220',
     },
+    hasEmail: true,
     onboardedToEnvoy: true,
     consumerOwned: false,
     ownershipWarning: null,
@@ -46,6 +48,7 @@ const recommendations: VendorRecommendation[] = [
       region: 'VA',
       postcode: '23220',
     },
+    hasEmail: true,
     onboardedToEnvoy: false,
     consumerOwned: true,
     ownershipWarning: 'This listing is consumer-managed and has not been verified by the vendor.',
@@ -55,6 +58,7 @@ const recommendations: VendorRecommendation[] = [
     name: 'No Email Plumbing',
     categories: ['Plumber'],
     location: null,
+    hasEmail: false,
     onboardedToEnvoy: false,
     consumerOwned: false,
     ownershipWarning: null,
@@ -99,7 +103,7 @@ async function mockSearch(page: Page, vendors: VendorRecommendation[] = recommen
 
   return {
     release: () => releaseSearch?.(),
-    submit: () => page.getByRole('button', { name: 'Find vendors' }).click(),
+    submit: () => page.getByRole('button', { name: 'Search' }).click(),
   }
 }
 
@@ -107,7 +111,7 @@ async function completeSearch(page: Page, vendors: VendorRecommendation[] = reco
   const search = await mockSearch(page, vendors)
   await search.submit()
   search.release()
-  await expect(page.getByRole('heading', { name: 'Vendors for your project' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Contacts for your project' })).toBeVisible()
 }
 
 test.describe('anonymous vendor discovery', () => {
@@ -117,7 +121,7 @@ test.describe('anonymous vendor discovery', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Plan any project')
     await expect(page.getByLabel('What are you planning?')).toBeVisible()
     await expect(page.getByLabel(/ZIP or postal code/i)).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Find vendors' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Search' })).toBeVisible()
     await expect(page.getByRole('link', { name: /Join Envoy as a pro/i })).toHaveAttribute(
       'href',
       '/register?accountType=vendor'
@@ -136,7 +140,7 @@ test.describe('anonymous vendor discovery', () => {
   test('validates the description length and postal code accessibly', async ({ page }) => {
     await page.goto('/')
     await page.getByLabel('What are you planning?').fill('Nope')
-    await page.getByRole('button', { name: 'Find vendors' }).click()
+    await page.getByRole('button', { name: 'Search' }).click()
 
     await expect(page.getByText(/at least 5 characters/i)).toBeVisible()
     await expect(page.getByText(/postal code is required/i)).toBeVisible()
@@ -154,11 +158,11 @@ test.describe('anonymous vendor discovery', () => {
     })
 
     await search.submit()
-    await expect(page.getByRole('button', { name: /Finding vendors/i })).toBeDisabled()
+    await expect(page.getByRole('button', { name: /Searching/i })).toBeDisabled()
     expect(await page.evaluate(() => localStorage.getItem('envoy_seen'))).toBeNull()
 
     search.release()
-    await expect(page.getByText('Email First Electric')).toBeVisible()
+    await expect(page.getByRole('button', { name: /Email First Electric/i })).toBeVisible()
 
     expect(requestBody).toEqual({
       projectDescription: PROJECT_DESCRIPTION,
@@ -181,7 +185,7 @@ test.describe('anonymous vendor discovery', () => {
     await search.submit()
     search.release()
 
-    await expect(page.getByText('No vendors found for your search.')).toBeVisible()
+    await expect(page.getByText('No matches found for your search.')).toBeVisible()
     await expect(page.getByRole('button', { name: /Continue with/i })).toHaveCount(0)
     expect(await page.evaluate(() => localStorage.getItem('envoy_seen'))).toBe('true')
   })
@@ -193,13 +197,29 @@ test.describe('anonymous vendor discovery', () => {
 
     const cards = page.getByRole('button').filter({ has: page.locator('[aria-pressed]') })
     const names = await page
-      .locator('section[aria-label="Vendor recommendations"] li button')
+      .locator(
+        'section[aria-label="Recommendations"] section[data-vendor-classification] li button'
+      )
       .allTextContents()
     expect(names[0]).toContain('Email First Electric')
     expect(names[2]).toContain('No Email Plumbing')
-    await expect(page.getByText('456 Broad St, Richmond, VA 23220')).toBeVisible()
+    const groups = page.locator(
+      'section[aria-label="Recommendations"] section[data-vendor-classification]'
+    )
+    await expect(groups).toHaveCount(3)
+    expect(
+      await groups.evaluateAll((nodes) =>
+        nodes.map((node) => node.getAttribute('data-vendor-classification'))
+      )
+    ).toEqual(['Electrician', 'General Contractor', 'Plumber'])
+    await expect(
+      page
+        .getByRole('button', { name: /Email First Electric/i })
+        .getByText('456 Broad St, Richmond, VA 23220')
+    ).toBeVisible()
     await expect(page.getByText('Onboarded to Envoy')).toBeVisible()
     await expect(page.getByText(/Unverified listing/i)).toBeVisible()
+    await expect(page.getByText('Additional contact details required')).toHaveCount(2)
     await expect(page.getByText('Electrician · Commercial Contractor')).toBeVisible()
     await expect(page.getByText(/@example\.com|555-0100|https:\/\//)).toHaveCount(0)
     expect(await cards.count()).toBeGreaterThanOrEqual(0)
@@ -217,13 +237,16 @@ test.describe('anonymous vendor discovery', () => {
         body: JSON.stringify({ selectedCount: 1, expiresAt: '2026-07-14T12:00:00.000Z' }),
       })
     })
-    await completeSearch(page)
+    await completeSearch(page, recommendations)
 
     const noEmailVendor = page.getByRole('button', { name: /No Email Plumbing/i })
+    await page.getByRole('button', { name: 'Deselect all' }).click()
     await noEmailVendor.click()
 
     await expect(noEmailVendor).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByRole('button', { name: /Continue with 1 vendor/i })).toBeEnabled()
+    await expect(
+      page.getByRole('button', { name: 'Continue with 1 contact', exact: true })
+    ).toBeEnabled()
     await expect
       .poll(() => selectionBody)
       .toEqual({
@@ -254,7 +277,6 @@ test.describe('anonymous vendor discovery', () => {
     await expect(page.getByRole('button', { name: /Vendor 9/i })).toHaveCount(0)
     for (let index = 1; index <= 8; index += 1) {
       const card = page.getByRole('button', { name: new RegExp(`Vendor ${index}`) })
-      await card.click({ force: true })
       await expect(card).toHaveAttribute('aria-pressed', 'true')
     }
     await expect(page.getByText('8 of 8 selected')).toBeVisible()
@@ -283,14 +305,12 @@ test.describe('anonymous vendor discovery', () => {
     await page.route('**/register?accountType=consumer', (route) =>
       route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Register</h1>' })
     )
-    await completeSearch(page)
+    await completeSearch(page, recommendations)
 
-    await page.getByRole('button', { name: /Email First Electric/i }).click()
-    await page.getByRole('button', { name: /Continue with 1 vendor/i }).click()
+    await page.getByRole('button', { name: 'Continue with 3 contacts', exact: true }).click()
 
     await page.waitForURL('**/register?accountType=consumer')
     expect(calls.map((call) => call.path)).toEqual([
-      '/onboarding/vendor-selection',
       '/onboarding/vendor-selection',
       '/onboarding/registration-handoff',
     ])
@@ -305,10 +325,9 @@ test.describe('anonymous vendor discovery', () => {
     await page.route('/onboarding/registration-handoff', (route) =>
       route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"failed"}' })
     )
-    await completeSearch(page)
+    await completeSearch(page, recommendations)
 
-    await page.getByRole('button', { name: /Email First Electric/i }).click()
-    await page.getByRole('button', { name: /Continue with 1 vendor/i }).click()
+    await page.getByRole('button', { name: 'Continue with 3 contacts', exact: true }).click()
 
     await expect(page).toHaveURL(/\/$/)
     await expect(page.getByRole('alert')).toContainText(/try again|could not/i)
@@ -413,7 +432,7 @@ test('the intake remains usable without horizontal overflow on a mobile viewport
   await page.goto('/')
 
   await expect(page.getByLabel('What are you planning?')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Find vendors' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Search' })).toBeVisible()
   const dimensions = await page.evaluate(() => ({
     scrollWidth: (globalThis as any).document.documentElement.scrollWidth,
     clientWidth: (globalThis as any).document.documentElement.clientWidth,

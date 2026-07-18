@@ -14,7 +14,7 @@
   const flash = $derived($page.props.flash || {})
 
   function disconnect(id: number) {
-    if (!confirm('Disconnect this inbox? We will stop listening for vendor emails.')) return
+    if (!confirm('Disconnect this inbox? We will stop listening for emails.')) return
     router.post('/inbox/disconnect', { id }, { preserveScroll: true })
   }
 
@@ -39,10 +39,10 @@
           Inbox
         </h1>
         <p class="text-surface-600-400 mt-1">
-          Connect your inbox so we can listen for vendor emails and respond on your behalf.
+          Connect your inbox so we can listen for emails and respond on your behalf.
         </p>
       </div>
-      <a href="/inbox/emails" class="btn preset-tonal">View vendor emails</a>
+      <a href="/inbox/emails" class="btn preset-tonal">View emails</a>
     </header>
 
     {#if flash.error}
@@ -90,8 +90,7 @@
     <section class="card preset-outlined-surface-200-800 p-6 space-y-4">
       <h2 class="h4">Connect an inbox</h2>
       <p class="text-surface-600-400 text-sm">
-        We'll request permission to read and send email from this account. We use it only to listen
-        for vendor emails and send replies on your behalf.
+        We'll request permission to read and send email from this account. We use these permissions solely for emails sent from contacts you select.
       </p>
       <p class="text-surface-600-400 text-sm">
         If you already signed in with Google, connecting Gmail here should reuse that same account.

@@ -2,7 +2,7 @@
   import Sidebar from "#components/sidebar.svelte";
   import LocationSearch from '#components/location_search.svelte';
   import type { LocationData } from '#components/location_search.svelte';
-  import VendorSearch from '#components/vendor_search.svelte';
+  import VendorSearch, { type VendorResult } from '#components/vendor_search.svelte';
   import { router } from '@inertiajs/svelte'
   import { page } from '@inertiajs/svelte'
   import { onDestroy } from 'svelte'
@@ -68,6 +68,7 @@
   // and attached via POST /api/projects/:projectUuid/vendors after the project is created.
   let showVendorSearch = $state(false);
   let pendingVendorListingUuids = $state<string[]>([]);
+  let pendingVendorSelections = $state<VendorResult[]>([]);
   let attachingVendors = $state(false);
   let attachVendorError = $state('');
   let currentStep = $state<number>(typeof draft.currentStep === 'number' ? draft.currentStep : 0);
@@ -146,7 +147,23 @@
     goals = '';
     errors = {};
     currentStep = 0;
+    pendingVendorSelections = [];
+    pendingVendorListingUuids = [];
     clearDraft();
+  }
+
+  function setPendingVendorSelections(vendors: VendorResult[]) {
+    const seen = new Set<string>();
+    const uniqueSelections: VendorResult[] = [];
+
+    for (const vendor of vendors) {
+      if (seen.has(vendor.vendorListingUuid)) continue;
+      seen.add(vendor.vendorListingUuid);
+      uniqueSelections.push(vendor);
+    }
+
+    pendingVendorSelections = uniqueSelections;
+    pendingVendorListingUuids = uniqueSelections.map((vendor) => vendor.vendorListingUuid);
   }
 
   function nextStep() {
@@ -205,18 +222,17 @@
               body: JSON.stringify({ vendorListingUuids: vendorListingUuidsToAttach }),
             });
             if (!res.ok) {
-              attachVendorError = 'Project created, but vendors could not be added. You can retry from the project page.';
+              attachVendorError = 'Project created, but contacts could not be added. You can retry from the project page.';
               sessionStorage.setItem(warningKey, attachVendorError);
             }
           } catch {
-            attachVendorError = 'Project created, but vendors could not be added due to a network error.';
+            attachVendorError = 'Project created, but contacts could not be added due to a network error.';
             sessionStorage.setItem(warningKey, attachVendorError);
           }
           attachingVendors = false;
         }
 
         resetForm();
-        pendingVendorListingUuids = [];
         showNewProjectForm.set(false);
 
         // Explicitly navigate to the project page. Inertia may have already
@@ -338,11 +354,14 @@
                 <div class="mt-3">
                   <VendorSearch
                     context="new-project"
+                    selectedVendors={pendingVendorSelections}
+                    continueDisabled={processing || attachingVendors || !title.trim()}
                     onClose={() => { showVendorSearch = false; }}
-                    onAttached={(uuids) => {
-                      pendingVendorListingUuids = [...new Set([...pendingVendorListingUuids, ...uuids])];
+                    onSelectionChange={setPendingVendorSelections}
+                    onAttached={() => {
                       showVendorSearch = false;
                     }}
+                    onContinue={nextStep}
                   />
                 </div>
               {/if}
@@ -445,11 +464,11 @@
               <button class="btn preset-tonal" type="button" onclick={() => { errors = {}; currentStep -= 1; }}>Back</button>
               <button class="btn preset-filled-primary-500" type="button" onclick={submitProject} disabled={processing || attachingVendors}>
                 {#if attachingVendors}
-                  Adding vendors…
+                  Adding contacts…
                 {:else if processing}
                   Creating…
                 {:else}
-                  Create project{pendingVendorListingUuids.length > 0 ? ` + ${pendingVendorListingUuids.length} vendor${pendingVendorListingUuids.length !== 1 ? 's' : ''}` : ''}
+                  Create project{pendingVendorListingUuids.length > 0 ? ` + ${pendingVendorListingUuids.length} contact${pendingVendorListingUuids.length !== 1 ? 's' : ''}` : ''}
                 {/if}
               </button>
             </footer>

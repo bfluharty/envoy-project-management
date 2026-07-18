@@ -51,10 +51,28 @@ test.group('social auth helpers', () => {
     )
   })
 
-  test('keeps real intended URLs and blocks avatar proxy URLs', () => {
+  test('keeps safe local intended URLs', () => {
     assert.equal(resolvePostLoginRedirect('/account'), '/account')
     assert.equal(resolvePostLoginRedirect('/account#email-accounts'), '/account#email-accounts')
     assert.equal(resolvePostLoginRedirect('/dashboard'), '/dashboard')
+    assert.equal(
+      resolvePostLoginRedirect('/projects/project-1?tab=overview'),
+      '/projects/project-1?tab=overview'
+    )
+  })
+
+  test('rejects external, protocol-relative, and redirect-loop intended URLs', () => {
+    assert.equal(resolvePostLoginRedirect('https://example.com/account'), null)
+    assert.equal(resolvePostLoginRedirect('http://example.com/account'), null)
+    assert.equal(resolvePostLoginRedirect('//example.com/account'), null)
+    assert.equal(resolvePostLoginRedirect('/\\example.com/account'), null)
+    assert.equal(resolvePostLoginRedirect('/%5Cexample.com/account'), null)
+    assert.equal(resolvePostLoginRedirect('/dashboard\n/account'), null)
+    assert.equal(resolvePostLoginRedirect('dashboard'), null)
+    assert.equal(resolvePostLoginRedirect('/login'), null)
+    assert.equal(resolvePostLoginRedirect('/register?accountType=consumer'), null)
+    assert.equal(resolvePostLoginRedirect('/auth/google'), null)
+    assert.equal(resolvePostLoginRedirect('/onboarding/consent'), null)
     assert.equal(resolvePostLoginRedirect('/account/avatar/google'), null)
     assert.equal(resolvePostLoginRedirect('/account/avatar/google?size=64'), null)
     assert.equal(resolvePostLoginRedirect(null), null)

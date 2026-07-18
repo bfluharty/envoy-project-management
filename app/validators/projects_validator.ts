@@ -63,7 +63,25 @@ export const createProjectValidator = vine.compile(
   })
 )
 
-export const completeOnboardingProjectValidator = vine.compile(vine.object(projectFields()))
+export const completeOnboardingProjectValidator = vine.compile(
+  vine.object({
+    ...projectFields(),
+    selectedVendorListingUuids: vine
+      .array(vine.string().uuid({ version: [4] }))
+      .minLength(1)
+      .maxLength(8)
+      .optional(),
+    vendorEmailUpdates: vine
+      .array(
+        vine.object({
+          vendorListingUuid: vine.string().uuid({ version: [4] }),
+          email: vine.string().email().trim().minLength(1),
+        })
+      )
+      .maxLength(8)
+      .optional(),
+  })
+)
 
 export const updateProjectValidator = vine.compile(
   vine.object({

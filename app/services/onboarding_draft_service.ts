@@ -168,12 +168,12 @@ export default class OnboardingDraftService {
   }
 
   public static async updateSelection(token: string, selectedVendorListingUuids: string[]) {
-    if (selectedVendorListingUuids.length < 1 || selectedVendorListingUuids.length > 8) {
+    if (selectedVendorListingUuids.length > 8) {
       logger.warn(
         { selectedVendorCount: selectedVendorListingUuids.length },
         'Rejected onboarding vendor selection count'
       )
-      throw new OnboardingDraftError('Select between 1 and 8 vendors')
+      throw new OnboardingDraftError('Select up to 8 vendors')
     }
 
     if (!selectedVendorListingUuids.every(isUuidV4)) {

@@ -60,7 +60,7 @@ export default class InboxAPIController {
     }
 
     if (!vendorConversationUuid) {
-      return response.badRequest({ error: 'Missing vendorConversationUuid' })
+      return response.badRequest({ error: 'Missing Conversation UUID' })
     }
 
     const conversation = await VendorConversation.query()
@@ -69,7 +69,7 @@ export default class InboxAPIController {
       .first()
 
     if (!conversation) {
-      return response.notFound({ error: 'Vendor conversation not found' })
+      return response.notFound({ error: 'Conversation not found' })
     }
 
     logger.info(

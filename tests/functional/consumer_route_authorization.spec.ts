@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import testUtils from '@adonisjs/core/services/test_utils'
 import User from '#models/user'
 import UserEntitlement from '#models/user_entitlement'
+import { acceptConsentForTest } from '../helpers/user_consent.js'
 
 test.group('consumer route authorization', (group) => {
   group.setup(() => testUtils.db().truncate())
@@ -19,6 +20,7 @@ test.group('consumer route authorization', (group) => {
       vendorApprovalStatus: 'PENDING',
       isActive: true,
     })
+    await acceptConsentForTest(vendor)
 
     const dashboard = await client.get('/dashboard').loginAs(vendor).withInertia()
     dashboard.assertStatus(403)

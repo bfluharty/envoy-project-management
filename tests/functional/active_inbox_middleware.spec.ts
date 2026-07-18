@@ -9,16 +9,19 @@ import {
   encryptOauthToken,
   OAUTH_TOKEN_ENCRYPTION_VERSION,
 } from '#services/oauth_token_encryption_service'
+import { acceptConsentForTest } from '../helpers/user_consent.js'
 
 async function createConsumer() {
   const entitlement = await UserEntitlement.findByOrFail('canonicalName', 'CONSUMER')
-  return User.create({
+  const user = await User.create({
     fullName: 'Active Inbox Consumer',
     email: `active-inbox-${uuidv4()}@example.com`,
     password: 'Password123!',
     entitlementId: entitlement.id,
     isActive: true,
   })
+
+  return acceptConsentForTest(user)
 }
 
 async function createActivePrimaryInbox(user: User) {

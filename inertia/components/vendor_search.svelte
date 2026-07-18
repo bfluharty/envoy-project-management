@@ -15,7 +15,17 @@
     <VendorSearch context="new-project" {onClose} bind:pendingUuids />
 -->
 <script lang="ts">
-  import { CheckCircleIcon, ShieldAlertIcon, MapPinIcon, XIcon, SearchIcon } from '@lucide/svelte';
+  import { untrack } from 'svelte';
+  import {
+    AlertTriangleIcon,
+    CheckCircleIcon,
+    LoaderCircleIcon,
+    ShieldAlertIcon,
+    MapPinIcon,
+    XIcon,
+    SearchIcon,
+  } from '@lucide/svelte';
+  import { groupVendorsByPrimaryClassification } from '../utils/vendor_grouping';
 
   interface VendorLocation {
     address?: string | null;
@@ -40,22 +50,31 @@
   }
 
   type Context = 'contacts' | 'project' | 'new-project';
+  const MAX_SELECTED_VENDORS = 8;
 
   // ── Props ──────────────────────────────────────────────────────────────────
   const {
     context,
     projectUuid    = null,
     projectVendors = [],
+    selectedVendors = [],
     onClose        = () => {},
     onAttached     = (_uuids: string[]) => {},
     onSavedToContacts = (_uuid: string) => {},
+    onSelectionChange = (_vendors: VendorResult[]) => {},
+    onContinue = null,
+    continueDisabled = false,
   }: {
     context: Context;
     projectUuid?: string | null;
     projectVendors?: string[];
+    selectedVendors?: VendorResult[];
     onClose?: () => void;
     onAttached?: (uuids: string[]) => void;
     onSavedToContacts?: (uuid: string) => void;
+    onSelectionChange?: (vendors: VendorResult[]) => void;
+    onContinue?: (() => void) | null;
+    continueDisabled?: boolean;
   } = $props();
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -68,6 +87,11 @@
   let retryable          = $state(false);
 
   let results    = $state<VendorResult[]>([]);
+  let vendorByUuid = $state<Record<string, VendorResult>>(
+    Object.fromEntries(
+      untrack(() => selectedVendors).map((vendor) => [vendor.vendorListingUuid, vendor])
+    )
+  );
   let hasSearched = $state(false);
 
   // Per-listing contact save state
@@ -76,7 +100,9 @@
   let saveErrors     = $state<Record<string, string>>({});
 
   // Selection (for project and new-project contexts)
-  let selected       = $state<Set<string>>(new Set());
+  let selected       = $state<Set<string>>(
+    new Set(untrack(() => selectedVendors).map((vendor) => vendor.vendorListingUuid))
+  );
   let selectionError = $state('');
 
   // Attachment state
@@ -86,6 +112,21 @@
 
   // Derived: which listings are already in this project
   const attachedSet = $derived(new Set(projectVendors));
+  const resultGroups = $derived(groupVendorsByPrimaryClassification(results));
+  const selectableResultUuids = $derived(
+    results
+      .map((vendor) => vendor.vendorListingUuid)
+      .filter((uuid) => !attachedSet.has(uuid))
+  );
+  const allSelectableResultsSelected = $derived(
+    selectableResultUuids.length > 0 &&
+      selectableResultUuids.every((uuid) => selected.has(uuid))
+  );
+  const selectedVendorDetails = $derived(
+    [...selected]
+      .map((uuid) => vendorByUuid[uuid])
+      .filter((vendor): vendor is VendorResult => !!vendor)
+  );
 
   // ── Validation ─────────────────────────────────────────────────────────────
   function validate(): boolean {
@@ -122,7 +163,7 @@
     searching   = true;
     searchError = '';
     retryable   = false;
-    selected    = new Set();
+    selected    = new Set(selectedVendors.map((vendor) => vendor.vendorListingUuid));
     hasSearched = false;
 
     try {
@@ -139,15 +180,40 @@
         const body = await res.json().catch(() => ({}));
         const isServerError = res.status >= 500;
         searchError = body?.error ?? (isServerError
-          ? 'Our vendor search is temporarily unavailable. Please try again.'
+          ? 'Search is temporarily unavailable. Please try again.'
           : 'Search failed. Please check your inputs and try again.');
         retryable = isServerError;
         return;
       }
 
       const data: { vendors: VendorResult[] } = await res.json();
-      results    = (data.vendors ?? []).slice(0, 8);
+      const nextResults = (data.vendors ?? []).slice(0, 8);
+      results    = nextResults;
+      vendorByUuid = {
+        ...vendorByUuid,
+        ...Object.fromEntries(nextResults.map((vendor) => [vendor.vendorListingUuid, vendor])),
+      };
       hasSearched = true;
+      if (context === 'contacts') {
+        selected = new Set();
+      } else {
+        const nextSelected = new Set(selected);
+        let skippedSelection = false;
+        for (const uuid of nextResults
+          .map((vendor) => vendor.vendorListingUuid)
+          .filter((vendorUuid) => !projectVendors.includes(vendorUuid))) {
+          if (nextSelected.size >= MAX_SELECTED_VENDORS) {
+            skippedSelection = true;
+            continue;
+          }
+          nextSelected.add(uuid);
+        }
+        selected = nextSelected;
+        selectionError = skippedSelection
+          ? `You can select up to ${MAX_SELECTED_VENDORS} contacts. Deselect one to add more.`
+          : '';
+      }
+      publishSelection(selected);
 
       // Sync inContacts state from results into savedContact map
       for (const v of results) {
@@ -162,6 +228,16 @@
   }
 
   // ── Selection ──────────────────────────────────────────────────────────────
+  function publishSelection(nextSelected: Set<string>) {
+    if (context === 'new-project') {
+      onSelectionChange(
+        [...nextSelected]
+          .map((uuid) => vendorByUuid[uuid])
+          .filter((vendor): vendor is VendorResult => !!vendor)
+      );
+    }
+  }
+
   function toggleSelection(uuid: string) {
     if (context === 'contacts') return; // no multi-select in contacts context
 
@@ -169,14 +245,51 @@
     if (next.has(uuid)) {
       next.delete(uuid);
     } else {
-      if (next.size >= 8) {
-        selectionError = 'You can select up to 8 vendors.';
+      if (next.size >= MAX_SELECTED_VENDORS) {
+        selectionError = `You can select up to ${MAX_SELECTED_VENDORS} contacts.`;
         return;
       }
       next.add(uuid);
     }
     selectionError = '';
     selected = next;
+    publishSelection(next);
+  }
+
+  function toggleAllResults() {
+    if (context === 'contacts') return;
+    selectionError = '';
+    const next = new Set(selected);
+    if (allSelectableResultsSelected) {
+      for (const uuid of selectableResultUuids) {
+        next.delete(uuid);
+      }
+    } else {
+      let skippedSelection = false;
+      for (const uuid of selectableResultUuids) {
+        if (next.size >= MAX_SELECTED_VENDORS) {
+          skippedSelection = true;
+          continue;
+        }
+        next.add(uuid);
+      }
+      selectionError = skippedSelection
+        ? `You can select up to ${MAX_SELECTED_VENDORS} contacts. Deselect one to add more.`
+        : '';
+    }
+    selected = next;
+    publishSelection(selected);
+  }
+
+  function confirmNewProjectSelection() {
+    publishSelection(selected);
+    onAttached([...selected]);
+    selected = new Set();
+  }
+
+  function continueFromSearch() {
+    publishSelection(selected);
+    onContinue?.();
   }
 
   // ── Save to Contacts ───────────────────────────────────────────────────────
@@ -211,7 +324,7 @@
   // ── Save multiple to Contacts (contacts context action) ────────────────────
   async function saveSelectedToContacts() {
     if (selected.size === 0) {
-      selectionError = 'Select at least one vendor to save.';
+      selectionError = 'Select at least one contact to save.';
       return;
     }
     selectionError = '';
@@ -225,7 +338,7 @@
   async function attachToProject() {
     if (!projectUuid) return;
     if (selected.size === 0) {
-      selectionError = 'Select at least one vendor to add.';
+      selectionError = 'Select at least one contact to add.';
       return;
     }
 
@@ -253,7 +366,7 @@
         selected = new Set();
       } else {
         const body = await res.json().catch(() => ({}));
-        attachError     = body?.error || 'Could not add vendors to the project. None were added.';
+        attachError     = body?.error || 'Could not add contacts to the project. None were added.';
         attachRetryable = res.status >= 500;
       }
     } catch {
@@ -267,7 +380,15 @@
   // ── Keyboard nav on vendor cards ───────────────────────────────────────────
 </script>
 
-<div class="space-y-5">
+<div class="relative space-y-5" aria-busy={searching}>
+  {#if searching}
+    <div class="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-surface-50-950/80 backdrop-blur-sm">
+      <div class="flex items-center gap-3 rounded-xl border border-surface-200-800 bg-surface-50-950 px-4 py-3 shadow-lg">
+        <LoaderCircleIcon class="size-5 animate-spin text-primary-500" />
+        <span class="text-sm font-medium">Searching</span>
+      </div>
+    </div>
+  {/if}
 
   <!-- Header -->
   <div class="flex items-center justify-between gap-3">
@@ -278,7 +399,7 @@
     <button
       type="button"
       onclick={onClose}
-      aria-label="Close vendor search"
+      aria-label="Close search"
       class="btn btn-sm preset-tonal rounded-full p-1.5"
     >
       <XIcon class="size-4" />
@@ -296,6 +417,7 @@
         rows="2"
         placeholder="e.g. Florist for an outdoor wedding in fall"
         bind:value={projectDescription}
+        disabled={searching}
         aria-describedby={descError ? 'vs-err-desc' : undefined}
         aria-invalid={descError ? 'true' : undefined}
       ></textarea>
@@ -311,6 +433,7 @@
         class:input-error={!!postalError}
         placeholder="e.g. 10001"
         bind:value={postalCode}
+        disabled={searching}
         aria-describedby={postalError ? 'vs-err-postal' : undefined}
         aria-invalid={postalError ? 'true' : undefined}
       />
@@ -333,34 +456,92 @@
       disabled={searching}
       aria-busy={searching}
     >
-      {searching ? 'Searching…' : hasSearched ? 'Search again' : 'Search vendors'}
+      {searching ? 'Searching...' : hasSearched ? 'Search again' : 'Search'}
     </button>
   </div>
+
+  {#if context === 'new-project' && selectedVendorDetails.length > 0}
+    <section class="space-y-2 rounded-xl border border-surface-200-800 bg-surface-50-950/40 p-3" aria-label="Selected contacts">
+      <div class="flex items-center justify-between gap-3">
+        <h3 class="text-sm font-semibold">Selected contacts</h3>
+        <span class="text-xs text-surface-600-400">{selectedVendorDetails.length} selected</span>
+      </div>
+      <ul class="space-y-2" role="list">
+        {#each selectedVendorDetails as vendor (vendor.vendorListingUuid)}
+          <li class="flex items-start justify-between gap-3 rounded-lg border border-surface-200-800 bg-surface-100-900/20 p-3">
+            <div class="min-w-0">
+              {@render VendorCardContent({ vendor, isInContacts: savedContact[vendor.vendorListingUuid] || vendor.inContacts })}
+            </div>
+            <button
+              type="button"
+              class="btn btn-sm preset-tonal shrink-0"
+              onclick={() => toggleSelection(vendor.vendorListingUuid)}
+            >
+              Deselect
+            </button>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
 
   <!-- Results -->
   {#if hasSearched}
     {#if results.length === 0}
       <div class="text-center py-6 space-y-1" aria-live="polite">
-        <p class="font-medium">No vendors found</p>
+        <p class="font-medium">No matches found</p>
         <p class="text-sm text-surface-600-400">Try adjusting your description or location.</p>
       </div>
     {:else}
       <section aria-label="Search results" aria-live="polite" class="space-y-3">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-2">
           <p class="text-sm text-surface-600-400">
             {results.length} result{results.length !== 1 ? 's' : ''}
             {#if context !== 'contacts' && selected.size > 0}
-              · {selected.size} selected
+              - {selected.size} selected
             {/if}
           </p>
+          {#if context !== 'contacts'}
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                class="btn btn-sm preset-tonal"
+                onclick={toggleAllResults}
+                disabled={selectableResultUuids.length === 0}
+              >
+                {allSelectableResultsSelected ? 'Deselect all' : 'Select all'}
+              </button>
+              {#if context === 'new-project' && onContinue}
+                <button
+                  type="button"
+                  class="btn btn-sm preset-filled-primary-500"
+                  onclick={continueFromSearch}
+                  disabled={continueDisabled}
+                >
+                  Select contacts & continue{selected.size > 0 ? ` (${selected.size})` : ''}
+                </button>
+              {/if}
+            </div>
+          {/if}
         </div>
 
         {#if selectionError}
           <aside class="card preset-tonal-error p-3 text-sm" role="alert">{selectionError}</aside>
         {/if}
 
-        <ul class="space-y-2" role="list">
-          {#each results as vendor (vendor.vendorListingUuid)}
+        <div class="space-y-5">
+          {#each resultGroups as group}
+            <section
+              aria-label={`${group.classification} contacts`}
+              data-vendor-classification={group.classification}
+              class="space-y-2"
+            >
+              <div class="flex items-center justify-between gap-3 border-b border-surface-200-800 pb-1.5">
+                <h3 class="font-semibold text-sm">{group.classification}</h3>
+                <span class="text-xs text-surface-500">{group.vendors.length}</span>
+              </div>
+              <ul class="space-y-2" role="list">
+                {#each group.vendors as vendor (vendor.vendorListingUuid)}
             {@const isSelected = selected.has(vendor.vendorListingUuid)}
             {@const isAttached = attachedSet.has(vendor.vendorListingUuid)}
             {@const isInContacts = savedContact[vendor.vendorListingUuid] || vendor.inContacts}
@@ -428,8 +609,11 @@
                 </button>
               {/if}
             </li>
+                {/each}
+              </ul>
+            </section>
           {/each}
-        </ul>
+        </div>
 
         <!-- Context-specific action bar -->
         {#if context === 'project'}
@@ -448,7 +632,7 @@
               onclick={attachToProject}
               disabled={attaching || selected.size === 0}
             >
-              {attaching ? 'Adding…' : `Add ${selected.size > 0 ? selected.size : ''} vendor${selected.size !== 1 ? 's' : ''} to project`}
+              {attaching ? 'Adding…' : `Add ${selected.size > 0 ? selected.size : ''} contact${selected.size !== 1 ? 's' : ''} to project`}
             </button>
           </div>
 
@@ -458,12 +642,12 @@
         {:else if context === 'new-project'}
           <div class="space-y-2 pt-2">
             <p class="text-sm text-surface-600-400 text-center">
-              {selected.size > 0 ? `${selected.size} vendor${selected.size !== 1 ? 's' : ''} selected` : 'Select vendors to add when you create the project.'}
+              {selected.size > 0 ? `${selected.size} contact${selected.size !== 1 ? 's' : ''} selected` : 'Select contacts to add when you create the project.'}
             </p>
             <button
               type="button"
               class="btn preset-filled-primary-500 w-full"
-              onclick={() => { onAttached([...selected]); selected = new Set(); }}
+              onclick={confirmNewProjectSelection}
               disabled={selected.size === 0}
             >
               Confirm selection ({selected.size})
@@ -491,6 +675,12 @@
         <span class="inline-flex items-center gap-1 text-xs font-medium text-warning-500 bg-warning-500/10 rounded-full px-2 py-0.5">
           <ShieldAlertIcon class="size-3" />
           Unverified listing
+        </span>
+      {/if}
+      {#if p.vendor.hasEmail === false}
+        <span class="inline-flex items-center gap-1 text-xs font-medium text-warning-500 bg-warning-500/10 rounded-full px-2 py-0.5">
+          <AlertTriangleIcon class="size-3" />
+          Additional contact details required
         </span>
       {/if}
       {#if p.isInContacts}

@@ -647,7 +647,7 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
         }),
       (error: unknown) =>
         error instanceof VendorDiscoveryDependencyError &&
-        error.message === 'Reasoning engine vendor discovery failed'
+        error.message === 'Reasoning engine contact discovery failed'
     )
 
     stubReasoning({
@@ -666,7 +666,7 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
         }),
       (error: unknown) =>
         error instanceof VendorDiscoveryDependencyError &&
-        error.message === 'Foursquare vendor search failed'
+        error.message === 'Foursquare search failed'
     )
   })
 })

@@ -25,13 +25,12 @@ import {
   type NormalizedEmailAuthorizationTokens,
 } from '#services/email_authorization_completion_service'
 import { setupEmailWatch, stopEmailWatch } from '#services/email_watch_service'
-import OnboardingDraftService, {
-  ONBOARDING_TOKEN_SESSION_KEY,
-  OnboardingDraftError,
-  isUuidV4,
-} from '#services/onboarding_draft_service'
-import UserRoleService from '#services/user_role_service'
+import { ONBOARDING_TOKEN_SESSION_KEY, isUuidV4 } from '#services/onboarding_draft_service'
 import { safeError } from '#utils/safe_error'
+import UserConsentService from '#services/user_consent_service'
+import PostAuthRedirectService, {
+  normalizePostAuthReturnPath,
+} from '#services/post_auth_redirect_service'
 
 const SOCIAL_AUTH_PROVIDERS = ['google', 'microsoft'] as const
 type SocialAuthProvider = (typeof SOCIAL_AUTH_PROVIDERS)[number]
@@ -227,16 +226,7 @@ export function normalizeSocialUser(
 }
 
 export function resolvePostLoginRedirect(intendedUrl: unknown): string | null {
-  if (typeof intendedUrl !== 'string' || intendedUrl.length === 0) {
-    return null
-  }
-
-  const normalizedPath = intendedUrl.split(/[?#]/, 1)[0] ?? ''
-  if (normalizedPath === '/account/avatar/google') {
-    return null
-  }
-
-  return intendedUrl
+  return normalizePostAuthReturnPath(intendedUrl)
 }
 
 export default class AuthController {
@@ -295,43 +285,22 @@ export default class AuthController {
       socialAuthProviders: this.getSocialAuthOptions({
         flow: 'registration',
         accountType,
-        emailTermsAccepted: true,
       }),
       passwordAuthEnabled: passwordAuthEnabled(),
       accountType,
     }
   }
 
-  private consumePostLoginRedirect(session: HttpContext['session']) {
-    const intendedUrl = session.get('auth.intended_url')
-    session.forget('auth.intended_url')
-
-    return resolvePostLoginRedirect(intendedUrl)
+  public getSessionOnboardingToken(session: HttpContext['session']) {
+    return PostAuthRedirectService.getSessionOnboardingToken(session)
   }
 
-  private getSessionOnboardingToken(session: HttpContext['session']) {
-    const sessionToken = session.get(ONBOARDING_TOKEN_SESSION_KEY)
-    return isUuidV4(sessionToken) ? sessionToken : null
-  }
-
-  private async associateOnboardingDraftForUser(
+  public async associateOnboardingDraftForUser(
     token: string,
     userUuid: string,
     session: HttpContext['session']
   ) {
-    try {
-      await OnboardingDraftService.associateDraftToUser(token, userUuid)
-      session.forget(ONBOARDING_TOKEN_SESSION_KEY)
-      return true
-    } catch (error) {
-      session.forget(ONBOARDING_TOKEN_SESSION_KEY)
-
-      if (!(error instanceof OnboardingDraftError && error.statusCode === 404)) {
-        logger.warn(error, 'Failed to associate onboarding draft during registration')
-      }
-
-      return false
-    }
+    return PostAuthRedirectService.associateOnboardingDraftForUser(token, userUuid, session)
   }
 
   private async resolveAuthenticatedUserRedirect(
@@ -339,32 +308,7 @@ export default class AuthController {
     session: HttpContext['session'],
     returnPath?: string | null
   ) {
-    const role = await UserRoleService.getCanonicalName(user)
-
-    if (role === 'VENDOR') {
-      session.forget(ONBOARDING_TOKEN_SESSION_KEY)
-      session.forget('auth.intended_url')
-      return user.vendorApprovalStatus === 'APPROVED' ? '/vendor/listing' : '/vendor/pending'
-    }
-
-    if (role === 'CONSUMER') {
-      const onboardingToken = this.getSessionOnboardingToken(session)
-      if (
-        onboardingToken &&
-        (await this.associateOnboardingDraftForUser(onboardingToken, user.uuid, session))
-      ) {
-        return '/onboarding/project'
-      }
-    } else {
-      session.forget(ONBOARDING_TOKEN_SESSION_KEY)
-    }
-
-    const intendedUrl = this.consumePostLoginRedirect(session)
-    if (intendedUrl) {
-      return intendedUrl
-    }
-
-    return returnPath || '/dashboard'
+    return PostAuthRedirectService.resolve(user, session, returnPath)
   }
 
   /**
@@ -393,6 +337,12 @@ export default class AuthController {
       const user = await User.verifyCredentials(email, password)
       await auth.use('web').login(user)
       session.put('auth.login_method', 'password')
+
+      await UserConsentService.ensurePreference(user.uuid, user.uuid)
+      if (!(await UserConsentService.hasCurrentRequiredConsent(user.uuid))) {
+        session.flash('success', 'Welcome back!')
+        return response.redirect('/onboarding/consent')
+      }
 
       session.flash('success', 'Welcome back!')
       return response.redirect(await this.resolveAuthenticatedUserRedirect(user, session))
@@ -460,23 +410,12 @@ export default class AuthController {
 
       await auth.use('web').login(user)
       session.put('auth.login_method', 'password')
+      if (accountType === 'consumer' && data.onboardingToken) {
+        session.put(ONBOARDING_TOKEN_SESSION_KEY, data.onboardingToken)
+      }
       session.flash('success', 'Welcome!')
-
-      if (accountType === 'vendor') {
-        session.forget(ONBOARDING_TOKEN_SESSION_KEY)
-        session.forget('auth.intended_url')
-        return response.redirect('/vendor/pending')
-      }
-
-      const onboardingToken = data.onboardingToken ?? this.getSessionOnboardingToken(session)
-      if (
-        onboardingToken &&
-        (await this.associateOnboardingDraftForUser(onboardingToken, user.uuid, session))
-      ) {
-        return response.redirect('/onboarding/project')
-      }
-
-      return response.redirect().toRoute('dashboard')
+      await UserConsentService.ensurePreference(user.uuid, user.uuid)
+      return response.redirect('/onboarding/consent')
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
         return inertia.render('auth/register', {
@@ -501,7 +440,10 @@ export default class AuthController {
    */
   async logout({ auth, response, session }: HttpContext) {
     await auth.use('web').logout()
-    session.forget('auth.login_method')
+    // A consent-restricted session can contain user-specific redirect and onboarding state.
+    // Clear and rotate it so a later account cannot inherit or consume that state.
+    session.clear()
+    session.regenerate()
     session.flash('success', 'You have been logged out')
     return response.redirect().toRoute('landing')
   }
@@ -608,16 +550,17 @@ export default class AuthController {
         return response.redirect().toRoute(failureRoute)
       }
 
-      const { user, connection, replacedConnectionIds } = await completeEmailAuthorization({
-        profile: socialProfile,
-        tokens: socialTokens,
-        flow: emailAuthState.flow,
-        accountType: emailAuthState.accountType,
-        termsAccepted: emailAuthState.termsAccepted,
-        termsVersion: emailAuthState.termsVersion,
-        ipAddress: request.ip(),
-        userAgent: request.header('user-agent') ?? null,
-      })
+      const { user, connection, createdUser, replacedConnectionIds } =
+        await completeEmailAuthorization({
+          profile: socialProfile,
+          tokens: socialTokens,
+          flow: emailAuthState.flow,
+          accountType: emailAuthState.accountType,
+          termsAccepted: emailAuthState.termsAccepted,
+          termsVersion: emailAuthState.termsVersion,
+          ipAddress: request.ip(),
+          userAgent: request.header('user-agent') ?? null,
+        })
 
       for (const connectionId of replacedConnectionIds) {
         const replacedConnection = await UserInboxConnection.find(connectionId)
@@ -635,6 +578,13 @@ export default class AuthController {
       await auth.use('web').login(user)
       session.put('auth.login_method', provider)
       session.flash('success', 'Welcome!')
+
+      await UserConsentService.ensurePreference(user.uuid, user.uuid)
+      if (createdUser || !(await UserConsentService.hasCurrentRequiredConsent(user.uuid))) {
+        PostAuthRedirectService.rememberReturnPath(session, emailAuthState.returnPath)
+        return response.redirect('/onboarding/consent')
+      }
+
       return response.redirect(
         await this.resolveAuthenticatedUserRedirect(user, session, emailAuthState.returnPath)
       )

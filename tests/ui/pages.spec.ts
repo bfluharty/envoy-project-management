@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { login, goToProject } from './helpers.js'
 
 const AVATAR_PNG = Buffer.from(
@@ -6,12 +6,23 @@ const AVATAR_PNG = Buffer.from(
   'base64'
 )
 
+function isRedirect(status: number) {
+  return status === 302 || status === 303
+}
+
+async function resetUploadedAvatar(page: Page) {
+  const response = await page.request.delete('/account/avatar', { maxRedirects: 0 })
+  if (!response.ok() && !isRedirect(response.status())) {
+    throw new Error(`Avatar cleanup failed with status ${response.status()}`)
+  }
+}
+
 test('landing page', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('h1')).toContainText('Plan any project')
   await expect(page.getByLabel('What are you planning?')).toBeVisible()
   await expect(page.getByLabel(/ZIP or postal code/i)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Find vendors' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Search' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Sign In' })).toBeVisible()
 })
 
@@ -65,10 +76,16 @@ test('account page', async ({ page }) => {
   await expect(page.getByLabel('Current password')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Update Password' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Email me a password setup link' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Data & Privacy', exact: true })).toBeVisible()
+  await expect(page.locator('#modelTrainingOptIn')).not.toBeChecked()
+  await expect(page.getByRole('button', { name: 'Save preference' })).toBeDisabled()
   await expect(
     page.getByRole('heading', { name: 'Connected Email Accounts', exact: true })
   ).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Connect Gmail' })).toBeVisible()
+  await expect(page.getByRole('link', { name: /Gmail/ })).toHaveAttribute(
+    'href',
+    '/inbox/connect?provider=gmail'
+  )
   await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible()
 })
 
@@ -76,50 +93,56 @@ test('uploaded avatar is used on account and chat, then falls back after removal
   page,
 }) => {
   await login(page)
-  await page.goto('/account')
+  await resetUploadedAvatar(page)
 
-  const accountAvatar = page.getByTestId('account-avatar')
-  await expect(accountAvatar).toHaveAttribute('data-avatar-source', 'generated')
-  await expect(accountAvatar).toContainText('AE')
+  try {
+    await page.goto('/account')
 
-  await page.getByLabel('Upload profile image').setInputFiles({
-    name: 'avatar.png',
-    mimeType: 'image/png',
-    buffer: AVATAR_PNG,
-  })
+    const accountAvatar = page.getByTestId('account-avatar')
+    await expect(accountAvatar).toHaveAttribute('data-avatar-source', 'generated')
+    await expect(accountAvatar).toContainText('AE')
 
-  await expect(accountAvatar).toHaveAttribute('data-avatar-source', 'upload')
-  const uploadedAccountAvatarSrc = await accountAvatar.locator('img').getAttribute('src')
-  expect(uploadedAccountAvatarSrc).toBeTruthy()
-
-  await page.route('**/projects/*/chat', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'text/plain',
-      body: 'Thanks, I can help with that.',
+    await page.getByLabel('Upload profile image').setInputFiles({
+      name: 'avatar.png',
+      mimeType: 'image/png',
+      buffer: AVATAR_PNG,
     })
-  })
 
-  await goToProject(page)
-  await page.getByPlaceholder('Type your message...').fill('Avatar check')
-  await page.getByRole('button', { name: 'Send' }).click()
+    await expect(accountAvatar).toHaveAttribute('data-avatar-source', 'upload')
+    const uploadedAccountAvatarSrc = await accountAvatar.locator('img').getAttribute('src')
+    expect(uploadedAccountAvatarSrc).toBeTruthy()
 
-  const chatAvatar = page.getByTestId('chat-user-avatar').last()
-  await expect(chatAvatar).toHaveAttribute('data-avatar-source', 'upload')
-  await expect(chatAvatar.locator('img')).toBeVisible()
-  await expect(chatAvatar.locator('img')).toHaveAttribute('src', uploadedAccountAvatarSrc!)
+    await page.route('**/projects/*/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/plain',
+        body: 'Thanks, I can help with that.',
+      })
+    })
 
-  await page.goto('/account')
-  await page.getByRole('button', { name: 'Remove uploaded photo' }).click()
+    await goToProject(page)
+    await page.getByPlaceholder('Type your message...').fill('Avatar check')
+    await page.getByRole('button', { name: 'Send' }).click()
 
-  await expect(accountAvatar).toHaveAttribute('data-avatar-source', 'generated')
-  await expect(accountAvatar).toContainText('AE')
+    const chatAvatar = page.getByTestId('chat-user-avatar').last()
+    await expect(chatAvatar).toHaveAttribute('data-avatar-source', 'upload')
+    await expect(chatAvatar.locator('img')).toBeVisible()
+    await expect(chatAvatar.locator('img')).toHaveAttribute('src', uploadedAccountAvatarSrc!)
 
-  await goToProject(page)
-  await page.getByPlaceholder('Type your message...').fill('Avatar fallback check')
-  await page.getByRole('button', { name: 'Send' }).click()
+    await page.goto('/account')
+    await page.getByRole('button', { name: 'Remove uploaded photo' }).click()
 
-  const fallbackChatAvatar = page.getByTestId('chat-user-avatar').last()
-  await expect(fallbackChatAvatar).toHaveAttribute('data-avatar-source', 'generated')
-  await expect(fallbackChatAvatar).toContainText('AE')
+    await expect(accountAvatar).toHaveAttribute('data-avatar-source', 'generated')
+    await expect(accountAvatar).toContainText('AE')
+
+    await goToProject(page)
+    await page.getByPlaceholder('Type your message...').fill('Avatar fallback check')
+    await page.getByRole('button', { name: 'Send' }).click()
+
+    const fallbackChatAvatar = page.getByTestId('chat-user-avatar').last()
+    await expect(fallbackChatAvatar).toHaveAttribute('data-avatar-source', 'generated')
+    await expect(fallbackChatAvatar).toContainText('AE')
+  } finally {
+    await resetUploadedAvatar(page)
+  }
 })

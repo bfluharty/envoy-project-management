@@ -102,12 +102,12 @@ export default class VendorsAPIController {
     const { uuid: vendorListingUuid } = await requestParamsValidator.validate(request.params())
     const listing = await VendorService.resolveCanonicalListing(vendorListingUuid)
     if (!listing?.isActive) {
-      return response.status(404).json({ error: 'Vendor listing is unavailable' })
+      return response.status(404).json({ error: 'Listing is unavailable' })
     }
 
     const mapping = await VendorService.ensureUserVendorMapping(userId, listing.uuid)
     if (!mapping) {
-      return response.status(404).json({ error: 'Vendor listing is unavailable' })
+      return response.status(404).json({ error: 'Listing is unavailable' })
     }
 
     return response.status(200).json({
@@ -142,7 +142,7 @@ export default class VendorsAPIController {
       logger.error(error)
       return response
         .status(500)
-        .json({ error: 'Failed to fetch vendors', developerText: error.message })
+        .json({ error: 'Failed to fetch contacts', developerText: error.message })
     }
   }
 
@@ -161,15 +161,15 @@ export default class VendorsAPIController {
     try {
       const vendor = await VendorService.getUserVendorByUuid(userId, vendorUuid)
       if (!vendor) {
-        return response.status(404).json({ error: 'Vendor not found' })
+        return response.status(404).json({ error: 'Contact not found' })
       }
       return response.status(200).json({ vendor })
     } catch (error) {
-      logger.error('Error fetching vendor:')
+      logger.error('Error fetching contact:')
       logger.error(error)
       return response
         .status(500)
-        .json({ error: 'Failed to fetch vendor', developerText: error.message })
+        .json({ error: 'Failed to fetch contact', developerText: error.message })
     }
   }
 
@@ -184,7 +184,7 @@ export default class VendorsAPIController {
     // Validate request
     const validatedRequest = await request.validateUsing(createVendorValidator)
     if (validatedRequest.isActive === false) {
-      return response.status(400).json({ error: 'Vendors cannot be deleted during creation' })
+      return response.status(400).json({ error: 'Contacts cannot be deleted during creation' })
     }
 
     // Save vendor
@@ -193,11 +193,11 @@ export default class VendorsAPIController {
 
       return response.status(201).json(vendor)
     } catch (error) {
-      logger.error('Error creating vendor:')
+      logger.error('Error creating contact:')
       logger.error(error)
       return response
         .status(500)
-        .json({ error: 'Failed to create vendor', developerText: error.message })
+        .json({ error: 'Failed to create contact', developerText: error.message })
     }
   }
 
@@ -222,7 +222,7 @@ export default class VendorsAPIController {
         isOnlyActivatingRecord(validatedRequest)
       )
       if (!vendor) {
-        return response.status(404).json({ error: 'Vendor not found' })
+        return response.status(404).json({ error: 'Contact not found' })
       }
 
       return response.status(201).json(vendor)
@@ -230,11 +230,11 @@ export default class VendorsAPIController {
       if (error instanceof VendorAuthorizationError) {
         return response.status(error.statusCode).json({ error: error.message })
       }
-      logger.error('Error updating vendor:')
+      logger.error('Error updating contact:')
       logger.error(error)
       return response
         .status(500)
-        .json({ error: 'Failed to update vendor', developerText: error.message })
+        .json({ error: 'Failed to update contact', developerText: error.message })
     }
   }
 }

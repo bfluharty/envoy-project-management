@@ -124,7 +124,7 @@ test.group('OnboardingDraftService', (group) => {
           Array.from({ length: 9 }, () => uuidv4())
         ),
       (error: unknown) =>
-        error instanceof OnboardingDraftError && error.message === 'Select between 1 and 8 vendors'
+        error instanceof OnboardingDraftError && error.message === 'Select up to 8 vendors'
     )
 
     const updated = await OnboardingDraftService.updateSelection(tokenUuid, [

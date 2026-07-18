@@ -93,18 +93,23 @@ export default class OnboardingProjectController {
     }
 
     const body = parseDateFields(request)
-    const projectRequest = await completeOnboardingProjectValidator.validate(body)
+    const { selectedVendorListingUuids, vendorEmailUpdates, ...projectRequest } =
+      await completeOnboardingProjectValidator.validate(body)
 
     try {
       const result = await OnboardingProjectCompletionService.completeProject(
         user.uuid,
-        projectRequest as ProjectRequest
+        projectRequest as ProjectRequest,
+        {
+          selectedVendorListingUuids,
+          vendorEmailUpdates,
+        }
       )
 
       if (result.status === 'EXPIRED') {
         session.flash(
           'error',
-          'Your onboarding draft expired. Start a new project or run a fresh vendor search.'
+          'Your onboarding draft expired. Start a new project or run a fresh search.'
         )
         return response.redirect('/onboarding/project')
       }

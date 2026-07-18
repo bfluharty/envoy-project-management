@@ -161,7 +161,7 @@ function normalizeEmailForMatching(email: string): string {
 function getVendorEmailOrFail(projectVendor: ProjectVendor): string {
   const email = projectVendor.vendor.vendorListing.email?.trim()
   if (!email) {
-    throw new Error('Vendor email is required before outreach can be sent')
+    throw new Error('Contact email is required before outreach can be sent')
   }
 
   return email
@@ -1039,7 +1039,7 @@ function buildVendorPromptData(projectVendor: ProjectVendor) {
 }
 
 function formatThreadMessageForTranscript(message: Message): string {
-  const author = message.direction === 'inbound' ? 'Vendor' : 'Envoy'
+  const author = message.direction === 'inbound' ? 'Contact' : 'Envoy'
   const subject = message.subject?.trim() || '(no subject)'
   const body = message.body?.trim() || '(no body)'
 

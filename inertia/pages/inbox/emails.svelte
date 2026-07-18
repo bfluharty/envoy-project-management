@@ -181,7 +181,7 @@
 </script>
 
 <svelte:head>
-  <title>Vendor emails - Inbox</title>
+  <title>Inbox</title>
 </svelte:head>
 
 <Sidebar>
@@ -190,10 +190,10 @@
       <div>
         <h1 class="text-3xl font-bold flex items-center gap-2">
           <InboxIcon class="size-8" />
-          Vendor emails
+          Inbox
         </h1>
         <p class="text-surface-600-400 mt-1">
-          Emails from vendors synced from your connected inbox. This page syncs automatically when
+          Emails from contacts synced from your connected inbox. This page syncs automatically when
           you open it.
         </p>
       </div>
@@ -221,7 +221,7 @@
           }}
         >
           <LayoutGridIcon class="size-4 inline mr-1" />
-          By vendor
+          By contact
         </button>
         <a href="/inbox/settings" class="btn preset-tonal btn-sm">Manage inbox</a>
       </div>
@@ -256,7 +256,7 @@
     {#if conversations.length === 0}
       <div class="card preset-outlined-surface-200-800 p-8 text-center text-surface-600-400">
         <MailIcon class="size-12 mx-auto mb-3 opacity-50" />
-        <p>No vendor emails yet.</p>
+        <p>No emails yet.</p>
         {#if !hasConnections}
           <p class="text-sm mt-1">
             Connect an inbox in <a href="/inbox/settings" class="link">Settings</a> first. When
@@ -264,7 +264,7 @@
           </p>
         {:else}
           <p class="text-sm mt-1">
-            We synced from the email service; only emails from senders that match a vendor in your
+            We synced from the email service; only emails from senders that match a contact in your
             project are shown.
           </p>
         {/if}
@@ -280,7 +280,7 @@
                 <th
                   class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-surface-600-400"
                 >
-                  Vendor
+                  Contact
                 </th>
                 <th
                   class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-surface-600-400"

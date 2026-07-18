@@ -1,6 +1,8 @@
 import { test } from '@japa/runner'
 import { strict as assert } from 'node:assert'
 import axios from 'axios'
+import ProjectVendor from '#models/project_vendor'
+import ProjectPromptService from '#services/project_prompt_service'
 import ProjectService from '#services/project_service'
 import ReasoningEngineService from '#services/reasoning_engine_service'
 import type { ReasoningAgentResponse, ReasoningRequest } from '../../types/request.js'
@@ -97,6 +99,35 @@ test.group('ReasoningEngineService', (group) => {
     }) as typeof ProjectService.saveConversationTurn
   }
 
+  function stubSavePromptData(calls: unknown[]) {
+    const original = ProjectPromptService.savePromptData
+    restores.push(() => {
+      ProjectPromptService.savePromptData = original
+    })
+
+    ProjectPromptService.savePromptData = (async (payload: unknown) => {
+      calls.push(payload)
+      return {} as any
+    }) as typeof ProjectPromptService.savePromptData
+  }
+
+  function stubActiveProjectVendors(hasProjectVendors: boolean) {
+    const original = ProjectVendor.query
+    restores.push(() => {
+      ProjectVendor.query = original
+    })
+
+    ProjectVendor.query = (() =>
+      ({
+        where() {
+          return this
+        },
+        async first() {
+          return hasProjectVendors ? { uuid: 'project-vendor-1' } : null
+        },
+      }) as unknown) as typeof ProjectVendor.query
+  }
+
   test('requestAgent posts deterministic requests to the reasoning chat endpoint', async () => {
     const calls: Array<{ url: string; payload: unknown }> = []
     const reasoningRequest: ReasoningRequest = {
@@ -176,7 +207,7 @@ test.group('ReasoningEngineService', (group) => {
 
     await assert.rejects(
       () => ReasoningEngineService.requestVendorDiscovery({ projectDescription: 'Renovate.' }),
-      /Reasoning engine vendor discovery error/
+      /Reasoning engine discovery error/
     )
   })
 
@@ -286,6 +317,68 @@ test.group('ReasoningEngineService', (group) => {
 
     assert.equal(responsePayload.statusCode, 200)
     assert.equal(responsePayload.body, 'Anything else to include?')
+    assert.deepEqual(saveCalls, [
+      {
+        conversationUuid: 'conversation-1',
+        turn: agentResponse.turn,
+      },
+    ])
+  })
+
+  test('ready planning response asks the user to attach vendors before drafting when none are attached', async () => {
+    const responsePayload: ResponsePayload = {}
+    const saveCalls: unknown[] = []
+    const promptDataCalls: unknown[] = []
+    const outreachPromptData = {
+      outreachAgent: {
+        title: 'Outreach',
+      },
+    }
+    const agentResponse = makePlanningResponse({
+      planningStatus: 'READY_FOR_OUTREACH',
+      readyForNextStep: true,
+      message: 'Ready to prepare outreach.',
+      data: outreachPromptData,
+      turn: {
+        agentId: 'PLANNING',
+        planningStatus: 'READY_FOR_OUTREACH',
+        userPrompt: 'We have enough information.',
+        modelResponse: 'Ready to prepare outreach.',
+        timestamp: '2026-07-05T12:00:00.000Z',
+      },
+    })
+    stubRequestAgent(agentResponse)
+    stubSaveConversationTurn(saveCalls)
+    stubSavePromptData(promptDataCalls)
+    stubActiveProjectVendors(false)
+
+    await ReasoningEngineService.handleReasoningChat(
+      {
+        agentId: 'PLANNING',
+        planningStatus: 'AWAITING_FINAL_DETAILS',
+        promptData: { prompt: 'We have enough information.' },
+      },
+      {
+        uuid: 'project-1',
+        userUuid: 'user-1',
+        conversations: [{ uuid: 'conversation-1' }],
+      } as any,
+      makeResponse(responsePayload) as any
+    )
+
+    assert.equal(responsePayload.statusCode, 200)
+    assert.equal(
+      responsePayload.body,
+      'I have the project details needed for outreach, but there are no vendors attached to this project yet. Add vendors to the project before Envoy can prepare outreach drafts.'
+    )
+    assert.deepEqual(promptDataCalls, [
+      {
+        projectUuid: 'project-1',
+        agentType: 'OUTREACH',
+        data: outreachPromptData,
+        userUuid: 'user-1',
+      },
+    ])
     assert.deepEqual(saveCalls, [
       {
         conversationUuid: 'conversation-1',

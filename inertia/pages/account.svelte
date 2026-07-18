@@ -3,6 +3,7 @@
   import ThemeToggle from '#components/theme_toggle.svelte'
   import UserAvatar, { type AvatarData } from '#components/user_avatar.svelte'
   import { router, page } from '@inertiajs/svelte'
+  import { untrack } from 'svelte'
   import {
     AlertTriangleIcon,
     CheckCircleIcon,
@@ -11,6 +12,7 @@
     MonitorCogIcon,
     PlugZapIcon,
     RefreshCwIcon,
+    ShieldCheckIcon,
     Trash2Icon,
     UploadIcon,
   } from '@lucide/svelte'
@@ -44,7 +46,23 @@
     canSendPasswordSetupEmail: boolean
   }
 
-  const { account, connections = [] }: { account: Account; connections: Connection[] } = $props()
+  interface DataPrivacy {
+    modelTrainingOptIn: boolean
+    modelTrainingPreferenceUpdatedAt: string | null
+  }
+
+  const {
+    account,
+    connections = [],
+    dataPrivacy = {
+      modelTrainingOptIn: false,
+      modelTrainingPreferenceUpdatedAt: null,
+    },
+  }: {
+    account: Account
+    connections: Connection[]
+    dataPrivacy?: DataPrivacy
+  } = $props()
   const flash = $derived($page.props.flash || {})
   const pageErrors = $derived(($page.props.errors || {}) as Record<string, string[]>)
   const primaryConnection = $derived(connections.find((connection) => connection.isPrimary) ?? null)
@@ -62,9 +80,19 @@
   let passwordSetupProcessing = $state(false)
   let avatarProcessing = $state(false)
   let avatarRemovalProcessing = $state(false)
+  const initialDataPrivacy = untrack(() => dataPrivacy)
+  let modelTrainingOptIn = $state(initialDataPrivacy.modelTrainingOptIn)
+  let savedModelTrainingOptIn = $state(initialDataPrivacy.modelTrainingOptIn)
+  let modelTrainingPreferenceUpdatedAt = $state(
+    initialDataPrivacy.modelTrainingPreferenceUpdatedAt
+  )
+  let dataPrivacyProcessing = $state(false)
+  let dataPrivacyError = $state('')
+  let dataPrivacySuccess = $state('')
+  const dataPrivacyChanged = $derived(modelTrainingOptIn !== savedModelTrainingOptIn)
 
   function disconnect(id: number) {
-    if (!confirm('Disconnect this inbox? Envoy will stop listening for vendor emails from it.')) return
+    if (!confirm('Disconnect this inbox? Envoy will stop listening for emails from it.')) return
     router.post('/inbox/disconnect', { id }, { preserveScroll: true })
   }
 
@@ -208,6 +236,45 @@
     })
   }
 
+  function saveDataPrivacy(event: SubmitEvent) {
+    event.preventDefault()
+    if (dataPrivacyProcessing || !dataPrivacyChanged) return
+
+    dataPrivacyProcessing = true
+    dataPrivacyError = ''
+    dataPrivacySuccess = ''
+
+    router.patch(
+      '/account/data-preferences',
+      { modelTrainingOptIn },
+      {
+        preserveScroll: true,
+        onSuccess: (responsePage) => {
+          const persistedPreference = responsePage.props.dataPrivacy as DataPrivacy | undefined
+          const persistedOptIn = persistedPreference?.modelTrainingOptIn ?? modelTrainingOptIn
+
+          modelTrainingOptIn = persistedOptIn
+          savedModelTrainingOptIn = persistedOptIn
+          modelTrainingPreferenceUpdatedAt =
+            persistedPreference?.modelTrainingPreferenceUpdatedAt ??
+            modelTrainingPreferenceUpdatedAt
+          dataPrivacySuccess = persistedOptIn
+            ? 'Model-training participation is now enabled.'
+            : 'Model-training participation is now disabled.'
+        },
+        onError: (errors) => {
+          const preferenceError = errors.modelTrainingOptIn
+          dataPrivacyError = Array.isArray(preferenceError)
+            ? preferenceError[0]
+            : preferenceError || 'We could not save your preference. Please try again.'
+        },
+        onFinish: () => {
+          dataPrivacyProcessing = false
+        },
+      }
+    )
+  }
+
 </script>
 
 <svelte:head>
@@ -273,7 +340,7 @@
           <div>
             <p class="font-medium">Connect an inbox to send outreach</p>
             <p class="mt-1 text-sm text-surface-700-300">
-              Envoy needs one active primary inbox for vendor email sync and approved sends.
+              Envoy needs one active primary inbox for email sync and approved sends.
             </p>
           </div>
         </div>
@@ -289,7 +356,7 @@
     {/if}
 
     <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-      <div class="space-y-6">
+      <div class="flex h-full min-h-0 flex-col gap-6">
         <div class="card preset-outlined-surface-200-800 p-6 space-y-4">
           <div class="flex items-center gap-4">
             <UserAvatar avatar={account.avatar} size="xl" testId="account-avatar" />
@@ -341,6 +408,135 @@
             </p>
           </div>
         </div>
+
+        <section
+          id="email-accounts"
+          class="card preset-outlined-surface-200-800 flex flex-1 flex-col space-y-4 p-6"
+        >
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h2 class="text-xl font-semibold">Connected Email Accounts</h2>
+              <p class="text-sm text-surface-600-400 mt-1">
+                Envoy requires one active connected inbox for email outreach and reply sync.
+              </p>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <a href={connectUrl('gmail')} class="btn preset-filled-primary-500">
+                {connections.length ? 'Replace with Gmail' : 'Connect Gmail'}
+              </a>
+              <a href={connectUrl('microsoft')} class="btn preset-tonal">
+                {connections.length ? 'Replace with Microsoft' : 'Connect Microsoft'}
+              </a>
+            </div>
+          </div>
+
+          {#if activePrimaryConnection}
+            <div
+              class="rounded-xl border border-success-500/20 bg-success-500/10 p-4 text-sm"
+            >
+              <div class="flex items-start gap-3">
+                <CheckCircleIcon class="mt-0.5 size-5 shrink-0 text-success-600-400" />
+                <div class="min-w-0">
+                  <p class="font-medium">
+                    Primary inbox: {providerLabel(activePrimaryConnection.provider)}
+                  </p>
+                  <p class="mt-1 break-all text-surface-700-300">
+                    {activePrimaryConnection.email}
+                  </p>
+                </div>
+              </div>
+            </div>
+          {:else if primaryConnection}
+            <div
+              class="rounded-xl border border-warning-500/30 bg-warning-500/10 p-4 text-sm"
+            >
+              <div class="flex items-start gap-3">
+                <AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-warning-600-400" />
+                <div class="min-w-0">
+                  <p class="font-medium">Primary inbox needs attention</p>
+                  <p class="mt-1 break-all text-surface-700-300">{primaryConnection.email}</p>
+                </div>
+              </div>
+            </div>
+          {/if}
+
+          {#if connections.length === 0}
+            <div class="rounded-xl border border-dashed border-surface-200-800 p-5 text-sm text-surface-600-400">
+              No inbox connected yet. Connect Gmail or Microsoft to send project outreach from your
+              own address and sync emails back into Outreach.
+            </div>
+          {:else}
+            <ul class="space-y-3">
+              {#each connections as connection (connection.id)}
+                <li class="rounded-xl border border-surface-200-800 bg-surface-100-900/40 p-4">
+                  <div class="flex items-center justify-between gap-4 flex-wrap">
+                    <div>
+                      <div class="flex flex-wrap items-center gap-2">
+                        <p class="font-medium">{providerLabel(connection.provider)}</p>
+                        {#if connection.isPrimary}
+                          <span class="badge preset-tonal-primary-500 text-xs">Primary</span>
+                        {/if}
+                        <span
+                          class="badge text-xs"
+                          class:preset-tonal-success={connection.status === 'active'}
+                          class:preset-tonal-warning={connection.status === 'reauth_required'}
+                          class:preset-tonal-error={connection.status === 'disconnected'}
+                        >
+                          {statusLabel(connection.status)}
+                        </span>
+                      </div>
+                      <p class="text-sm text-surface-600-400">{connection.email}</p>
+                      <p class="text-xs text-surface-600-400 mt-1">
+                        Connected {formatConnectedAt(connection.createdAt)}
+                      </p>
+                      {#if connection.reauthReason}
+                        <p class="text-xs text-warning-600-400 mt-1">{connection.reauthReason}</p>
+                      {/if}
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                      {#if connection.status === 'reauth_required'}
+                        <a
+                          href={connectUrl(connection.provider)}
+                          class="btn preset-filled-primary-500 btn-sm"
+                        >
+                          <RefreshCwIcon class="size-4" />
+                          <span>Reconnect</span>
+                        </a>
+                      {/if}
+                      <button
+                        type="button"
+                        class="btn preset-tonal-error btn-sm"
+                        onclick={() => disconnect(connection.id)}
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 grid gap-3 text-xs text-surface-600-400 sm:grid-cols-2">
+                    <div>
+                      <p class="font-medium text-surface-700-300">Provider watch</p>
+                      <p>{watchStatusLabel(connection.watchStatus)}</p>
+                      <p>Expires: {formatDateTime(watchExpiresAt(connection))}</p>
+                    </div>
+                    <div>
+                      <p class="font-medium text-surface-700-300">Last sync</p>
+                      <p>{formatDateTime(connection.lastSyncAt)}</p>
+                      {#if connection.lastSyncError}
+                        <p class="mt-1 break-words text-error-500">{connection.lastSyncError}</p>
+                      {/if}
+                      {#if connection.reauthRequiredAt}
+                        <p class="mt-1">
+                          Reauth requested: {formatDateTime(connection.reauthRequiredAt)}
+                        </p>
+                      {/if}
+                    </div>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </section>
 
         {#if account.passwordAuthEnabled}
           <section class="card preset-outlined-surface-200-800 p-6 space-y-4">
@@ -473,131 +669,110 @@
           </div>
         </section>
 
-        <section id="email-accounts" class="card preset-outlined-surface-200-800 p-6 space-y-4">
-          <div class="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <h2 class="text-xl font-semibold">Connected Email Accounts</h2>
-              <p class="text-sm text-surface-600-400 mt-1">
-                Envoy requires one active connected inbox for vendor outreach and reply sync.
-              </p>
+        <section class="card preset-outlined-surface-200-800 space-y-5 p-6">
+          <div class="flex items-start gap-4">
+            <div
+              class="flex size-12 shrink-0 items-center justify-center rounded-full bg-surface-200-800/70 text-surface-700-300"
+            >
+              <ShieldCheckIcon class="size-6" />
             </div>
-            <div class="flex gap-2 flex-wrap">
-              <a href={connectUrl('gmail')} class="btn preset-filled-primary-500">
-                {connections.length ? 'Replace with Gmail' : 'Connect Gmail'}
-              </a>
-              <a href={connectUrl('microsoft')} class="btn preset-tonal">
-                {connections.length ? 'Replace with Microsoft' : 'Connect Microsoft'}
-              </a>
+            <div class="space-y-1">
+              <h2 class="text-xl font-semibold">Data &amp; Privacy</h2>
+              <p class="text-sm text-surface-600-400">
+                Control whether eligible Envoy content may help improve Envoy models.
+              </p>
             </div>
           </div>
 
-          {#if activePrimaryConnection}
-            <div
-              class="rounded-xl border border-success-500/20 bg-success-500/10 p-4 text-sm"
-            >
-              <div class="flex items-start gap-3">
-                <CheckCircleIcon class="mt-0.5 size-5 shrink-0 text-success-600-400" />
-                <div class="min-w-0">
-                  <p class="font-medium">
-                    Primary inbox: {providerLabel(activePrimaryConnection.provider)}
-                  </p>
-                  <p class="mt-1 break-all text-surface-700-300">
-                    {activePrimaryConnection.email}
-                  </p>
-                </div>
+          <form class="space-y-4" onsubmit={saveDataPrivacy}>
+            <div class="rounded-xl border border-surface-200-800 bg-surface-100-900/40 p-4">
+              <label class="flex cursor-pointer items-start gap-3" for="modelTrainingOptIn">
+                <input
+                  id="modelTrainingOptIn"
+                  name="modelTrainingOptIn"
+                  type="checkbox"
+                  class="checkbox mt-1 shrink-0"
+                  bind:checked={modelTrainingOptIn}
+                  disabled={dataPrivacyProcessing}
+                  aria-describedby="model-training-account-details"
+                />
+                <span class="font-medium leading-6">
+                  Allow Envoy to use my eligible Envoy content to improve Envoy models.
+                </span>
+              </label>
+              <p
+                id="model-training-account-details"
+                class="mt-3 text-sm leading-6 text-surface-600-400"
+              >
+                When enabled, eligible content from both before and after you opt in may be used.
+                Connected email data, credentials, payment data, and direct identifiers are
+                excluded. Turning this off stops your data from being added to new training runs
+                but may not reverse training that has already completed.
+              </p>
+            </div>
+
+            <div class="grid gap-3 text-sm sm:grid-cols-2">
+              <div class="rounded-lg border border-surface-200-800 p-3">
+                <p class="font-medium text-surface-950-50">Eligible when enabled</p>
+                <p class="mt-1 text-surface-600-400">
+                  Envoy-native project inputs, prompts, generated outputs, corrections, ratings,
+                  feedback, and de-identified product signals.
+                </p>
+              </div>
+              <div class="rounded-lg border border-surface-200-800 p-3">
+                <p class="font-medium text-surface-950-50">Always excluded</p>
+                <p class="mt-1 text-surface-600-400">
+                  Connected mailbox data, credentials, payment data, direct identifiers, and
+                  private third-party communications.
+                </p>
               </div>
             </div>
-          {:else if primaryConnection}
-            <div
-              class="rounded-xl border border-warning-500/30 bg-warning-500/10 p-4 text-sm"
+
+            {#if modelTrainingPreferenceUpdatedAt}
+              <p class="text-xs text-surface-600-400">
+                Last changed {formatDateTime(modelTrainingPreferenceUpdatedAt)}
+              </p>
+            {/if}
+
+            <p class="text-sm text-surface-600-400">
+              Learn more in Envoy's
+              <a
+                href="/terms"
+                class="rounded text-primary-500 underline underline-offset-2 hover:text-primary-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500"
+              >Terms of Service</a>
+              and
+              <a
+                href="/privacy"
+                class="rounded text-primary-500 underline underline-offset-2 hover:text-primary-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500"
+              >Privacy Policy</a>.
+            </p>
+
+            {#if dataPrivacyError}
+              <p class="rounded-lg border border-error-500/30 bg-error-500/10 p-3 text-sm" role="alert">
+                {dataPrivacyError}
+              </p>
+            {/if}
+
+            <p class="sr-only" role="status" aria-live="polite">{dataPrivacySuccess}</p>
+            {#if dataPrivacySuccess}
+              <p
+                class="rounded-lg border border-success-500/20 bg-success-500/10 p-3 text-sm"
+                aria-hidden="true"
+              >
+                {dataPrivacySuccess}
+              </p>
+            {/if}
+
+            <button
+              type="submit"
+              class="btn preset-filled-primary-500 w-fit"
+              disabled={dataPrivacyProcessing || !dataPrivacyChanged}
             >
-              <div class="flex items-start gap-3">
-                <AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-warning-600-400" />
-                <div class="min-w-0">
-                  <p class="font-medium">Primary inbox needs attention</p>
-                  <p class="mt-1 break-all text-surface-700-300">{primaryConnection.email}</p>
-                </div>
-              </div>
-            </div>
-          {/if}
-
-          {#if connections.length === 0}
-            <div class="rounded-xl border border-dashed border-surface-200-800 p-5 text-sm text-surface-600-400">
-              No inbox connected yet. Connect Gmail or Microsoft to send project outreach from your
-              own address and sync vendor replies back into Outreach.
-            </div>
-          {:else}
-            <ul class="space-y-3">
-              {#each connections as connection (connection.id)}
-                <li class="rounded-xl border border-surface-200-800 bg-surface-100-900/40 p-4">
-                  <div class="flex items-center justify-between gap-4 flex-wrap">
-                    <div>
-                      <div class="flex flex-wrap items-center gap-2">
-                        <p class="font-medium">{providerLabel(connection.provider)}</p>
-                        {#if connection.isPrimary}
-                          <span class="badge preset-tonal-primary-500 text-xs">Primary</span>
-                        {/if}
-                        <span
-                          class="badge text-xs"
-                          class:preset-tonal-success={connection.status === 'active'}
-                          class:preset-tonal-warning={connection.status === 'reauth_required'}
-                          class:preset-tonal-error={connection.status === 'disconnected'}
-                        >
-                          {statusLabel(connection.status)}
-                        </span>
-                      </div>
-                      <p class="text-sm text-surface-600-400">{connection.email}</p>
-                      <p class="text-xs text-surface-600-400 mt-1">
-                        Connected {formatConnectedAt(connection.createdAt)}
-                      </p>
-                      {#if connection.reauthReason}
-                        <p class="text-xs text-warning-600-400 mt-1">{connection.reauthReason}</p>
-                      {/if}
-                    </div>
-                    <div class="flex flex-wrap gap-2">
-                      {#if connection.status === 'reauth_required'}
-                        <a
-                          href={connectUrl(connection.provider)}
-                          class="btn preset-filled-primary-500 btn-sm"
-                        >
-                          <RefreshCwIcon class="size-4" />
-                          <span>Reconnect</span>
-                        </a>
-                      {/if}
-                      <button
-                        type="button"
-                        class="btn preset-tonal-error btn-sm"
-                        onclick={() => disconnect(connection.id)}
-                      >
-                        Disconnect
-                      </button>
-                    </div>
-                  </div>
-
-                  <div class="mt-4 grid gap-3 text-xs text-surface-600-400 sm:grid-cols-2">
-                    <div>
-                      <p class="font-medium text-surface-700-300">Provider watch</p>
-                      <p>{watchStatusLabel(connection.watchStatus)}</p>
-                      <p>Expires: {formatDateTime(watchExpiresAt(connection))}</p>
-                    </div>
-                    <div>
-                      <p class="font-medium text-surface-700-300">Last sync</p>
-                      <p>{formatDateTime(connection.lastSyncAt)}</p>
-                      {#if connection.lastSyncError}
-                        <p class="mt-1 break-words text-error-500">{connection.lastSyncError}</p>
-                      {/if}
-                      {#if connection.reauthRequiredAt}
-                        <p class="mt-1">
-                          Reauth requested: {formatDateTime(connection.reauthRequiredAt)}
-                        </p>
-                      {/if}
-                    </div>
-                  </div>
-                </li>
-              {/each}
-            </ul>
-          {/if}
+              {dataPrivacyProcessing ? 'Saving...' : 'Save preference'}
+            </button>
+          </form>
         </section>
+
       </div>
     </section>
   </div>

@@ -37,15 +37,15 @@
         <h1 class="text-3xl font-bold">{isRejected ? 'We need more information' : "You're on the list"}</h1>
         {#if isRejected}
           <p class="text-surface-600-400">
-            We could not approve{vendorName ? ` ${vendorName}` : ' your vendor account'} yet. Contact us so we can help verify your business.
+            We could not approve{vendorName ? ` ${vendorName}` : ' your pro account'} yet. Contact us so we can help verify your business.
           </p>
         {:else if vendorName}
           <p class="text-surface-600-400">
-            Thanks, <span class="font-semibold text-surface-900-100">{vendorName}</span>. Your vendor account has been created and is pending approval.
+            Thanks, <span class="font-semibold text-surface-900-100">{vendorName}</span>. Your pro account has been created and is pending approval.
           </p>
         {:else}
           <p class="text-surface-600-400">
-            Your vendor account has been created and is pending approval.
+            Your pro account has been created and is pending approval.
           </p>
         {/if}
       </div>

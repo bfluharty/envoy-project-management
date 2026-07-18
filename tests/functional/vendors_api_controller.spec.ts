@@ -6,6 +6,7 @@ import User from '#models/user'
 import UserEntitlement from '#models/user_entitlement'
 import Vendor from '#models/vendor'
 import VendorService from '#services/vendor_service'
+import { acceptConsentForTest } from '../helpers/user_consent.js'
 
 test.group('vendor availability API', (group) => {
   let consumer: User
@@ -20,6 +21,7 @@ test.group('vendor availability API', (group) => {
       entitlementId: entitlement.id,
       isActive: true,
     })
+    await acceptConsentForTest(consumer)
   })
 
   test('lists globally available vendors using the redacted public DTO', async ({ client }) => {
@@ -134,6 +136,7 @@ test.group('vendor availability API', (group) => {
       entitlementId: consumer.entitlementId,
       isActive: true,
     })
+    await acceptConsentForTest(otherConsumer)
     const listing = await VendorService.createVendor(consumer.uuid, {
       name: `Header Spoof Vendor ${uuidv4()}`,
       email: 'header-spoof@example.com',
