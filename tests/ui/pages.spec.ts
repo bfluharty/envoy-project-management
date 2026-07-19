@@ -17,6 +17,11 @@ async function resetUploadedAvatar(page: Page) {
   }
 }
 
+async function openProjectChat(page: Page) {
+  await page.getByRole('radio', { name: 'chat' }).click({ force: true })
+  return page.getByPlaceholder('Type your message...')
+}
+
 test('landing page', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('h1')).toContainText('Plan any project')
@@ -61,8 +66,7 @@ test('dashboard page', async ({ page }) => {
 test('project page - chat tab', async ({ page }) => {
   await login(page)
   await goToProject(page)
-  await page.getByRole('radio', { name: 'chat' }).click({ force: true })
-  await expect(page.getByPlaceholder('Type your message...')).toBeVisible()
+  await expect(await openProjectChat(page)).toBeVisible()
 })
 
 test('account page', async ({ page }) => {
@@ -122,7 +126,8 @@ test('uploaded avatar is used on account and chat, then falls back after removal
     })
 
     await goToProject(page)
-    await page.getByPlaceholder('Type your message...').fill('Avatar check')
+    const chatInput = await openProjectChat(page)
+    await chatInput.fill('Avatar check')
     await page.getByRole('button', { name: 'Send' }).click()
 
     const chatAvatar = page.getByTestId('chat-user-avatar').last()
@@ -137,7 +142,8 @@ test('uploaded avatar is used on account and chat, then falls back after removal
     await expect(accountAvatar).toContainText('AE')
 
     await goToProject(page)
-    await page.getByPlaceholder('Type your message...').fill('Avatar fallback check')
+    const fallbackChatInput = await openProjectChat(page)
+    await fallbackChatInput.fill('Avatar fallback check')
     await page.getByRole('button', { name: 'Send' }).click()
 
     const fallbackChatAvatar = page.getByTestId('chat-user-avatar').last()

@@ -359,6 +359,11 @@ test.describe('registration handoff', () => {
 })
 
 test.describe('first project completion', () => {
+  async function openProjectChat(page: Page) {
+    await page.getByRole('radio', { name: 'chat' }).click({ force: true })
+    return page.getByPlaceholder('Type your message...')
+  }
+
   test('prefills the intake fields without rendering a selected-vendor review', async ({
     page,
   }) => {
@@ -446,7 +451,7 @@ test.describe('first project completion', () => {
     await expect(page.getByLabel('Email for Consumer Managed Design')).toBeVisible()
   })
 
-  test('submits the canonical project payload without a token, clears browser state, and opens Chat', async ({
+  test('submits the canonical project payload without a token, clears browser state, and can open Chat', async ({
     page,
   }) => {
     await mockInertiaPage(page, '/onboarding/project', 'onboarding/project', activeProjectProps)
@@ -491,7 +496,7 @@ test.describe('first project completion', () => {
       budgetCurrency: 'USD',
     })
     expect(completionBody).not.toHaveProperty('onboardingToken')
-    await expect(page.getByPlaceholder('Type your message...')).toBeVisible()
+    await expect(await openProjectChat(page)).toBeVisible()
     await expect
       .poll(() =>
         page.evaluate(() => ({
@@ -519,7 +524,7 @@ test.describe('first project completion', () => {
     await expect(
       page.getByRole('status').filter({ hasText: /vendor was unavailable/i })
     ).toBeVisible()
-    await expect(page.getByPlaceholder('Type your message...')).toBeVisible()
+    await expect(await openProjectChat(page)).toBeVisible()
   })
 
   test('shows authenticated recovery actions for an expired draft without a project form', async ({
