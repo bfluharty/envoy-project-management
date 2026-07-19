@@ -140,7 +140,7 @@ const {
 
 let mobilePane = $state<'list' | 'detail'>('list');
 let showFullMessageDetails = $state(false);
-let chatPanelScrollEl = $state<HTMLElement | null>(null);
+let messageScrollEl = $state<HTMLElement | null>(null);
 
 const contactCollection = $derived(
     collection({
@@ -166,8 +166,8 @@ $effect(() => {
     if (!threadUuid || messageCount === 0 || outreachPane !== 'read') return;
 
     tick().then(() => {
-        chatPanelScrollEl?.scrollTo({
-            top: chatPanelScrollEl.scrollHeight,
+        messageScrollEl?.scrollTo({
+            top: messageScrollEl.scrollHeight,
             behavior: 'auto',
         });
     });
@@ -369,11 +369,7 @@ function getSelectedContact(contactUuid: string) {
         </div>
     </aside>
 
-    <section
-        bind:this={chatPanelScrollEl}
-        data-testid="outreach-message-scroll"
-        class={`h-full min-h-0 overflow-y-auto overflow-x-hidden rounded-2xl border border-surface-200-800 bg-surface-50-950/50 ${mobilePane === 'list' ? 'hidden xl:block' : ''}`}
-    >
+    <section class={`flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-surface-200-800 bg-surface-50-950/50 ${mobilePane === 'list' ? 'hidden xl:flex' : ''}`}>
         {#if outreachPane === 'create'}
             <div class="xl:hidden border-b border-surface-200-800 px-5 py-3">
                 <button type="button" class="btn btn-sm preset-tonal" onclick={backToList}>
@@ -398,7 +394,7 @@ function getSelectedContact(contactUuid: string) {
                 </div>
             </div>
 
-            <div class="p-5">
+            <div class="min-h-0 flex-1 overflow-y-auto p-5">
                 {#if composeCard?.draftUuid}
                     <div class="space-y-4">
                         <label class="block text-sm font-medium">
@@ -632,22 +628,29 @@ function getSelectedContact(contactUuid: string) {
                 </div>
             </div>
 
-            <div class="space-y-4 p-5" aria-label="Outreach messages">
+            <div class="flex min-h-0 flex-1 flex-col">
                 {#if selectedCard.status === 'draft' || selectedCard.status === 'error'}
-                    <div class="rounded-xl border border-surface-200-800 bg-surface-100-900/20 p-4 flex items-center justify-between gap-4 flex-wrap">
-                        <div>
-                            <p class="text-sm font-semibold">Pending draft</p>
-                            <p class="mt-1 text-sm text-surface-600-400">Open the draft composer to review and send this message.</p>
+                    <div class="shrink-0 p-5 pb-0">
+                        <div class="rounded-xl border border-surface-200-800 bg-surface-100-900/20 p-4 flex items-center justify-between gap-4 flex-wrap">
+                            <div>
+                                <p class="text-sm font-semibold">Pending draft</p>
+                                <p class="mt-1 text-sm text-surface-600-400">Open the draft composer to review and send this message.</p>
+                            </div>
+                            <button type="button" class="btn btn-sm preset-tonal" onclick={openNewMessage}>
+                                <SparklesIcon class="size-4 shrink-0" />
+                                <span>Start another draft</span>
+                            </button>
                         </div>
-                        <button type="button" class="btn btn-sm preset-tonal" onclick={openNewMessage}>
-                            <SparklesIcon class="size-4 shrink-0" />
-                            <span>Start another draft</span>
-                        </button>
                     </div>
                 {/if}
 
                 {#if selectedCard.thread.messages.length}
-                    <div class="space-y-4">
+                    <div
+                        bind:this={messageScrollEl}
+                        data-testid="outreach-message-scroll"
+                        class="min-h-0 flex-1 space-y-4 overflow-y-auto p-5"
+                        aria-label="Outreach messages"
+                    >
                         {#each selectedCard.thread.messages as message, index (message.uuid)}
                             {#if index === 0 || formatDate(message.sentAt) !== formatDate(selectedCard.thread.messages[index - 1]?.sentAt)}
                                 <div class="flex items-center justify-center py-1">
@@ -704,7 +707,7 @@ function getSelectedContact(contactUuid: string) {
                         {/each}
                     </div>
 
-                    <div class="space-y-3">
+                    <div class="shrink-0 space-y-3 border-t border-surface-200-800 p-5">
                         <label class="sr-only" for="thread-reply-box">Reply</label>
                         <textarea
                             id="thread-reply-box"
@@ -788,8 +791,15 @@ function getSelectedContact(contactUuid: string) {
                         {/if}
                     </div>
                 {:else if selectedCard.status !== 'draft' && selectedCard.status !== 'error'}
-                    <div class="rounded-xl border border-dashed border-surface-200-800 bg-surface-100-900/20 p-8 text-center">
-                        <p class="text-sm text-surface-600-400">This thread has no synced messages yet.</p>
+                    <div
+                        bind:this={messageScrollEl}
+                        data-testid="outreach-message-scroll"
+                        class="min-h-0 flex-1 overflow-y-auto p-5"
+                        aria-label="Outreach messages"
+                    >
+                        <div class="rounded-xl border border-dashed border-surface-200-800 bg-surface-100-900/20 p-8 text-center">
+                            <p class="text-sm text-surface-600-400">This thread has no synced messages yet.</p>
+                        </div>
                     </div>
                 {/if}
             </div>
