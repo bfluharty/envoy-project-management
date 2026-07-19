@@ -50,20 +50,23 @@ function buildThreadCard(overrides: Partial<any> = {}) {
 }
 
 test.describe('tab behaviour', () => {
-  test('project page defaults to chat tab', async ({ page }) => {
+  test('project page defaults to overview tab', async ({ page }) => {
     await login(page)
     await goToProject(page)
-    await expect(page.getByRole('radio', { name: 'chat' })).toBeVisible()
-    await expect(page.getByPlaceholder('Type your message...')).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Project Details' })).not.toBeVisible()
-  })
-
-  test('switching to overview tab shows project details', async ({ page }) => {
-    await login(page)
-    await goToProject(page)
-    await page.getByRole('radio', { name: 'overview' }).click({ force: true })
+    await expect(page.getByRole('radio').nth(0)).toHaveText('overview')
+    await expect(page.getByRole('radio').nth(1)).toHaveText('chat')
+    await expect(page.getByRole('radio').nth(2)).toHaveText('outreach')
+    await expect(page.getByRole('radio', { name: 'overview' })).toBeChecked()
     await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible()
     await expect(page.getByPlaceholder('Type your message...')).not.toBeVisible()
+  })
+
+  test('switching to chat tab shows project chat', async ({ page }) => {
+    await login(page)
+    await goToProject(page)
+    await page.getByRole('radio', { name: 'chat' }).click({ force: true })
+    await expect(page.getByPlaceholder('Type your message...')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Project Details' })).not.toBeVisible()
   })
 
   test('switching to outreach tab loads thread rows and draft composer', async ({ page }) => {
@@ -94,6 +97,7 @@ test.describe('tab behaviour', () => {
 
     await page.getByRole('radio', { name: 'outreach' }).click({ force: true })
     await expect(page.getByRole('radio', { name: 'outreach' })).toBeChecked()
+    await expect(page.getByRole('button', { name: 'Refresh' })).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'Draft to Acme Corp' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Approve & Send' })).toBeVisible()
   })
@@ -362,6 +366,93 @@ test.describe('outreach interactions', () => {
     await page.getByRole('radio', { name: 'outreach' }).click({ force: true })
     await expect(page.getByText('Needs attention').first()).toBeVisible()
     await expect(page.locator('aside button:has-text("Newest thread")').first()).toBeVisible()
+  })
+
+  test('open outreach chat updates from polling without manual refresh', async ({ page }) => {
+    await page.addInitScript(() => {
+      const browserGlobal = globalThis as any
+      const originalSetInterval = browserGlobal.setInterval.bind(browserGlobal)
+      browserGlobal.setInterval = (handler: any, timeout?: number, ...args: any[]) =>
+        originalSetInterval(handler, timeout === 15000 ? 50 : timeout, ...args)
+    })
+    await login(page)
+    await goToProject(page)
+
+    const initialMessages = Array.from({ length: 18 }, (_, index) => ({
+      uuid: `message-history-${index}`,
+      direction: index % 2 === 0 ? 'outbound' : 'inbound',
+      subject: 'Thread with history',
+      from: index % 2 === 0 ? 'alice@example.com' : 'Acme Corp <contact@acme.com>',
+      to: index % 2 === 0 ? 'contact@acme.com' : 'alice@example.com',
+      body: `Prior message ${index + 1}\n\nMore context for this older message.`,
+      sentAt: `2026-04-01T${String(8 + Math.floor(index / 2)).padStart(2, '0')}:00:00.000Z`,
+    }))
+    const updatedMessages = [
+      ...initialMessages,
+      {
+        uuid: 'message-new-inbound',
+        direction: 'inbound',
+        subject: 'Re: Thread with history',
+        from: 'Acme Corp <contact@acme.com>',
+        to: 'alice@example.com',
+        body: 'New inbound reply from polling.',
+        sentAt: '2026-04-01T18:00:00.000Z',
+      },
+    ]
+    const initialCard = buildThreadCard({
+      threadUuid: 'thread-polling',
+      status: 'sent',
+      subject: 'Thread with history',
+      body: 'Prior message 18',
+      sentAt: '2026-04-01T17:00:00.000Z',
+      lastActivityAt: '2026-04-01T17:00:00.000Z',
+      thread: { uuid: 'thread-polling', messages: initialMessages },
+    })
+    const updatedCard = buildThreadCard({
+      ...initialCard,
+      status: 'received',
+      body: 'New inbound reply from polling.',
+      lastActivityAt: '2026-04-01T18:00:00.000Z',
+      needsAttention: true,
+      replyReceived: true,
+      thread: { uuid: 'thread-polling', messages: updatedMessages },
+    })
+
+    await page.route(`/api/projects/${PROJECT_ALPHA_UUID}/outreach/sync`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ senderMode: 'connected_inbox', cards: [initialCard] }),
+      })
+    })
+
+    let pollCount = 0
+    await page.route(`/api/projects/${PROJECT_ALPHA_UUID}/outreach`, async (route) => {
+      pollCount += 1
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ senderMode: 'connected_inbox', cards: [updatedCard] }),
+      })
+    })
+
+    await page.getByRole('radio', { name: 'outreach' }).click({ force: true })
+    await expect(
+      page.getByTestId('outreach-message-scroll').getByText('Prior message 18')
+    ).toBeVisible()
+    await expect(
+      page.getByTestId('outreach-message-scroll').getByText('New inbound reply from polling.')
+    ).toBeVisible({ timeout: 5000 })
+    expect(pollCount).toBeGreaterThan(0)
+
+    const scrollState = await page.getByTestId('outreach-message-scroll').evaluate((element) => ({
+      scrollTop: element.scrollTop,
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    }))
+    expect(scrollState.scrollTop + scrollState.clientHeight).toBeGreaterThanOrEqual(
+      scrollState.scrollHeight - 2
+    )
   })
 
   test('reply revision rewrites body before send', async ({ page }) => {

@@ -61,6 +61,7 @@ test('dashboard page', async ({ page }) => {
 test('project page - chat tab', async ({ page }) => {
   await login(page)
   await goToProject(page)
+  await page.getByRole('radio', { name: 'chat' }).click({ force: true })
   await expect(page.getByPlaceholder('Type your message...')).toBeVisible()
 })
 
