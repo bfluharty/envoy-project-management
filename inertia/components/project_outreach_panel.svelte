@@ -140,7 +140,7 @@ const {
 
 let mobilePane = $state<'list' | 'detail'>('list');
 let showFullMessageDetails = $state(false);
-let messageScrollEl = $state<HTMLDivElement | null>(null);
+let chatPanelScrollEl = $state<HTMLElement | null>(null);
 
 const contactCollection = $derived(
     collection({
@@ -166,8 +166,8 @@ $effect(() => {
     if (!threadUuid || messageCount === 0 || outreachPane !== 'read') return;
 
     tick().then(() => {
-        messageScrollEl?.scrollTo({
-            top: messageScrollEl.scrollHeight,
+        chatPanelScrollEl?.scrollTo({
+            top: chatPanelScrollEl.scrollHeight,
             behavior: 'auto',
         });
     });
@@ -369,7 +369,11 @@ function getSelectedContact(contactUuid: string) {
         </div>
     </aside>
 
-    <section class={`flex min-h-0 flex-col overflow-hidden rounded-2xl border border-surface-200-800 bg-surface-50-950/50 ${mobilePane === 'list' ? 'hidden xl:block' : ''}`}>
+    <section
+        bind:this={chatPanelScrollEl}
+        data-testid="outreach-message-scroll"
+        class={`h-full min-h-0 overflow-y-auto overflow-x-hidden rounded-2xl border border-surface-200-800 bg-surface-50-950/50 ${mobilePane === 'list' ? 'hidden xl:block' : ''}`}
+    >
         {#if outreachPane === 'create'}
             <div class="xl:hidden border-b border-surface-200-800 px-5 py-3">
                 <button type="button" class="btn btn-sm preset-tonal" onclick={backToList}>
@@ -394,7 +398,7 @@ function getSelectedContact(contactUuid: string) {
                 </div>
             </div>
 
-            <div class="min-h-0 flex-1 overflow-y-auto p-5">
+            <div class="p-5">
                 {#if composeCard?.draftUuid}
                     <div class="space-y-4">
                         <label class="block text-sm font-medium">
@@ -628,12 +632,7 @@ function getSelectedContact(contactUuid: string) {
                 </div>
             </div>
 
-            <div
-                bind:this={messageScrollEl}
-                data-testid="outreach-message-scroll"
-                class="min-h-0 flex-1 space-y-4 overflow-y-auto p-5"
-                aria-label="Outreach messages"
-            >
+            <div class="space-y-4 p-5" aria-label="Outreach messages">
                 {#if selectedCard.status === 'draft' || selectedCard.status === 'error'}
                     <div class="rounded-xl border border-surface-200-800 bg-surface-100-900/20 p-4 flex items-center justify-between gap-4 flex-wrap">
                         <div>
