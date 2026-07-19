@@ -1,7 +1,10 @@
 import { test } from '@japa/runner'
 import { strict as assert } from 'node:assert'
 import { DateTime } from 'luxon'
-import { selectConversationForInboundEmail } from '#services/project_outreach_service'
+import {
+  getMessageDirectionForConnection,
+  selectConversationForInboundEmail,
+} from '#services/project_outreach_service'
 
 function buildMessage({
   direction = 'outbound',
@@ -141,4 +144,30 @@ test('selectConversationForInboundEmail falls back to the newest conversation wh
   )
 
   assert.equal(selectedConversation?.uuid, 'thread-newest')
+})
+
+test('getMessageDirectionForConnection treats matching senders as outbound', () => {
+  assert.equal(
+    getMessageDirectionForConnection(
+      {
+        from: 'Owner <owner@example.com>',
+        to: 'Vendor <vendor@example.com>',
+      },
+      'owner@example.com'
+    ),
+    'outbound'
+  )
+})
+
+test('getMessageDirectionForConnection normalizes Gmail aliases', () => {
+  assert.equal(
+    getMessageDirectionForConnection(
+      {
+        from: 'Owner <owner+project@gmail.com>',
+        to: 'Vendor <vendor@example.com>',
+      },
+      'owner@gmail.com'
+    ),
+    'outbound'
+  )
 })

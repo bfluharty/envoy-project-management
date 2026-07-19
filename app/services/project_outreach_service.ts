@@ -167,13 +167,18 @@ function getVendorEmailOrFail(projectVendor: ProjectVendor): string {
   return email
 }
 
-function getMessageDirectionForConnection(
-  from: string,
+export function getMessageDirectionForConnection(
+  message: { from: string; to?: string | null; cc?: string | null },
   connectionEmail: string
 ): 'inbound' | 'outbound' {
-  const sender = parseEmailFromHeader(from)
-  const normalizedConnectionEmail = connectionEmail.trim().toLowerCase()
-  return sender === normalizedConnectionEmail ? 'outbound' : 'inbound'
+  const sender = normalizeEmailForMatching(parseEmailFromHeader(message.from))
+  const normalizedConnectionEmail = normalizeEmailForMatching(connectionEmail)
+
+  if (sender === normalizedConnectionEmail) {
+    return 'outbound'
+  }
+
+  return 'inbound'
 }
 
 function resolveCounterpartyEmail(
@@ -732,7 +737,7 @@ export interface ProviderMessageSyncResult {
 export async function syncProviderMessageForConnection(
   connection: UserInboxConnection,
   summary: ProviderMessageSyncSummary,
-  options: { projectUuid?: string } = {}
+  options: { projectUuid?: string; directionHint?: 'inbound' | 'outbound' } = {}
 ): Promise<ProviderMessageSyncResult> {
   const user = await User.findBy('uuid', connection.userUuid)
   if (!user) {
@@ -765,7 +770,26 @@ export async function syncProviderMessageForConnection(
     return { processed: true, created: false, reason: 'counterparty_not_found' }
   }
 
-  const direction = getMessageDirectionForConnection(detail.from, validConnection.email)
+  const direction =
+    options.directionHint ?? getMessageDirectionForConnection(detail, validConnection.email)
+  logger.debug(
+    {
+      providerMessageId,
+      connectionUuid: validConnection.uuid,
+      provider: validConnection.provider,
+      direction,
+      directionHint: options.directionHint,
+      senderMatchesConnection:
+        normalizeEmailForMatching(parseEmailFromHeader(detail.from)) ===
+        normalizeEmailForMatching(validConnection.email),
+      recipientMatchesConnection: [...parseEmailList(detail.to), ...parseEmailList(detail.cc)].some(
+        (email) =>
+          normalizeEmailForMatching(email) === normalizeEmailForMatching(validConnection.email)
+      ),
+      hasCc: Boolean(detail.cc),
+    },
+    'Email sync resolved provider message direction'
+  )
   const providerThreadId = summary.threadId ?? detail.threadId ?? null
   const conversation = await resolveConversationForEmail(user, {
     counterpartyEmail,
@@ -1483,7 +1507,7 @@ export async function syncProjectOutreach(user: User, projectUuid: string) {
         continue
       }
 
-      const direction = getMessageDirectionForConnection(detail.from, validConnection.email)
+      const direction = getMessageDirectionForConnection(detail, validConnection.email)
       const providerThreadId = summary.threadId ?? detail.threadId ?? null
 
       const conversation = await resolveConversationForEmail(user, {

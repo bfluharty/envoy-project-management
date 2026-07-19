@@ -8,7 +8,6 @@ import LocationSearch from '#components/location_search.svelte';
 import type { LocationData } from '#components/location_search.svelte';
 import VendorSearch from '#components/vendor_search.svelte';
 import { page } from '@inertiajs/svelte';
-import { RefreshCwIcon } from '@lucide/svelte';
 import { onDestroy, onMount, tick, untrack } from 'svelte';
 import { fly } from 'svelte/transition';
 import { formatDate, formatCurrency } from '../../utils/format';
@@ -123,13 +122,13 @@ const {
 
 // ── Tab state ──────────────────────────────────────────────
 const getTabKey = () => `tab-${project.uuid}`;
-const VALID_TABS = ['chat', 'outreach', 'overview'] as const;
+const VALID_TABS = ['overview', 'chat', 'outreach'] as const;
 type ProjectTab = typeof VALID_TABS[number];
 const isReload = typeof performance !== 'undefined' &&
     (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload';
 const storedTab = isReload && typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(getTabKey()) : null;
 let activeTab = $state<ProjectTab>(
-    VALID_TABS.includes(storedTab as any) ? (storedTab as ProjectTab) : 'chat'
+    VALID_TABS.includes(storedTab as any) ? (storedTab as ProjectTab) : 'overview'
 );
 
 function handleTabChange(tab: ProjectTab) {
@@ -141,6 +140,10 @@ function handleTabChange(tab: ProjectTab) {
 
     activeTab = tab;
     sessionStorage.setItem(getTabKey(), tab);
+
+    if (tab === 'outreach' && outreachLoaded) {
+        void loadOutreach(false, { silent: true });
+    }
 }
 
 // ── Chat state ─────────────────────────────────────────────
@@ -262,9 +265,11 @@ let outreachCards = $state<OutreachCard[]>([]);
 let outreachLoaded = $state(false);
 let outreachLoading = $state(false);
 let outreachSyncing = $state(false);
+let outreachPolling = $state(false);
 let outreachInitialLoadAttempted = $state(false);
 let outreachError = $state<string | null>(null);
 let outreachSenderMode = $state<'connected_inbox' | 'unavailable'>('unavailable');
+const OUTREACH_POLL_INTERVAL_MS = 15000;
 let sendingDraftUuid = $state<string | null>(null);
 let retryingDraftUuid = $state<string | null>(null);
 let creatingDraftProjectVendorUuid = $state<string | null>(null);
@@ -420,12 +425,22 @@ function startNewThread() {
     }
 }
 
-async function loadOutreach(sync = false) {
-    if (outreachLoading || outreachSyncing) return;
+async function loadOutreach(
+    sync = false,
+    options: { silent?: boolean; notifyQueued?: boolean } = {}
+) {
+    if (outreachLoading || outreachSyncing || outreachPolling) return;
 
-    outreachError = null;
+    const silent = options.silent ?? false;
+    const notifyQueued = options.notifyQueued ?? !silent;
+
+    if (!silent) {
+        outreachError = null;
+    }
     if (sync) {
         outreachSyncing = true;
+    } else if (silent) {
+        outreachPolling = true;
     } else {
         outreachLoading = true;
     }
@@ -437,14 +452,17 @@ async function loadOutreach(sync = false) {
                 : `/api/projects/${project.uuid}/outreach`,
             sync ? { method: 'POST' } : undefined
         );
-        if (sync && data.syncQueued) {
+        if (sync && data.syncQueued && notifyQueued) {
             setOperationSuccess('Inbox refresh queued.');
         }
     } catch (error) {
-        outreachError = error instanceof Error ? error.message : 'Failed to load outreach.';
+        if (!silent) {
+            outreachError = error instanceof Error ? error.message : 'Failed to load outreach.';
+        }
     } finally {
         outreachLoading = false;
         outreachSyncing = false;
+        outreachPolling = false;
     }
 }
 
@@ -698,8 +716,18 @@ $effect(() => {
         !outreachSyncing
     ) {
         outreachInitialLoadAttempted = true;
-        loadOutreach(true);
+        loadOutreach(true, { notifyQueued: false });
     }
+});
+
+$effect(() => {
+    if (activeTab !== 'outreach' || !outreachLoaded) return;
+
+    const timer = setInterval(() => {
+        void loadOutreach(false, { silent: true });
+    }, OUTREACH_POLL_INTERVAL_MS);
+
+    return () => clearInterval(timer);
 });
 
 // ── Overview state ─────────────────────────────────────────
@@ -1168,7 +1196,7 @@ onDestroy(() => {
 
 <!-- Outreach tab -->
 {#if activeTab === 'outreach'}
-<div class="min-h-0 flex-1 overflow-y-auto w-full">
+<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden w-full">
     <ProjectSectionChrome
         activeTab={activeTab}
         onSelectTab={handleTabChange}
@@ -1177,15 +1205,10 @@ onDestroy(() => {
         description="Review drafts, initiate outreach, and reply to your contacts without leaving this project."
     >
         {#snippet actions()}
-
-            <button class="btn btn-sm preset-tonal" type="button" onclick={() => loadOutreach(true)} disabled={outreachSyncing}>
-                    <RefreshCwIcon class={`size-4 shrink-0 ${outreachSyncing ? 'animate-spin' : ''}`} />
-                    <span>{outreachSyncing ? 'Refreshing…' : 'Refresh'}</span>
-                </button>
-                <a href="/account#email-accounts" class="btn btn-sm preset-tonal">Manage Email Accounts</a>
+            <a href="/account#email-accounts" class="btn btn-sm preset-tonal">Manage Email Accounts</a>
         {/snippet}
     </ProjectSectionChrome>
-    <div class="mx-auto w-full max-w-6xl p-4 sm:p-6 space-y-6">
+    <div class="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-4 p-4 sm:p-6">
 
         {#if outreachError}
             <div class="rounded-xl border border-error-500/30 bg-error-500/10 p-4 text-sm text-error-500">
@@ -1207,76 +1230,78 @@ onDestroy(() => {
                     Your linked contacts do not have email contact details yet. Add an email in Contacts before starting outreach.
                 </div>
             {/if}
-            <ProjectOutreachPanel
-                cards={outreachCards}
-                contacts={outreachEligibleContacts}
-                currentUserName={currentUserName}
-                selectedCard={selectedOutreachCard}
-                composeCard={composeOutreachCard}
-                outreachPane={outreachPane}
-                newThreadVendorUuid={newThreadVendorUuid}
-                creatingDraftProjectVendorUuid={creatingDraftProjectVendorUuid}
-                sendingDraftUuid={sendingDraftUuid}
-                retryingDraftUuid={retryingDraftUuid}
-                revisingDraftUuid={revisingDraftUuid}
-                reviseDraftUuid={reviseDraftUuid}
-                reviseInstructions={reviseInstructions}
-                replyThreadUuid={replyThreadUuid}
-                replySubject={replySubject}
-                replyBody={replyBody}
-                sendingReply={sendingReply}
-                revisingReplyThreadUuid={revisingReplyThreadUuid}
-                showReplyReviseComposer={showReplyReviseComposer}
-                replyReviseInstructions={replyReviseInstructions}
-                replyRevisionOriginalBody={replyRevisionOriginalBody}
-                replyRevisionSuggestedBody={replyRevisionSuggestedBody}
-                onSelectCard={selectOutreachCard}
-                onStartNewThread={startNewThread}
-                onCreateDraftForVendorUuid={createDraftForVendorUuid}
-                onUpdateDraftField={updateDraftField}
-                onSendDraft={sendDraft}
-                onRetryDraft={retryDraft}
-                onCancelDraft={cancelDraft}
-                onToggleRevise={(card) => {
-                    reviseDraftUuid = reviseDraftUuid === card.draftUuid ? null : card.draftUuid;
-                    reviseInstructions = '';
-                }}
-                onReviseDraft={reviseDraft}
-                onChangeReviseInstructions={(value) => {
-                    reviseInstructions = value;
-                }}
-                onChangeNewThreadVendorUuid={(value) => {
-                    newThreadVendorUuid = value;
-                }}
-                onCancelRevise={() => {
-                    reviseDraftUuid = null;
-                    reviseInstructions = '';
-                }}
-                onOpenReplyComposer={openReplyComposer}
-                onSendReply={sendReply}
-                onCloseReplyComposer={closeReplyComposer}
-                onReplySubjectChange={(value) => {
-                    replySubject = value;
-                }}
-                onReplyBodyChange={(value) => {
-                    replyBody = value;
-                    clearReplyRevisionPreview();
-                }}
-                onToggleReplyRevise={() => {
-                    showReplyReviseComposer = !showReplyReviseComposer;
-                }}
-                onChangeReplyReviseInstructions={(value) => {
-                    replyReviseInstructions = value;
-                }}
-                onReviseReply={reviseReply}
-                onApplySuggestedReplyRevision={applySuggestedReplyRevision}
-                onDismissSuggestedReplyRevision={clearReplyRevisionPreview}
-                onCancelReplyRevise={() => {
-                    showReplyReviseComposer = false;
-                    replyReviseInstructions = '';
-                    clearReplyRevisionPreview();
-                }}
-            />
+            <div class="min-h-0 flex-1">
+                <ProjectOutreachPanel
+                    cards={outreachCards}
+                    contacts={outreachEligibleContacts}
+                    currentUserName={currentUserName}
+                    selectedCard={selectedOutreachCard}
+                    composeCard={composeOutreachCard}
+                    outreachPane={outreachPane}
+                    newThreadVendorUuid={newThreadVendorUuid}
+                    creatingDraftProjectVendorUuid={creatingDraftProjectVendorUuid}
+                    sendingDraftUuid={sendingDraftUuid}
+                    retryingDraftUuid={retryingDraftUuid}
+                    revisingDraftUuid={revisingDraftUuid}
+                    reviseDraftUuid={reviseDraftUuid}
+                    reviseInstructions={reviseInstructions}
+                    replyThreadUuid={replyThreadUuid}
+                    replySubject={replySubject}
+                    replyBody={replyBody}
+                    sendingReply={sendingReply}
+                    revisingReplyThreadUuid={revisingReplyThreadUuid}
+                    showReplyReviseComposer={showReplyReviseComposer}
+                    replyReviseInstructions={replyReviseInstructions}
+                    replyRevisionOriginalBody={replyRevisionOriginalBody}
+                    replyRevisionSuggestedBody={replyRevisionSuggestedBody}
+                    onSelectCard={selectOutreachCard}
+                    onStartNewThread={startNewThread}
+                    onCreateDraftForVendorUuid={createDraftForVendorUuid}
+                    onUpdateDraftField={updateDraftField}
+                    onSendDraft={sendDraft}
+                    onRetryDraft={retryDraft}
+                    onCancelDraft={cancelDraft}
+                    onToggleRevise={(card) => {
+                        reviseDraftUuid = reviseDraftUuid === card.draftUuid ? null : card.draftUuid;
+                        reviseInstructions = '';
+                    }}
+                    onReviseDraft={reviseDraft}
+                    onChangeReviseInstructions={(value) => {
+                        reviseInstructions = value;
+                    }}
+                    onChangeNewThreadVendorUuid={(value) => {
+                        newThreadVendorUuid = value;
+                    }}
+                    onCancelRevise={() => {
+                        reviseDraftUuid = null;
+                        reviseInstructions = '';
+                    }}
+                    onOpenReplyComposer={openReplyComposer}
+                    onSendReply={sendReply}
+                    onCloseReplyComposer={closeReplyComposer}
+                    onReplySubjectChange={(value) => {
+                        replySubject = value;
+                    }}
+                    onReplyBodyChange={(value) => {
+                        replyBody = value;
+                        clearReplyRevisionPreview();
+                    }}
+                    onToggleReplyRevise={() => {
+                        showReplyReviseComposer = !showReplyReviseComposer;
+                    }}
+                    onChangeReplyReviseInstructions={(value) => {
+                        replyReviseInstructions = value;
+                    }}
+                    onReviseReply={reviseReply}
+                    onApplySuggestedReplyRevision={applySuggestedReplyRevision}
+                    onDismissSuggestedReplyRevision={clearReplyRevisionPreview}
+                    onCancelReplyRevise={() => {
+                        showReplyReviseComposer = false;
+                        replyReviseInstructions = '';
+                        clearReplyRevisionPreview();
+                    }}
+                />
+            </div>
         {/if}
         </div>
 </div>

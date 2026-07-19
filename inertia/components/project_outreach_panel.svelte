@@ -3,6 +3,7 @@ import { ArrowLeftIcon, CheckIcon, PlusIcon, RefreshCwIcon, SendIcon, SparklesIc
 import { Combobox } from '@skeletonlabs/skeleton-svelte';
 import { collection } from '@zag-js/combobox';
 import { DateTime } from 'luxon';
+import { tick } from 'svelte';
 import { formatDate, formatDateTime } from '../utils/format';
 
 interface Vendor {
@@ -139,6 +140,7 @@ const {
 
 let mobilePane = $state<'list' | 'detail'>('list');
 let showFullMessageDetails = $state(false);
+let messageScrollEl = $state<HTMLElement | null>(null);
 
 const contactCollection = $derived(
     collection({
@@ -156,6 +158,19 @@ $effect(() => {
     ) {
         onOpenReplyComposer(selectedCard);
     }
+});
+
+$effect(() => {
+    const threadUuid = selectedCard?.threadUuid;
+    const messageCount = selectedCard?.thread.messages.length ?? 0;
+    if (!threadUuid || messageCount === 0 || outreachPane !== 'read') return;
+
+    tick().then(() => {
+        messageScrollEl?.scrollTo({
+            top: messageScrollEl.scrollHeight,
+            behavior: 'auto',
+        });
+    });
 });
 
 function getOutreachStatusLabel(card: OutreachCard) {
@@ -301,8 +316,8 @@ function getSelectedContact(contactUuid: string) {
 }
 </script>
 
-<div class={`min-w-0 grid gap-4 xl:gap-6 items-start ${cards.length === 0 && outreachPane === 'read' ? 'xl:grid-cols-1' : 'xl:grid-cols-[22rem_minmax(0,1fr)]'}`}>
-    <aside class={`rounded-2xl border border-surface-200-800 bg-surface-50-950/50 ${mobilePane === 'detail' ? 'hidden xl:block' : ''}`}>
+<div class={`grid h-full min-h-0 min-w-0 items-stretch gap-4 overflow-hidden xl:gap-6 ${cards.length === 0 && outreachPane === 'read' ? 'xl:grid-cols-1' : 'xl:grid-cols-[22rem_minmax(0,1fr)]'}`}>
+    <aside class={`flex min-h-0 flex-col overflow-hidden rounded-2xl border border-surface-200-800 bg-surface-50-950/50 ${mobilePane === 'detail' ? 'hidden xl:block' : ''}`}>
         <div class="flex items-center justify-between gap-3 border-b border-surface-200-800 px-4 py-4">
             <div>
                 <h3 class="text-sm font-semibold">Inbox</h3>
@@ -314,7 +329,7 @@ function getSelectedContact(contactUuid: string) {
             </button>
         </div>
 
-        <div class="space-y-2 overflow-y-auto p-3">
+        <div class="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
             {#if cards.length === 0}
                 <p class="rounded-xl border border-dashed border-surface-200-800 bg-surface-100-900/25 px-4 py-5 text-sm text-surface-600-400">
                     No threads yet. Create your first outreach message.
@@ -354,7 +369,7 @@ function getSelectedContact(contactUuid: string) {
         </div>
     </aside>
 
-    <section class={`overflow-hidden rounded-2xl border border-surface-200-800 bg-surface-50-950/50 ${mobilePane === 'list' ? 'hidden xl:block' : ''}`}>
+    <section class={`flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-surface-200-800 bg-surface-50-950/50 ${mobilePane === 'list' ? 'hidden xl:flex' : ''}`}>
         {#if outreachPane === 'create'}
             <div class="xl:hidden border-b border-surface-200-800 px-5 py-3">
                 <button type="button" class="btn btn-sm preset-tonal" onclick={backToList}>
@@ -379,7 +394,7 @@ function getSelectedContact(contactUuid: string) {
                 </div>
             </div>
 
-            <div class="p-5">
+            <div class="min-h-0 flex-1 overflow-y-auto p-5">
                 {#if composeCard?.draftUuid}
                     <div class="space-y-4">
                         <label class="block text-sm font-medium">
@@ -397,7 +412,7 @@ function getSelectedContact(contactUuid: string) {
                                 class="textarea mt-2 min-h-[20rem] w-full"
                                 value={composeCard.body}
                                 oninput={(event) => onUpdateDraftField(composeCard.draftUuid!, 'body', (event.currentTarget as HTMLTextAreaElement).value)}
-                            />
+                            ></textarea>
                         </label>
                         {#if composeCard.lastError}
                             <p class="text-sm text-error-500">{composeCard.lastError}</p>
@@ -441,7 +456,7 @@ function getSelectedContact(contactUuid: string) {
                             <div class="rounded-xl border border-surface-200-800 bg-surface-100-900/30 p-4 space-y-3">
                                 <label class="block text-sm font-medium">
                                     What should Envoy change?
-                                    <textarea class="textarea mt-2 min-h-28 w-full" value={reviseInstructions} oninput={(event) => onChangeReviseInstructions((event.currentTarget as HTMLTextAreaElement).value)} placeholder="Tighten the tone, add missing project details, or shorten the message." />
+                                    <textarea class="textarea mt-2 min-h-28 w-full" value={reviseInstructions} oninput={(event) => onChangeReviseInstructions((event.currentTarget as HTMLTextAreaElement).value)} placeholder="Tighten the tone, add missing project details, or shorten the message."></textarea>
                                 </label>
                                 <div class="flex flex-wrap gap-2">
                                     <button
@@ -613,22 +628,29 @@ function getSelectedContact(contactUuid: string) {
                 </div>
             </div>
 
-            <div class="p-5 space-y-4">
+            <div class="flex min-h-0 flex-1 flex-col">
                 {#if selectedCard.status === 'draft' || selectedCard.status === 'error'}
-                    <div class="rounded-xl border border-surface-200-800 bg-surface-100-900/20 p-4 flex items-center justify-between gap-4 flex-wrap">
-                        <div>
-                            <p class="text-sm font-semibold">Pending draft</p>
-                            <p class="mt-1 text-sm text-surface-600-400">Open the draft composer to review and send this message.</p>
+                    <div class="shrink-0 p-5 pb-0">
+                        <div class="rounded-xl border border-surface-200-800 bg-surface-100-900/20 p-4 flex items-center justify-between gap-4 flex-wrap">
+                            <div>
+                                <p class="text-sm font-semibold">Pending draft</p>
+                                <p class="mt-1 text-sm text-surface-600-400">Open the draft composer to review and send this message.</p>
+                            </div>
+                            <button type="button" class="btn btn-sm preset-tonal" onclick={openNewMessage}>
+                                <SparklesIcon class="size-4 shrink-0" />
+                                <span>Start another draft</span>
+                            </button>
                         </div>
-                        <button type="button" class="btn btn-sm preset-tonal" onclick={openNewMessage}>
-                            <SparklesIcon class="size-4 shrink-0" />
-                            <span>Start another draft</span>
-                        </button>
                     </div>
                 {/if}
 
                 {#if selectedCard.thread.messages.length}
-                    <div class="space-y-4">
+                    <div
+                        bind:this={messageScrollEl}
+                        data-testid="outreach-message-scroll"
+                        class="min-h-0 flex-1 space-y-4 overflow-y-auto p-5"
+                        aria-label="Outreach messages"
+                    >
                         {#each selectedCard.thread.messages as message, index (message.uuid)}
                             {#if index === 0 || formatDate(message.sentAt) !== formatDate(selectedCard.thread.messages[index - 1]?.sentAt)}
                                 <div class="flex items-center justify-center py-1">
@@ -685,7 +707,7 @@ function getSelectedContact(contactUuid: string) {
                         {/each}
                     </div>
 
-                    <div class="space-y-3">
+                    <div class="shrink-0 space-y-3 border-t border-surface-200-800 p-5">
                         <label class="sr-only" for="thread-reply-box">Reply</label>
                         <textarea
                             id="thread-reply-box"
@@ -693,7 +715,7 @@ function getSelectedContact(contactUuid: string) {
                             value={replyBody}
                             oninput={(event) => onReplyBodyChange((event.currentTarget as HTMLTextAreaElement).value)}
                             placeholder="Write your reply..."
-                        />
+                        ></textarea>
                         <div class="flex flex-wrap items-center justify-between gap-2">
                             <div class="flex flex-wrap gap-2">
                                 <button type="button" class="btn btn-sm preset-tonal" onclick={onToggleReplyRevise}>
@@ -720,7 +742,7 @@ function getSelectedContact(contactUuid: string) {
                                         value={replyReviseInstructions}
                                         oninput={(event) => onChangeReplyReviseInstructions((event.currentTarget as HTMLTextAreaElement).value)}
                                         placeholder="Make it shorter, warmer, more direct, or add missing details."
-                                    />
+                                    ></textarea>
                                 </label>
                                 <p class="text-xs text-surface-600-400">
                                     Use plain language here. You can be conversational, like "keep my tone but make it less stiff" or "rewrite this so it sounds confident and short."
@@ -758,19 +780,26 @@ function getSelectedContact(contactUuid: string) {
                                 <div class="grid gap-3 lg:grid-cols-2">
                                     <label class="block text-sm font-medium">
                                         Current draft
-                                        <textarea class="textarea mt-2 min-h-28 w-full" value={replyRevisionOriginalBody || replyBody} readonly />
+                                        <textarea class="textarea mt-2 min-h-28 w-full" value={replyRevisionOriginalBody || replyBody} readonly></textarea>
                                     </label>
                                     <label class="block text-sm font-medium">
                                         Suggested revision
-                                        <textarea class="textarea mt-2 min-h-28 w-full" value={replyRevisionSuggestedBody} readonly />
+                                        <textarea class="textarea mt-2 min-h-28 w-full" value={replyRevisionSuggestedBody} readonly></textarea>
                                     </label>
                                 </div>
                             </div>
                         {/if}
                     </div>
                 {:else if selectedCard.status !== 'draft' && selectedCard.status !== 'error'}
-                    <div class="rounded-xl border border-dashed border-surface-200-800 bg-surface-100-900/20 p-8 text-center">
-                        <p class="text-sm text-surface-600-400">This thread has no synced messages yet.</p>
+                    <div
+                        bind:this={messageScrollEl}
+                        data-testid="outreach-message-scroll"
+                        class="min-h-0 flex-1 overflow-y-auto p-5"
+                        aria-label="Outreach messages"
+                    >
+                        <div class="rounded-xl border border-dashed border-surface-200-800 bg-surface-100-900/20 p-8 text-center">
+                            <p class="text-sm text-surface-600-400">This thread has no synced messages yet.</p>
+                        </div>
                     </div>
                 {/if}
             </div>
