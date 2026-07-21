@@ -2,6 +2,7 @@
   import Logo from '#components/logo.svelte';
   import Navbar from '#components/navbar.svelte';
   import PublicFooter from '#components/public_footer.svelte';
+  import DismissibleBanner from '#components/dismissible_banner.svelte';
   import { page } from '@inertiajs/svelte';
   import { onMount } from 'svelte';
   import { AlertTriangleIcon, CheckCircleIcon, LoaderCircleIcon, ShieldAlertIcon, MapPinIcon } from '@lucide/svelte';
@@ -442,7 +443,7 @@
           </div>
 
           {#if searchError}
-            <aside class="card preset-tonal-error p-3 text-sm space-y-2" role="alert">
+            <DismissibleBanner variant="error" class="p-3" onDismiss={() => (searchError = '')}>
               <p>{searchError}</p>
               {#if token && !seen}
                 <button
@@ -454,7 +455,7 @@
                   Retry restore
                 </button>
               {/if}
-            </aside>
+            </DismissibleBanner>
           {/if}
 
           <button
@@ -523,7 +524,9 @@
               </div>
 
               {#if selectionError}
-                <aside class="card preset-tonal-error p-3 text-sm" role="alert">{selectionError}</aside>
+                <DismissibleBanner variant="error" class="p-3" onDismiss={() => (selectionError = '')}>
+                  <p>{selectionError}</p>
+                </DismissibleBanner>
               {/if}
 
               <div class="space-y-6">

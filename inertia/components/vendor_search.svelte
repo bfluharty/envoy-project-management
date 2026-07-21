@@ -25,6 +25,7 @@
     XIcon,
     SearchIcon,
   } from '@lucide/svelte';
+  import DismissibleBanner from '#components/dismissible_banner.svelte';
   import { groupVendorsByPrimaryClassification } from '../utils/vendor_grouping';
 
   interface VendorLocation {
@@ -436,12 +437,12 @@
     </label>
 
     {#if searchError}
-      <aside class="card preset-tonal-error p-3 text-sm" role="alert">
+      <DismissibleBanner variant="error" class="p-3" onDismiss={() => (searchError = '')}>
         {searchError}
         {#if retryable}
           <button type="button" onclick={search} class="ml-2 underline text-error-500 text-sm">Retry</button>
         {/if}
-      </aside>
+      </DismissibleBanner>
     {/if}
 
     <button
@@ -496,7 +497,9 @@
         </div>
 
         {#if selectionError}
-          <aside class="card preset-tonal-error p-3 text-sm" role="alert">{selectionError}</aside>
+          <DismissibleBanner variant="error" class="p-3" onDismiss={() => (selectionError = '')}>
+            <p>{selectionError}</p>
+          </DismissibleBanner>
         {/if}
 
         <div class="space-y-5">
@@ -589,12 +592,12 @@
         {#if context === 'project'}
           <div class="space-y-2 pt-2">
             {#if attachError}
-              <aside class="card preset-tonal-error p-3 text-sm" role="alert">
+              <DismissibleBanner variant="error" class="p-3" onDismiss={() => (attachError = '')}>
                 {attachError}
                 {#if attachRetryable}
                   <button type="button" onclick={attachToProject} class="ml-2 underline text-error-500 text-sm">Retry</button>
                 {/if}
-              </aside>
+              </DismissibleBanner>
             {/if}
             <button
               type="button"

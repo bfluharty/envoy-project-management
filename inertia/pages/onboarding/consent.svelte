@@ -2,6 +2,7 @@
   import { router } from '@inertiajs/svelte'
   import { untrack } from 'svelte'
   import LegalDocumentDialog from '#components/legal/legal_document_dialog.svelte'
+  import DismissibleBanner from '#components/dismissible_banner.svelte'
   import PrivacyContent from '#components/legal/privacy_content.svelte'
   import TermsContent from '#components/legal/terms_content.svelte'
   import Logo from '#components/logo.svelte'
@@ -114,9 +115,9 @@
         onsubmit={submitConsent}
       >
         {#if errorText(errors.termsAccepted) || errorText(errors.modelTrainingOptIn)}
-          <aside class="rounded-lg border border-error-500/30 bg-error-500/10 p-4" role="alert">
+          <DismissibleBanner variant="error" onDismiss={() => (errors = {})}>
             <p>{errorText(errors.termsAccepted) ?? errorText(errors.modelTrainingOptIn)}</p>
-          </aside>
+          </DismissibleBanner>
         {/if}
 
         <fieldset class="space-y-6" disabled={processing}>

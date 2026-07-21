@@ -2,6 +2,7 @@
   import Sidebar from "#components/sidebar.svelte";
   import LocationSearch from '#components/location_search.svelte';
   import type { LocationData } from '#components/location_search.svelte';
+  import DismissibleBanner from '#components/dismissible_banner.svelte';
   import VendorSearch, { type VendorResult } from '#components/vendor_search.svelte';
   import { router } from '@inertiajs/svelte'
   import { page } from '@inertiajs/svelte'
@@ -17,6 +18,8 @@
   const user = $derived($page.props.user);
   const projects = $derived($page.props.projects || []);
   const recentProjects = $derived(projects.slice(0, 3));
+  let flashErrorVisible = $state(true);
+  let flashSuccessVisible = $state(true);
 
   // Common currencies to show at the top
   const commonCurrencyCodes = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CNY', 'INR', 'MXN', 'BRL'];
@@ -267,10 +270,10 @@
         <p class="text-surface-600-400">Step through the details or skip ahead to get started.</p>
       </header>
 
-      {#if flash.error}
-        <aside class="card preset-tonal-error p-4">
+      {#if flash.error && flashErrorVisible}
+        <DismissibleBanner variant="error" onDismiss={() => (flashErrorVisible = false)}>
           <p>{flash.error}</p>
-        </aside>
+        </DismissibleBanner>
       {/if}
 
       <Steps
@@ -458,7 +461,9 @@
               </label>
             </section>
             {#if attachVendorError}
-              <aside class="card preset-tonal-warning p-3 text-sm">{attachVendorError}</aside>
+              <DismissibleBanner variant="warning" class="p-3" onDismiss={() => (attachVendorError = '')}>
+                <p>{attachVendorError}</p>
+              </DismissibleBanner>
             {/if}
             <footer class="flex justify-between items-center pt-2">
               <button class="btn preset-tonal" type="button" onclick={() => { errors = {}; currentStep -= 1; }}>Back</button>
@@ -477,18 +482,18 @@
       </Steps>
     </div>
   {:else}
-    {#if flash.error}
+    {#if flash.error && flashErrorVisible}
       <div class="w-full max-w-md px-6 sm:px-0 my-4 sm:mx-auto">
-        <aside class="card preset-tonal-error p-4">
+        <DismissibleBanner variant="error" onDismiss={() => (flashErrorVisible = false)}>
           <p>{flash.error}</p>
-        </aside>
+        </DismissibleBanner>
       </div>
     {/if}
-    {#if flash.success}
+    {#if flash.success && flashSuccessVisible}
       <div class="w-full max-w-md px-6 sm:px-0 my-4 sm:mx-auto">
-        <aside class="card preset-tonal p-4">
+        <DismissibleBanner variant="success" onDismiss={() => (flashSuccessVisible = false)}>
           <p>{flash.success}</p>
-        </aside>
+        </DismissibleBanner>
       </div>
     {/if}
 
@@ -508,7 +513,7 @@
       </div>
     {:else}
       <!-- Populated state -->
-      <div class="w-full max-w-5xl p-6 space-y-8">
+      <div class="w-full max-w-5xl mx-auto p-6 space-y-8">
         <header class="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 class="text-3xl font-bold">Jump back in{user?.fullName ? `, ${user.fullName.split(' ')[0]}` : ''}</h1>

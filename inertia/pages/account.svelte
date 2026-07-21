@@ -1,5 +1,6 @@
 <script lang="ts">
   import Sidebar from '#components/sidebar.svelte'
+  import DismissibleBanner from '#components/dismissible_banner.svelte'
   import ThemeToggle from '#components/theme_toggle.svelte'
   import UserAvatar, { type AvatarData } from '#components/user_avatar.svelte'
   import { router, page } from '@inertiajs/svelte'
@@ -64,6 +65,11 @@
     dataPrivacy?: DataPrivacy
   } = $props()
   const flash = $derived($page.props.flash || {})
+  let flashErrorVisible = $state(true)
+  let flashSuccessVisible = $state(true)
+  let reauthBannerVisible = $state(true)
+  let missingInboxBannerVisible = $state(true)
+  let primaryInboxBannerVisible = $state(true)
   const pageErrors = $derived(($page.props.errors || {}) as Record<string, string[]>)
   const primaryConnection = $derived(connections.find((connection) => connection.isPrimary) ?? null)
   const activePrimaryConnection = $derived(
@@ -285,29 +291,23 @@
   <div class="w-full p-6 space-y-6">
     <header class="space-y-2">
       <h1 class="text-3xl font-bold">Account</h1>
-      <p class="text-surface-600-400">
-        Manage the connected inboxes Envoy uses for outreach and replies.
-      </p>
     </header>
 
-    {#if flash.error}
-      <div class="alert preset-tonal-error p-4 rounded-lg">
+    {#if flash.error && flashErrorVisible}
+      <DismissibleBanner variant="error" onDismiss={() => (flashErrorVisible = false)}>
         <span>{flash.error}</span>
-      </div>
+      </DismissibleBanner>
     {/if}
 
-    {#if flash.success}
-      <div
-        class="alert rounded-lg border border-success-500/20 bg-success-500/10 p-4 text-surface-950 dark:border-surface-200-800 dark:bg-surface-100-900/40 dark:text-surface-50"
-      >
+    {#if flash.success && flashSuccessVisible}
+      <DismissibleBanner variant="success" onDismiss={() => (flashSuccessVisible = false)}>
         <span>{flash.success}</span>
-      </div>
+      </DismissibleBanner>
     {/if}
 
-    {#if reauthConnection}
-      <div
-        class="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-warning-500/30 bg-warning-500/10 p-4"
-      >
+    {#if reauthConnection && reauthBannerVisible}
+      <DismissibleBanner variant="warning" role={null} onDismiss={() => (reauthBannerVisible = false)}>
+        <div class="flex flex-wrap items-center justify-between gap-4">
         <div class="flex min-w-0 items-start gap-3">
           <AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-warning-600-400" />
           <div class="min-w-0">
@@ -330,11 +330,11 @@
           <RefreshCwIcon class="size-4" />
           <span>Reconnect</span>
         </a>
-      </div>
-    {:else if !activePrimaryConnection}
-      <div
-        class="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-error-500/30 bg-error-500/10 p-4"
-      >
+        </div>
+      </DismissibleBanner>
+    {:else if !activePrimaryConnection && missingInboxBannerVisible}
+      <DismissibleBanner variant="error" role={null} onDismiss={() => (missingInboxBannerVisible = false)}>
+        <div class="flex flex-wrap items-center justify-between gap-4">
         <div class="flex min-w-0 items-start gap-3">
           <AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-error-500" />
           <div>
@@ -352,7 +352,8 @@
             Connect Microsoft
           </a>
         </div>
-      </div>
+        </div>
+      </DismissibleBanner>
     {/if}
 
     <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
@@ -417,7 +418,7 @@
             <div>
               <h2 class="text-xl font-semibold">Connected Email Accounts</h2>
               <p class="text-sm text-surface-600-400 mt-1">
-                Envoy requires one active connected inbox for email outreach and reply sync.
+                Envoy requires an active connected inbox for email outreach and reply sync.
               </p>
             </div>
             <div class="flex gap-2 flex-wrap">
@@ -429,37 +430,6 @@
               </a>
             </div>
           </div>
-
-          {#if activePrimaryConnection}
-            <div
-              class="rounded-xl border border-success-500/20 bg-success-500/10 p-4 text-sm"
-            >
-              <div class="flex items-start gap-3">
-                <CheckCircleIcon class="mt-0.5 size-5 shrink-0 text-success-600-400" />
-                <div class="min-w-0">
-                  <p class="font-medium">
-                    Primary inbox: {providerLabel(activePrimaryConnection.provider)}
-                  </p>
-                  <p class="mt-1 break-all text-surface-700-300">
-                    {activePrimaryConnection.email}
-                  </p>
-                </div>
-              </div>
-            </div>
-          {:else if primaryConnection}
-            <div
-              class="rounded-xl border border-warning-500/30 bg-warning-500/10 p-4 text-sm"
-            >
-              <div class="flex items-start gap-3">
-                <AlertTriangleIcon class="mt-0.5 size-5 shrink-0 text-warning-600-400" />
-                <div class="min-w-0">
-                  <p class="font-medium">Primary inbox needs attention</p>
-                  <p class="mt-1 break-all text-surface-700-300">{primaryConnection.email}</p>
-                </div>
-              </div>
-            </div>
-          {/if}
-
           {#if connections.length === 0}
             <div class="rounded-xl border border-dashed border-surface-200-800 p-5 text-sm text-surface-600-400">
               No inbox connected yet. Connect Gmail or Microsoft to send project outreach from your
@@ -510,26 +480,6 @@
                       >
                         Disconnect
                       </button>
-                    </div>
-                  </div>
-
-                  <div class="mt-4 grid gap-3 text-xs text-surface-600-400 sm:grid-cols-2">
-                    <div>
-                      <p class="font-medium text-surface-700-300">Provider watch</p>
-                      <p>{watchStatusLabel(connection.watchStatus)}</p>
-                      <p>Expires: {formatDateTime(watchExpiresAt(connection))}</p>
-                    </div>
-                    <div>
-                      <p class="font-medium text-surface-700-300">Last sync</p>
-                      <p>{formatDateTime(connection.lastSyncAt)}</p>
-                      {#if connection.lastSyncError}
-                        <p class="mt-1 break-words text-error-500">{connection.lastSyncError}</p>
-                      {/if}
-                      {#if connection.reauthRequiredAt}
-                        <p class="mt-1">
-                          Reauth requested: {formatDateTime(connection.reauthRequiredAt)}
-                        </p>
-                      {/if}
                     </div>
                   </div>
                 </li>
@@ -730,7 +680,7 @@
 
             {#if modelTrainingPreferenceUpdatedAt}
               <p class="text-xs text-surface-600-400">
-                Last changed {formatDateTime(modelTrainingPreferenceUpdatedAt)}
+                Last updated {formatDateTime(modelTrainingPreferenceUpdatedAt)}
               </p>
             {/if}
 
@@ -748,19 +698,16 @@
             </p>
 
             {#if dataPrivacyError}
-              <p class="rounded-lg border border-error-500/30 bg-error-500/10 p-3 text-sm" role="alert">
+              <DismissibleBanner variant="error" class="p-3" onDismiss={() => (dataPrivacyError = '')}>
                 {dataPrivacyError}
-              </p>
+              </DismissibleBanner>
             {/if}
 
             <p class="sr-only" role="status" aria-live="polite">{dataPrivacySuccess}</p>
             {#if dataPrivacySuccess}
-              <p
-                class="rounded-lg border border-success-500/20 bg-success-500/10 p-3 text-sm"
-                aria-hidden="true"
-              >
+              <DismissibleBanner variant="success" class="p-3" role={null} onDismiss={() => (dataPrivacySuccess = '')}>
                 {dataPrivacySuccess}
-              </p>
+              </DismissibleBanner>
             {/if}
 
             <button

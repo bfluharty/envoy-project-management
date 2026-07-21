@@ -1,5 +1,6 @@
 <script lang="ts">
   import Sidebar from '#components/sidebar.svelte'
+  import DismissibleBanner from '#components/dismissible_banner.svelte'
   import { router, page } from '@inertiajs/svelte'
   import { MailIcon, Trash2Icon } from '@lucide/svelte'
 
@@ -12,6 +13,8 @@
 
   const { connections = [] } = $props()
   const flash = $derived($page.props.flash || {})
+  let flashErrorVisible = $state(true)
+  let flashSuccessVisible = $state(true)
 
   function disconnect(id: number) {
     if (!confirm('Disconnect this inbox? We will stop listening for emails.')) return
@@ -45,18 +48,16 @@
       <a href="/inbox/emails" class="btn preset-tonal">View emails</a>
     </header>
 
-    {#if flash.error}
-      <div class="alert preset-tonal-error p-4 rounded-lg">
+    {#if flash.error && flashErrorVisible}
+      <DismissibleBanner variant="error" onDismiss={() => (flashErrorVisible = false)}>
         <span>{flash.error}</span>
-      </div>
+      </DismissibleBanner>
     {/if}
 
-    {#if flash.success}
-      <div
-        class="alert rounded-lg border border-success-500/20 bg-success-500/10 p-4 text-surface-950 dark:border-surface-200-800 dark:bg-surface-100-900/40 dark:text-surface-50"
-      >
+    {#if flash.success && flashSuccessVisible}
+      <DismissibleBanner variant="success" onDismiss={() => (flashSuccessVisible = false)}>
         <span>{flash.success}</span>
-      </div>
+      </DismissibleBanner>
     {/if}
 
     <section class="card preset-outlined-surface-200-800 p-6 space-y-4">
