@@ -67,9 +67,6 @@
   let seen          = $state(false);
   let restoring     = $state(false);
   const recommendationGroups = $derived(groupVendorsByPrimaryClassification(recommendations));
-  const selectedRecommendations = $derived(
-    recommendations.filter((vendor) => selected.has(vendor.vendorListingUuid))
-  );
   const allRecommendationsSelected = $derived(
     recommendations.length > 0 &&
       recommendations.every((vendor) => selected.has(vendor.vendorListingUuid))
@@ -527,46 +524,6 @@
 
               {#if selectionError}
                 <aside class="card preset-tonal-error p-3 text-sm" role="alert">{selectionError}</aside>
-              {/if}
-
-              {#if selectedRecommendations.length > 0}
-                <section class="space-y-2 rounded-xl border border-surface-200-800 bg-surface-50-950/40 p-3" aria-label="Selected contacts">
-                  <div class="flex items-center justify-between gap-3">
-                    <h3 class="text-sm font-semibold">Selected contacts</h3>
-                    <span class="text-xs text-surface-600-400">{selectedRecommendations.length} selected</span>
-                  </div>
-                  <ul class="space-y-2" role="list">
-                    {#each selectedRecommendations as vendor (vendor.vendorListingUuid)}
-                      <li class="flex items-start justify-between gap-3 rounded-lg border border-surface-200-800 bg-surface-100-900/20 p-3">
-                        <div class="min-w-0 space-y-1">
-                          <p class="font-semibold text-sm">{vendor.name}</p>
-                          {#if vendor.hasEmail === false}
-                            <p class="text-xs font-medium text-warning-600-400">
-                              Additional contact details required
-                            </p>
-                          {/if}
-                          {#if vendor.location}
-                            <p class="text-xs text-surface-600-400 flex items-center gap-1">
-                              <MapPinIcon class="size-3 shrink-0" />
-                              {formatLocation(vendor.location)}
-                            </p>
-                          {/if}
-                          {#if vendor.categories.length > 0}
-                            <p class="text-xs text-surface-500">{vendor.categories.join(' - ')}</p>
-                          {/if}
-                        </div>
-                        <button
-                          type="button"
-                          class="btn btn-sm preset-tonal shrink-0"
-                          onclick={() => toggleSelection(vendor.vendorListingUuid)}
-                          disabled={searching || !!searchError || persistingSelection || continuing}
-                        >
-                          Deselect
-                        </button>
-                      </li>
-                    {/each}
-                  </ul>
-                </section>
               {/if}
 
               <div class="space-y-6">

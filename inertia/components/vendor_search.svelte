@@ -122,11 +122,6 @@
     selectableResultUuids.length > 0 &&
       selectableResultUuids.every((uuid) => selected.has(uuid))
   );
-  const selectedVendorDetails = $derived(
-    [...selected]
-      .map((uuid) => vendorByUuid[uuid])
-      .filter((vendor): vendor is VendorResult => !!vendor)
-  );
 
   // ── Validation ─────────────────────────────────────────────────────────────
   function validate(): boolean {
@@ -459,31 +454,6 @@
       {searching ? 'Searching...' : hasSearched ? 'Search again' : 'Search'}
     </button>
   </div>
-
-  {#if context === 'new-project' && selectedVendorDetails.length > 0}
-    <section class="space-y-2 rounded-xl border border-surface-200-800 bg-surface-50-950/40 p-3" aria-label="Selected contacts">
-      <div class="flex items-center justify-between gap-3">
-        <h3 class="text-sm font-semibold">Selected contacts</h3>
-        <span class="text-xs text-surface-600-400">{selectedVendorDetails.length} selected</span>
-      </div>
-      <ul class="space-y-2" role="list">
-        {#each selectedVendorDetails as vendor (vendor.vendorListingUuid)}
-          <li class="flex items-start justify-between gap-3 rounded-lg border border-surface-200-800 bg-surface-100-900/20 p-3">
-            <div class="min-w-0">
-              {@render VendorCardContent({ vendor, isInContacts: savedContact[vendor.vendorListingUuid] || vendor.inContacts })}
-            </div>
-            <button
-              type="button"
-              class="btn btn-sm preset-tonal shrink-0"
-              onclick={() => toggleSelection(vendor.vendorListingUuid)}
-            >
-              Deselect
-            </button>
-          </li>
-        {/each}
-      </ul>
-    </section>
-  {/if}
 
   <!-- Results -->
   {#if hasSearched}
