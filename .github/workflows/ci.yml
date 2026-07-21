@@ -37,6 +37,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
       - name: Lint
         run: npm run lint
 
@@ -50,7 +53,7 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: password
           DB_DATABASE: envoy_test
-          NODE_ENV: production
+          NODE_ENV: development
           APP_KEY: dummy_key_for_testing
           HOST: localhost
           PORT: 8080
@@ -61,6 +64,8 @@ jobs:
           REASONING_ENGINE_URL: http://localhost:8000
         run: |
           npm run test:api
+          node ace migration:fresh --seed
+          npm run test:ui
 
   deploy-dev:
     needs: test
