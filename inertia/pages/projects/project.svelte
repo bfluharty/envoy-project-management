@@ -250,6 +250,7 @@ function sendMessage(event: Event) {
     if (!input.trim() || isLoading) return;
     const prompt = input.trim();
     input = '';
+    void tick().then(() => inputEl?.focus());
     messages = [...messages, { id: idCounter++, role: 'user', content: prompt }];
     sendChat(prompt);
 }
@@ -1185,10 +1186,9 @@ onDestroy(() => {
             bind:this={inputEl}
             onkeydown={handleInputKeydown}
             placeholder="Type your message..."
-            autocomplete="off"
-            disabled={isLoading}></textarea>
+            autocomplete="off"></textarea>
         <button class="btn btn-sm preset-filled-primary-500" type="submit" disabled={isLoading}>
-            {isLoading ? 'Sending…' : 'Send'}
+            Send
         </button>
     </form>
 </div>

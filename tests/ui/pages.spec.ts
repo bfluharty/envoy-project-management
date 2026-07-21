@@ -69,6 +69,43 @@ test('project page - chat tab', async ({ page }) => {
   await expect(await openProjectChat(page)).toBeVisible()
 })
 
+test('project chat keeps the composer editable while waiting for an agent response', async ({
+  page,
+}) => {
+  let resolveChatResponse: (() => void) | undefined
+
+  await login(page)
+  await page.route('**/projects/*/chat', async (route) => {
+    await new Promise<void>((resolve) => {
+      resolveChatResponse = resolve
+    })
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/plain',
+      body: 'Thanks, I can help with that.',
+    })
+  })
+
+  await goToProject(page)
+  const chatInput = await openProjectChat(page)
+  const sendButton = page.getByRole('button', { name: 'Send' })
+
+  await chatInput.fill('First message')
+  await sendButton.click()
+
+  await expect(sendButton).toBeDisabled()
+  await expect(page.getByRole('button', { name: /Sending/i })).toHaveCount(0)
+  await expect(chatInput).toBeEnabled()
+  await expect(chatInput).toBeFocused()
+
+  await chatInput.fill('Draft the next thought')
+  await expect(chatInput).toHaveValue('Draft the next thought')
+
+  resolveChatResponse?.()
+  await expect(page.getByText('Thanks, I can help with that.')).toBeVisible()
+  await expect(chatInput).toBeFocused()
+})
+
 test('account page', async ({ page }) => {
   await login(page)
   await page.goto('/account')

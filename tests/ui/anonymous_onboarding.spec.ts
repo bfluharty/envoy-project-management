@@ -219,7 +219,11 @@ test.describe('anonymous vendor discovery', () => {
     ).toBeVisible()
     await expect(page.getByText('Onboarded to Envoy')).toBeVisible()
     await expect(page.getByText(/Unverified listing/i)).toBeVisible()
-    await expect(page.getByText('Additional contact details required')).toHaveCount(2)
+    await expect(
+      page
+        .getByRole('button', { name: /No Email Plumbing/i })
+        .getByText('Additional contact details required')
+    ).toBeVisible()
     await expect(page.getByText('Electrician · Commercial Contractor')).toBeVisible()
     await expect(page.getByText(/@example\.com|555-0100|https:\/\//)).toHaveCount(0)
     expect(await cards.count()).toBeGreaterThanOrEqual(0)
