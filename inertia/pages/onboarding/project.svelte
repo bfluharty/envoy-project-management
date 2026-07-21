@@ -1,5 +1,6 @@
 <script lang="ts">
   import Sidebar from '#components/sidebar.svelte';
+  import DismissibleBanner from '#components/dismissible_banner.svelte';
   import LocationSearch from '#components/location_search.svelte';
   import type { LocationData } from '#components/location_search.svelte';
   import { router } from '@inertiajs/svelte';
@@ -51,6 +52,8 @@
   } = $props();
 
   const flash = $derived($page.props.flash || {});
+  let flashErrorVisible = $state(true);
+  let flashPartialSuccessVisible = $state(true);
   const expired = $derived(onboardingState === 'expired');
 
   // ── Currency sort ──────────────────────────────────────────────────────────
@@ -335,16 +338,16 @@
         <p class="text-surface-600-400">We've prefilled what we know. Fill in the rest to get started.</p>
       </header>
 
-      {#if flash.error}
-        <aside class="card preset-tonal-error p-4">
+      {#if flash.error && flashErrorVisible}
+        <DismissibleBanner variant="error" onDismiss={() => (flashErrorVisible = false)}>
           <p>{flash.error}</p>
-        </aside>
+        </DismissibleBanner>
       {/if}
 
-      {#if flash.partial_success}
-        <aside class="card preset-tonal-warning p-4" role="status">
+      {#if flash.partial_success && flashPartialSuccessVisible}
+        <DismissibleBanner variant="warning" onDismiss={() => (flashPartialSuccessVisible = false)}>
           <p>{flash.partial_success}</p>
-        </aside>
+        </DismissibleBanner>
       {/if}
 
       <!-- Project form wizard (matches pattern from home.svelte) -->
@@ -407,9 +410,9 @@
             </div>
 
             {#if contactDetailsWarning}
-              <aside class="card preset-tonal-warning p-3 text-sm" role="alert">
+              <DismissibleBanner variant="warning" class="p-3" role="alert" onDismiss={() => (contactDetailsWarning = '')}>
                 {contactDetailsWarning}
-              </aside>
+              </DismissibleBanner>
             {/if}
 
             <ul class="space-y-3" role="list">

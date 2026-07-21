@@ -1,6 +1,7 @@
 <script lang="ts">
   import { router } from '@inertiajs/svelte'
   import AuthPageShell from '#components/auth_page_shell.svelte'
+  import DismissibleBanner from '#components/dismissible_banner.svelte'
 
   const { token = '', flashMessage = null }: { token: string; flashMessage: { type?: string; message?: string } | null } = $props()
 
@@ -45,16 +46,14 @@
 
       <form class="mt-8 space-y-6" onsubmit={handleSubmit}>
         {#if showError}
-          <aside class="card preset-tonal-error p-4">
+          <DismissibleBanner variant="error" onDismiss={() => (showError = false)}>
             <p>{errorMessage}</p>
-          </aside>
+          </DismissibleBanner>
         {/if}
         {#if flashMessage?.type === 'success'}
-          <aside
-            class="card border border-success-500/20 bg-success-500/10 p-4 text-surface-950 dark:border-surface-200-800 dark:bg-surface-100-900/40 dark:text-surface-50"
-          >
+          <DismissibleBanner variant="success">
             <p>{flashMessage.message}</p>
-          </aside>
+          </DismissibleBanner>
         {/if}
 
         <input type="hidden" name="token" value={token} />

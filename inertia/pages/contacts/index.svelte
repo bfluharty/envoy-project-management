@@ -1,5 +1,6 @@
 <script lang="ts">
 import Sidebar from '#components/sidebar.svelte';
+import DismissibleBanner from '#components/dismissible_banner.svelte';
 import VendorSearch from '#components/vendor_search.svelte';
 import { page, router } from '@inertiajs/svelte';
 import { untrack } from 'svelte';
@@ -326,7 +327,7 @@ async function deactivate(uuid: string) {
             {/if}
           </label>
           {#if trustedMatchError}
-            <aside class="card preset-tonal-error p-3 text-sm" role="alert">
+            <DismissibleBanner variant="error" class="p-3" onDismiss={() => (trustedMatchError = '')}>
               <p>{trustedMatchError}</p>
               <div class="mt-2 flex flex-wrap gap-2">
                 <button class="btn btn-sm preset-tonal" type="button" onclick={() => addContact(false)} disabled={addSubmitting}>
@@ -336,7 +337,7 @@ async function deactivate(uuid: string) {
                   Create separate contact
                 </button>
               </div>
-            </aside>
+            </DismissibleBanner>
           {/if}
           {#if trustedMatches.length > 0}
             <aside class="card preset-tonal-primary-500 p-3 space-y-3" aria-label="Existing trusted listings">

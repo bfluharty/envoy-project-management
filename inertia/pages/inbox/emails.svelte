@@ -1,5 +1,6 @@
 <script lang="ts">
   import Sidebar from '#components/sidebar.svelte'
+  import DismissibleBanner from '#components/dismissible_banner.svelte'
   import { page } from '@inertiajs/svelte'
   import { MailIcon, InboxIcon, SendIcon, ListIcon, LayoutGridIcon } from '@lucide/svelte'
 
@@ -30,6 +31,9 @@
 
   const { conversations = [], hasConnections = false, syncError = null } = $props()
   const flash = $derived($page.props.flash || {})
+  let syncErrorVisible = $state(true)
+  let flashErrorVisible = $state(true)
+  let flashSuccessVisible = $state(true)
 
   const threads = $derived(
     [...conversations]
@@ -227,8 +231,8 @@
       </div>
     </header>
 
-    {#if syncError}
-      <div class="alert preset-tonal-error p-4 rounded-lg">
+    {#if syncError && syncErrorVisible}
+      <DismissibleBanner variant="error" onDismiss={() => (syncErrorVisible = false)}>
         <span>
           Sync failed: {syncError}. Ensure the email service is running (for example
           <code class="text-sm bg-surface-200-800 px-1 rounded">sam local start-api</code>
@@ -236,21 +240,19 @@
             >EMAIL_SERVICE_URL</code
           > is set in `.env`.
         </span>
-      </div>
+      </DismissibleBanner>
     {/if}
 
-    {#if flash.error}
-      <div class="alert preset-tonal-error p-4 rounded-lg">
+    {#if flash.error && flashErrorVisible}
+      <DismissibleBanner variant="error" onDismiss={() => (flashErrorVisible = false)}>
         <span>{flash.error}</span>
-      </div>
+      </DismissibleBanner>
     {/if}
 
-    {#if flash.success}
-      <div
-        class="alert rounded-lg border border-success-500/20 bg-success-500/10 p-4 text-surface-950 dark:border-surface-200-800 dark:bg-surface-100-900/40 dark:text-surface-50"
-      >
+    {#if flash.success && flashSuccessVisible}
+      <DismissibleBanner variant="success" onDismiss={() => (flashSuccessVisible = false)}>
         <span>{flash.success}</span>
-      </div>
+      </DismissibleBanner>
     {/if}
 
     {#if conversations.length === 0}

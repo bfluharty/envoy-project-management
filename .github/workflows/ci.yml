@@ -37,6 +37,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
       - name: Lint
         run: npm run lint
 
@@ -50,7 +53,7 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: password
           DB_DATABASE: envoy_test
-          NODE_ENV: production
+          NODE_ENV: development
           APP_KEY: dummy_key_for_testing
           HOST: localhost
           PORT: 8080
@@ -61,6 +64,27 @@ jobs:
           REASONING_ENGINE_URL: http://localhost:8000
         run: |
           npm run test:api
+          node --input-type=module <<'NODE'
+          import pg from 'pg'
+
+          const { Client } = pg
+          const client = new Client({
+            host: process.env.DB_HOST,
+            port: Number(process.env.DB_PORT ?? 5432),
+            user: process.env.DB_USER,
+            password: process.env.DB_PASSWORD,
+            database: process.env.DB_DATABASE,
+          })
+
+          await client.connect()
+          await client.query('DROP SCHEMA IF EXISTS envoy_schema CASCADE')
+          await client.query('DROP TABLE IF EXISTS public.adonis_schema CASCADE')
+          await client.query('DROP TABLE IF EXISTS public.adonis_schema_versions CASCADE')
+          await client.end()
+          NODE
+          node ace migration:run
+          node ace db:seed
+          npm run test:ui
 
   deploy-dev:
     needs: test

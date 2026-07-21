@@ -6,10 +6,10 @@ import Logo from '#components/logo.svelte';
 import UserAvatar, { type AvatarData } from '#components/user_avatar.svelte';
 import LocationSearch from '#components/location_search.svelte';
 import type { LocationData } from '#components/location_search.svelte';
+import DismissibleBanner from '#components/dismissible_banner.svelte';
 import VendorSearch from '#components/vendor_search.svelte';
 import { page } from '@inertiajs/svelte';
 import { onDestroy, onMount, tick, untrack } from 'svelte';
-import { fly } from 'svelte/transition';
 import { formatDate, formatCurrency } from '../../utils/format';
 import { router } from '@inertiajs/svelte'
 import { Trash2Icon } from '@lucide/svelte'
@@ -250,6 +250,7 @@ function sendMessage(event: Event) {
     if (!input.trim() || isLoading) return;
     const prompt = input.trim();
     input = '';
+    void tick().then(() => inputEl?.focus());
     messages = [...messages, { id: idCounter++, role: 'user', content: prompt }];
     sendChat(prompt);
 }
@@ -301,6 +302,7 @@ let flash = $derived(
     } | undefined) ?? {}
 );
 let flashSuccessVisible = $state(false);
+let topBannerDismissed = $state(false);
 let currentUserName = $derived(currentUser?.fullName ?? 'You');
 let currentUserAvatar = $derived(
     currentUser?.avatar ?? {
@@ -1087,22 +1089,25 @@ onDestroy(() => {
 <!-- Screen reader live region for operation feedback -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">{opSuccessMsg}</div>
 
-{#if flash.partial_success || postCreateVendorWarning}
-    <aside class="m-4 mb-0 rounded-xl border border-warning-500/30 bg-warning-500/10 p-4 text-sm text-warning-700-300" role="status">
+{#if !topBannerDismissed && (flash.partial_success || postCreateVendorWarning)}
+    <DismissibleBanner variant="warning" class="m-4 mb-0" onDismiss={() => (topBannerDismissed = true)}>
         {flash.partial_success || postCreateVendorWarning}
-    </aside>
-{:else if flash.error}
-    <aside class="m-4 mb-0 rounded-xl border border-error-500/30 bg-error-500/10 p-4 text-sm text-error-500" role="alert">
+    </DismissibleBanner>
+{:else if !topBannerDismissed && flash.error}
+    <DismissibleBanner variant="error" class="m-4 mb-0" onDismiss={() => (topBannerDismissed = true)}>
         {flash.error}
-    </aside>
-{:else if flash.success && flashSuccessVisible}
-    <aside
-        class="m-4 mb-0 rounded-xl border border-success-500/30 bg-success-500/10 p-4 text-sm text-success-700-300"
-        role="status"
-        transition:fly={{ y: -12, duration: 180 }}
+    </DismissibleBanner>
+{:else if !topBannerDismissed && flash.success && flashSuccessVisible}
+    <DismissibleBanner
+        variant="success"
+        class="m-4 mb-0"
+        onDismiss={() => {
+            topBannerDismissed = true;
+            flashSuccessVisible = false;
+        }}
     >
         {flash.success}
-    </aside>
+    </DismissibleBanner>
 {/if}
 
 <!-- Chat tab -->
@@ -1185,10 +1190,9 @@ onDestroy(() => {
             bind:this={inputEl}
             onkeydown={handleInputKeydown}
             placeholder="Type your message..."
-            autocomplete="off"
-            disabled={isLoading}></textarea>
+            autocomplete="off"></textarea>
         <button class="btn btn-sm preset-filled-primary-500" type="submit" disabled={isLoading}>
-            {isLoading ? 'Sending…' : 'Send'}
+            Send
         </button>
     </form>
 </div>
@@ -1211,9 +1215,9 @@ onDestroy(() => {
     <div class="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-4 p-4 sm:p-6">
 
         {#if outreachError}
-            <div class="rounded-xl border border-error-500/30 bg-error-500/10 p-4 text-sm text-error-500">
+            <DismissibleBanner variant="error" onDismiss={() => (outreachError = null)}>
                 {outreachError}
-            </div>
+            </DismissibleBanner>
         {/if}
 
         {#if outreachLoading}
@@ -1609,7 +1613,7 @@ onDestroy(() => {
                         {/if}
                     </label>
                     {#if trustedContactMatchError}
-                        <aside class="card preset-tonal-error p-3 text-sm" role="alert">
+                        <DismissibleBanner variant="error" class="p-3" onDismiss={() => (trustedContactMatchError = '')}>
                             <p>{trustedContactMatchError}</p>
                             <div class="mt-2 flex flex-wrap gap-2">
                                 <button class="btn btn-sm preset-tonal" type="button" onclick={() => createAndAttachContact(undefined, false)} disabled={creatingContact}>
@@ -1619,7 +1623,7 @@ onDestroy(() => {
                                     Create separate contact
                                 </button>
                             </div>
-                        </aside>
+                        </DismissibleBanner>
                     {/if}
                     {#if trustedContactMatches.length > 0}
                         <aside class="card preset-tonal-primary-500 p-3 space-y-3" aria-label="Existing trusted listings">

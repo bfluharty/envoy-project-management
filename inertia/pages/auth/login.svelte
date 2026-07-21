@@ -1,6 +1,7 @@
 <script lang="ts">
   import { router } from '@inertiajs/svelte'
   import AuthPageShell from '#components/auth_page_shell.svelte'
+  import DismissibleBanner from '#components/dismissible_banner.svelte'
 
   interface SocialAuthProvider {
     provider: 'google' | 'microsoft'
@@ -83,17 +84,15 @@
   {#if passwordAuthEnabled}
     <form class="mt-8 space-y-6" onsubmit={handleSubmit}>
       {#if successMessage}
-        <aside
-          class="card border border-success-500/20 bg-success-500/10 p-4 text-surface-950 dark:border-surface-200-800 dark:bg-surface-100-900/40 dark:text-surface-50"
-        >
+        <DismissibleBanner variant="success">
           <p>{successMessage}</p>
-        </aside>
+        </DismissibleBanner>
       {/if}
 
       {#if showError}
-        <aside class="card preset-tonal-error p-4">
+        <DismissibleBanner variant="error" onDismiss={() => (showError = false)}>
           <p>{errorMessage}</p>
-        </aside>
+        </DismissibleBanner>
       {/if}
 
       <div class="space-y-4">
@@ -140,17 +139,15 @@
     </form>
   {:else}
     {#if successMessage}
-      <aside
-        class="card mt-8 border border-success-500/20 bg-success-500/10 p-4 text-surface-950 dark:border-surface-200-800 dark:bg-surface-100-900/40 dark:text-surface-50"
-      >
+      <DismissibleBanner variant="success" class="mt-8">
         <p>{successMessage}</p>
-      </aside>
+      </DismissibleBanner>
     {/if}
 
     {#if showError}
-      <aside class="card preset-tonal-error mt-8 p-4">
+      <DismissibleBanner variant="error" class="mt-8" onDismiss={() => (showError = false)}>
         <p>{errorMessage}</p>
-      </aside>
+      </DismissibleBanner>
     {/if}
   {/if}
 
