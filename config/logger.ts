@@ -14,12 +14,17 @@ const loggerConfig = defineConfig({
       enabled: true,
       name: 'Envoy Project Management',
       level: env.get('LOG_LEVEL'),
-      transport: {
-        targets: targets()
-          .pushIf(!app.inProduction, targets.pretty())
-          .pushIf(app.inProduction, targets.file({ destination: 1 }))
-          .toArray(),
-      },
+      ...(app.inProduction
+        ? {
+            formatters: {
+              level: (label: string) => ({ level: label }),
+            },
+          }
+        : {
+            transport: {
+              targets: targets().push(targets.pretty()).toArray(),
+            },
+          }),
     },
   },
 })
