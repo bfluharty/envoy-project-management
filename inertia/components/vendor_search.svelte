@@ -94,6 +94,7 @@
     )
   );
   let hasSearched = $state(false);
+  let needsMoreSpecificDetails = $state(false);
 
   // Per-listing contact save state
   let savingContact  = $state<Record<string, boolean>>({});
@@ -182,9 +183,13 @@
         return;
       }
 
-      const data: { vendors: VendorResult[] } = await res.json();
+      const data: { vendors: VendorResult[]; vendorSearches?: unknown[] } = await res.json();
       const nextResults = (data.vendors ?? []).slice(0, 8);
       results    = nextResults;
+      needsMoreSpecificDetails =
+        Array.isArray(data.vendorSearches) &&
+        data.vendorSearches.length === 0 &&
+        nextResults.length === 0;
       vendorByUuid = {
         ...vendorByUuid,
         ...Object.fromEntries(nextResults.map((vendor) => [vendor.vendorListingUuid, vendor])),
@@ -460,8 +465,15 @@
   {#if hasSearched}
     {#if results.length === 0}
       <div class="text-center py-6 space-y-1" aria-live="polite">
-        <p class="font-medium">No matches found</p>
-        <p class="text-sm text-surface-600-400">Try adjusting your description or location.</p>
+        {#if needsMoreSpecificDetails}
+          <p class="font-medium">Tell us what kind of help you need</p>
+          <p class="text-sm text-surface-600-400">
+            Describe the specific work, service, item, rental, or venue you want to find.
+          </p>
+        {:else}
+          <p class="font-medium">No matches found</p>
+          <p class="text-sm text-surface-600-400">Try adjusting your description or location.</p>
+        {/if}
       </div>
     {:else}
       <section aria-label="Search results" aria-live="polite" class="space-y-3">

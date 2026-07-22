@@ -102,6 +102,23 @@ CI does not currently run Playwright UI tests. Run UI tests locally for
 user-facing changes and include any relevant failures or skipped coverage in the
 PR notes.
 
+## Live Vendor Search Evaluation
+
+Use the current `VendorSearchService.searchPlaces` integration to compare
+query-only, deterministic-category, and gold-query Foursquare searches near
+postal code `23831`:
+
+```bash
+node ace vendor-search:evaluate
+```
+
+The command uses the configured real Foursquare credential and makes 60 live
+requests: three variants for 12 representative searches plus one verification
+request for each of the 24 newly curated categories. It writes the detailed,
+ignored report to `test-results/vendor-search-live-evaluation.json`. This is a
+manual evaluation command, not a CI test; result counts and ranking can change
+as Foursquare data changes.
+
 ## What To Test
 
 Add or update tests with every behavior change:

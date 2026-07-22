@@ -40,6 +40,7 @@
 
   interface VendorSearchResponse {
     onboardingToken: string;
+    vendorSearches?: unknown[];
     vendors: VendorListing[];
     emptyStateReason?: 'NO_VENDOR_RESULTS';
   }
@@ -66,6 +67,7 @@
 
   // Derived: has the anonymous user seen results?
   let seen          = $state(false);
+  let needsMoreSpecificDetails = $state(false);
   let restoring     = $state(false);
   const recommendationGroups = $derived(groupVendorsByPrimaryClassification(recommendations));
   const allRecommendationsSelected = $derived(
@@ -86,6 +88,7 @@
     postalError = '';
     selectionError = '';
     seen = false;
+    needsMoreSpecificDetails = false;
   }
 
   function isInvalidDraftResponse(response: Response) {
@@ -131,6 +134,11 @@
         data.step === 'selection' ||
         (data.vendorSearches?.length ?? 0) > 0 ||
         recommendations.length > 0;
+      needsMoreSpecificDetails =
+        seen &&
+        Array.isArray(data.vendorSearches) &&
+        data.vendorSearches.length === 0 &&
+        recommendations.length === 0;
     } catch {
       // Keep the token on retryable network failures so a valid draft is not lost.
       searchError = 'We could not restore your search. Check your connection and try again.';
@@ -190,6 +198,10 @@
       const data: VendorSearchResponse = await res.json();
       token = data.onboardingToken;
       recommendations = (data.vendors ?? []).slice(0, 8);
+      needsMoreSpecificDetails =
+        Array.isArray(data.vendorSearches) &&
+        data.vendorSearches.length === 0 &&
+        recommendations.length === 0;
       selected = new Set(recommendations.map((vendor) => vendor.vendorListingUuid));
       selectionError = '';
 
@@ -483,8 +495,15 @@
           {#if recommendations.length === 0}
             <!-- Empty state — no vendors found -->
             <div class="text-center space-y-2 py-6">
-              <p class="font-medium">No matches found for your search.</p>
-              <p class="text-surface-600-400 text-sm">Try adjusting your description or location and search again.</p>
+              {#if needsMoreSpecificDetails}
+                <p class="font-medium">Tell us what kind of help you need.</p>
+                <p class="text-surface-600-400 text-sm">
+                  Describe the specific work, service, item, rental, or venue you want to find, then search again.
+                </p>
+              {:else}
+                <p class="font-medium">No matches found for your search.</p>
+                <p class="text-surface-600-400 text-sm">Try adjusting your description or location and search again.</p>
+              {/if}
             </div>
           {:else}
             <section aria-label="Recommendations" class="space-y-4">

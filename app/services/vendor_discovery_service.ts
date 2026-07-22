@@ -6,7 +6,7 @@ import VendorSearchService from '#services/vendor_search_service'
 import VendorService, { type SearchVendorCandidate } from '#services/vendor_service'
 import { getPostalCodesWithinRadius, normalizeVendorListingName } from '#utils/vendor_listing_utils'
 
-const MAX_VENDOR_SEARCHES = 4
+const MAX_VENDOR_SEARCHES = 6
 const MAX_RECOMMENDATIONS_PER_CATEGORY = 8
 
 export const NO_VENDOR_RESULTS = 'NO_VENDOR_RESULTS'
@@ -182,7 +182,7 @@ export function validateVendorSearches(reasoningOutput: unknown): VendorDiscover
     if (searches.length >= MAX_VENDOR_SEARCHES) break
   }
 
-  if (searches.length === 0) {
+  if (vendorSearches.length > 0 && searches.length === 0) {
     throw new VendorDiscoveryDependencyError('Reasoning response contained no usable searches')
   }
   return searches
@@ -400,7 +400,8 @@ export default class VendorDiscoveryService {
     return {
       vendorSearches,
       listings,
-      emptyStateReason: listings.length === 0 ? NO_VENDOR_RESULTS : undefined,
+      emptyStateReason:
+        vendorSearches.length > 0 && listings.length === 0 ? NO_VENDOR_RESULTS : undefined,
       liveSearchUnavailable: foursquareFailureCount > 0 || undefined,
     }
   }

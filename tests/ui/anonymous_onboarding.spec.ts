@@ -75,7 +75,11 @@ async function setStoredDraft(page: Page, seen = true) {
   )
 }
 
-async function mockSearch(page: Page, vendors: VendorRecommendation[] = recommendations) {
+async function mockSearch(
+  page: Page,
+  vendors: VendorRecommendation[] = recommendations,
+  vendorSearches: unknown[] = [{ classification: 'Electrician', query: 'commercial electrician' }]
+) {
   let releaseSearch: (() => void) | undefined
   const held = new Promise<void>((resolve) => {
     releaseSearch = resolve
@@ -89,7 +93,7 @@ async function mockSearch(page: Page, vendors: VendorRecommendation[] = recommen
       body: JSON.stringify({
         onboardingToken: ONBOARDING_TOKEN,
         draftUuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        vendorSearches: [],
+        vendorSearches,
         vendors,
         ...(vendors.length === 0 ? { emptyStateReason: 'NO_VENDOR_RESULTS' } : {}),
         expiresAt: '2026-07-14T12:00:00.000Z',
@@ -188,6 +192,16 @@ test.describe('anonymous vendor discovery', () => {
     await expect(page.getByText('No matches found for your search.')).toBeVisible()
     await expect(page.getByRole('button', { name: /Continue with/i })).toHaveCount(0)
     expect(await page.evaluate(() => localStorage.getItem('envoy_seen'))).toBe('true')
+  })
+
+  test('asks for specific work when reasoning returns no searches', async ({ page }) => {
+    const search = await mockSearch(page, [], [])
+    await search.submit()
+    search.release()
+
+    await expect(page.getByText('Tell us what kind of help you need.')).toBeVisible()
+    await expect(page.getByText('No matches found for your search.')).toHaveCount(0)
+    await expect(page.getByLabel('What are you planning?')).toHaveValue(PROJECT_DESCRIPTION)
   })
 
   test('renders server priority order, status flags, locations, and no contact fields', async ({
