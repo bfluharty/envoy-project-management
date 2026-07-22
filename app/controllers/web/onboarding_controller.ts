@@ -6,6 +6,9 @@ import OnboardingDraftService, {
 } from '#services/onboarding_draft_service'
 import OnboardingVendorDiscoveryService, {
   VendorDiscoveryDependencyError,
+  findMatchingVendorSearchForListing,
+  validateVendorSearches,
+  type VendorDiscoverySearch,
 } from '#services/onboarding_vendor_discovery_service'
 import VendorService from '#services/vendor_service'
 import UserRoleService from '#services/user_role_service'
@@ -32,6 +35,14 @@ function getDraftStep(draft: {
   return 'intake'
 }
 
+function getStoredVendorSearches(value: unknown[]): VendorDiscoverySearch[] {
+  try {
+    return validateVendorSearches({ vendorSearches: value })
+  } catch {
+    return []
+  }
+}
+
 async function serializeDraft(draft: {
   uuid: string
   projectDescription: string
@@ -42,6 +53,9 @@ async function serializeDraft(draft: {
   expiresAt: { toISO(): string | null }
 }) {
   const recommendedVendorListingUuids = draft.recommendedVendorListingUuids ?? []
+  const vendorSearches = Array.isArray(draft.vendorSearches)
+    ? getStoredVendorSearches(draft.vendorSearches)
+    : []
   const selectedListings = await VendorService.getListingsByUuidsPreservingOrder(
     draft.selectedVendorListingUuids ?? []
   )
@@ -54,11 +68,16 @@ async function serializeDraft(draft: {
     draftUuid: draft.uuid,
     projectDescription: draft.projectDescription,
     postalCode: draft.postalCode,
-    vendorSearches: Array.isArray(draft.vendorSearches) ? draft.vendorSearches : [],
-    vendors: recommendedListings.map((listing) => VendorService.toPublicRecommendation(listing)),
+    vendorSearches,
+    vendors: recommendedListings.map((listing) =>
+      VendorService.toPublicRecommendation(
+        listing,
+        findMatchingVendorSearchForListing(listing, vendorSearches)
+      )
+    ),
     selectedVendorListingUuids,
     step: getDraftStep({
-      vendorSearches: Array.isArray(draft.vendorSearches) ? draft.vendorSearches : [],
+      vendorSearches,
       recommendedVendorListingUuids,
       selectedVendorListingUuids,
     }),

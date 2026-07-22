@@ -5,6 +5,7 @@ import VendorDiscoveryService, {
   NO_VENDOR_RESULTS,
   VendorDiscoveryDependencyError,
   dedupeCandidates,
+  findMatchingVendorSearchForListing,
   normalizeFoursquarePlace,
   normalizeVendorName,
   rankPersistedListings,
@@ -18,6 +19,7 @@ export {
   NO_VENDOR_RESULTS,
   VendorDiscoveryDependencyError,
   dedupeCandidates,
+  findMatchingVendorSearchForListing,
   normalizeFoursquarePlace,
   normalizeVendorName,
   rankPersistedListings,
@@ -63,12 +65,12 @@ export default class OnboardingVendorDiscoveryService {
 
     await OnboardingDraftService.updateRecommendations(tokenUuid, {
       vendorSearches: discovery.vendorSearches,
-      recommendedVendorListingUuids: discovery.listings.map((listing) => listing.uuid),
+      recommendedVendorListingUuids: discovery.recommendations.map(({ listing }) => listing.uuid),
     })
 
     const freshDraft = await AnonymousOnboardingDraft.findOrFail(draft.id)
-    const vendors = discovery.listings.map((listing) =>
-      VendorService.toPublicRecommendation(listing)
+    const vendors = discovery.recommendations.map(({ listing, matchedSearch }) =>
+      VendorService.toPublicRecommendation(listing, matchedSearch)
     )
 
     return {

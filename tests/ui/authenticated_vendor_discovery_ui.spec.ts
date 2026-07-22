@@ -149,7 +149,7 @@ test.describe('authenticated vendor search component', () => {
     await expect(page.getByText('Tell us what kind of help you need')).toHaveCount(0)
   })
 
-  test('groups ranked results by primary Foursquare classification without reordering them', async ({
+  test('groups ranked results by response classification without reordering them', async ({
     page,
   }) => {
     const rankedVendors = [

@@ -25,11 +25,18 @@ export type RankedVendorCandidate = SearchVendorCandidate & {
 type PersistedRankedListing = {
   listing: VendorListing
   relevanceRank: number
+  matchedSearch?: VendorDiscoverySearch
   isRelevantExistingListing?: boolean
+}
+
+export type VendorDiscoveryRecommendation = {
+  listing: VendorListing
+  matchedSearch?: VendorDiscoverySearch
 }
 
 export type VendorDiscoveryResult = {
   vendorSearches: VendorDiscoverySearch[]
+  recommendations: VendorDiscoveryRecommendation[]
   listings: VendorListing[]
   emptyStateReason?: string
   liveSearchUnavailable?: boolean
@@ -285,13 +292,50 @@ export function rankPersistedListings(candidates: PersistedRankedListing[]) {
   })
 }
 
-async function persistCandidates(candidates: RankedVendorCandidate[]) {
+async function persistCandidates(
+  candidates: RankedVendorCandidate[],
+  matchedSearch: VendorDiscoverySearch
+) {
   const persisted: PersistedRankedListing[] = []
   for (const candidate of dedupeCandidates(candidates)) {
     const listing = await VendorService.insertOrReuseSearchListing(candidate)
-    persisted.push({ listing, relevanceRank: candidate.relevanceRank })
+    persisted.push({ listing, relevanceRank: candidate.relevanceRank, matchedSearch })
   }
   return persisted
+}
+
+function normalizedCategoryLabel(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/u)
+    .filter(Boolean)
+    .map((word) => {
+      if (word.length > 4 && word.endsWith('ies')) return `${word.slice(0, -3)}y`
+      if (word.length > 4 && word.endsWith('ers')) return word.slice(0, -1)
+      if (word.length > 3 && word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1)
+      return word
+    })
+    .join(' ')
+}
+
+export function findMatchingVendorSearchForListing(
+  listing: Pick<VendorListing, 'categories' | 'fsqCategoryIds'>,
+  vendorSearches: readonly VendorDiscoverySearch[]
+) {
+  if (vendorSearches.length === 0) return undefined
+
+  const listingCategoryIds = new Set(listing.fsqCategoryIds ?? [])
+  const categoryIdMatch = vendorSearches.find((vendorSearch) =>
+    (vendorSearch.fsqCategoryIds ?? []).some((categoryId) => listingCategoryIds.has(categoryId))
+  )
+  if (categoryIdMatch) return categoryIdMatch
+
+  const normalizedCategories = new Set((listing.categories ?? []).map(normalizedCategoryLabel))
+  return vendorSearches.find((vendorSearch) =>
+    normalizedCategories.has(normalizedCategoryLabel(vendorSearch.classification))
+  )
 }
 
 export default class VendorDiscoveryService {
@@ -333,6 +377,7 @@ export default class VendorDiscoveryService {
       const internalCandidates = internalListings.map((listing, index) => ({
         listing,
         relevanceRank: index,
+        matchedSearch: vendorSearch,
         isRelevantExistingListing: true,
       }))
 
@@ -364,7 +409,7 @@ export default class VendorDiscoveryService {
         normalizedCandidates.push(candidate)
       }
 
-      const persistedCandidates = await persistCandidates(normalizedCandidates)
+      const persistedCandidates = await persistCandidates(normalizedCandidates, vendorSearch)
       persistedListingCount += persistedCandidates.length
       recommendationCandidates.push(...internalCandidates, ...persistedCandidates)
     }
@@ -373,7 +418,11 @@ export default class VendorDiscoveryService {
       0,
       MAX_RECOMMENDATIONS_PER_CATEGORY
     )
-    const listings = recommendations.map(({ listing }) => listing)
+    const listingRecommendations = recommendations.map(({ listing, matchedSearch }) => ({
+      listing,
+      matchedSearch,
+    }))
+    const listings = listingRecommendations.map(({ listing }) => listing)
 
     if (listings.length === 0 && foursquareFailureCount > 0) {
       throw new VendorDiscoveryDependencyError('Foursquare search failed')
@@ -399,6 +448,7 @@ export default class VendorDiscoveryService {
 
     return {
       vendorSearches,
+      recommendations: listingRecommendations,
       listings,
       emptyStateReason:
         vendorSearches.length > 0 && listings.length === 0 ? NO_VENDOR_RESULTS : undefined,

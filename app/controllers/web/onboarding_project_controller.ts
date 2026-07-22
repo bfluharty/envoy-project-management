@@ -2,6 +2,11 @@ import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
 import Currency from '#models/currency'
 import OnboardingDraftService from '#services/onboarding_draft_service'
+import {
+  findMatchingVendorSearchForListing,
+  validateVendorSearches,
+  type VendorDiscoverySearch,
+} from '#services/onboarding_vendor_discovery_service'
 import OnboardingProjectCompletionService, {
   OnboardingProjectCompletionError,
 } from '#services/onboarding_project_completion_service'
@@ -11,6 +16,14 @@ import VendorService from '#services/vendor_service'
 import { completeOnboardingProjectValidator } from '#validators/projects_validator'
 import { parseDateFields } from '#utils/date_helper'
 import type { ProjectRequest } from '../../../types/request.js'
+
+function getStoredVendorSearches(value: unknown[]): VendorDiscoverySearch[] {
+  try {
+    return validateVendorSearches({ vendorSearches: value })
+  } catch {
+    return []
+  }
+}
 
 export default class OnboardingProjectController {
   async show({ auth, inertia, response }: HttpContext) {
@@ -56,6 +69,9 @@ export default class OnboardingProjectController {
     const selectedListings = await VendorService.getListingsByUuidsPreservingOrder(
       draft.selectedVendorListingUuids ?? []
     )
+    const vendorSearches = Array.isArray(draft.vendorSearches)
+      ? getStoredVendorSearches(draft.vendorSearches)
+      : []
     const currencies = await Currency.query().where('is_active', true).orderBy('code', 'asc')
 
     return inertia.render('onboarding/project', {
@@ -69,7 +85,10 @@ export default class OnboardingProjectController {
         },
       },
       selectedVendors: selectedListings.map((listing) =>
-        VendorService.toPublicRecommendation(listing)
+        VendorService.toPublicRecommendation(
+          listing,
+          findMatchingVendorSearchForListing(listing, vendorSearches)
+        )
       ),
       selectedVendorListingUuids: selectedListings.map((listing) => listing.uuid),
       currencies: currencies.map((currency) => ({

@@ -414,6 +414,51 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
     )
   })
 
+  test('returns the matched search category first when Foursquare returns multiple categories', async () => {
+    const fsqPlaceId = `kitchen-cabinets-${uuidv4()}`
+    stubReasoning({
+      vendorSearches: [
+        {
+          classification: 'Kitchen Remodeler',
+          query: 'kitchen renovation contractor',
+          fsqCategoryIds: ['kitchen-category-id'],
+        },
+      ],
+    })
+    stubFoursquare(() => [
+      {
+        fsq_place_id: fsqPlaceId,
+        name: 'Us Industries New Cabinets',
+        email: `kitchen-${uuidv4()}@example.com`,
+        categories: [
+          { fsq_category_id: 'bathroom-category-id', name: 'Bathroom Contractor' },
+          { fsq_category_id: 'general-category-id', name: 'General Contractor' },
+          { fsq_category_id: 'kitchen-category-id', name: 'Kitchen Remodeler' },
+        ],
+        location: { postcode: '23831' },
+      },
+    ])
+
+    const response = await OnboardingVendorDiscoveryService.search({
+      projectDescription: 'Renovate a 1920s kitchen',
+      postalCode: '23831',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    assert.deepEqual(response.vendors[0].categories, [
+      'Kitchen Remodeler',
+      'Bathroom Contractor',
+      'General Contractor',
+    ])
+
+    const persistedListing = await VendorListing.findByOrFail('fsqPlaceId', fsqPlaceId)
+    assert.deepEqual(persistedListing.categories, [
+      'Bathroom Contractor',
+      'General Contractor',
+      'Kitchen Remodeler',
+    ])
+  })
+
   test('returns no-email Foursquare results instead of an empty state', async () => {
     stubReasoning({
       vendorSearches: [{ classification: 'Painter', query: 'commercial painter' }],

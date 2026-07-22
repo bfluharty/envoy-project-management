@@ -335,9 +335,9 @@
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   const examplePrompts = [
-    'Outdoor wedding for 150 guests in fall',
-    'Renovate a 1920s kitchen',
-    'Company offsite for 40 people',
+    'I have standing water in my backyard after heavy rain. Need someone to evaluate drainage, possibly install a French drain or regrade part of the yard, and protect the patio foundation from runoff.',
+    'I am opening a small coffee shop in an old retail space and need help with plumbing, electrical upgrades, countertop installation, and signage before opening day',
+    'Set up internet and low-voltage wiring for a 2,500 sq ft office. We need ethernet drops in six rooms, a network rack, Wi-Fi access points, cable labeling, and coordination with the ISP install.',
   ];
 
   function applyPrompt(prompt: string) {

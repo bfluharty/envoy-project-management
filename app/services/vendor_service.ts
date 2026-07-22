@@ -35,6 +35,11 @@ export type PublicVendorRecommendation = {
   ownershipWarning: string | null
 }
 
+export type VendorRecommendationCategoryPreference = {
+  classification?: string
+  fsqCategoryIds?: readonly string[]
+}
+
 export type AuthenticatedVendorRecommendation = PublicVendorRecommendation & {
   inContacts: boolean
   vendorUuid: string | null
@@ -79,6 +84,57 @@ function sameBusiness(candidate: SearchVendorCandidate, listing: VendorListing) 
   return !candidateHasStableKey && !listingHasStableKey && sameWeakIdentity(candidate, listing)
 }
 
+function normalizeCategoryMatchText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/u)
+    .filter(Boolean)
+    .map((word) => {
+      if (word.length > 4 && word.endsWith('ies')) return `${word.slice(0, -3)}y`
+      if (word.length > 4 && word.endsWith('ers')) return word.slice(0, -1)
+      if (word.length > 3 && word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1)
+      return word
+    })
+    .join(' ')
+}
+
+function moveCategoryToFront(categories: string[], preferredIndex: number) {
+  if (preferredIndex <= 0) return categories
+  return [
+    categories[preferredIndex],
+    ...categories.slice(0, preferredIndex),
+    ...categories.slice(preferredIndex + 1),
+  ]
+}
+
+function prioritizeVendorCategories(
+  categories: string[],
+  fsqCategoryIds: readonly string[],
+  preference?: VendorRecommendationCategoryPreference
+) {
+  if (categories.length <= 1 || !preference) return categories
+
+  const requestedCategoryIds = new Set(preference.fsqCategoryIds ?? [])
+  if (requestedCategoryIds.size > 0) {
+    const matchedIndex = fsqCategoryIds.findIndex(
+      (categoryId, index) => requestedCategoryIds.has(categoryId) && !!categories[index]?.trim()
+    )
+    if (matchedIndex >= 0) return moveCategoryToFront(categories, matchedIndex)
+  }
+
+  const preferredClassification = preference.classification?.trim()
+  if (!preferredClassification) return categories
+
+  const normalizedPreferredClassification = normalizeCategoryMatchText(preferredClassification)
+  const matchedIndex = categories.findIndex(
+    (category) => normalizeCategoryMatchText(category) === normalizedPreferredClassification
+  )
+
+  return matchedIndex >= 0 ? moveCategoryToFront(categories, matchedIndex) : categories
+}
+
 export default class VendorService {
   private static readonly DEFAULT_VENDOR_LIMIT = 10
   private static readonly DEFAULT_VENDOR_OFFSET = 0
@@ -103,12 +159,19 @@ export default class VendorService {
     return !!listing.ownerUserUuid && listing.ownerUserUuid === userUuid
   }
 
-  public static toPublicRecommendation(listing: VendorListing): PublicVendorRecommendation {
+  public static toPublicRecommendation(
+    listing: VendorListing,
+    categoryPreference?: VendorRecommendationCategoryPreference
+  ): PublicVendorRecommendation {
     const consumerOwned = this.isConsumerOwnedListing(listing)
     return {
       vendorListingUuid: listing.uuid,
       name: listing.name,
-      categories: listing.categories ?? [],
+      categories: prioritizeVendorCategories(
+        listing.categories ?? [],
+        listing.fsqCategoryIds ?? [],
+        categoryPreference
+      ),
       location: listing.location,
       hasEmail: !!normalizeVendorListingEmail(listing.email),
       onboardedToEnvoy: this.isOnboardedListing(listing),
@@ -121,10 +184,11 @@ export default class VendorService {
 
   public static toAuthenticatedRecommendation(
     listing: VendorListing,
-    mapping?: Vendor | null
+    mapping?: Vendor | null,
+    categoryPreference?: VendorRecommendationCategoryPreference
   ): AuthenticatedVendorRecommendation {
     return {
-      ...this.toPublicRecommendation(listing),
+      ...this.toPublicRecommendation(listing, categoryPreference),
       inContacts: !!mapping?.isActive,
       vendorUuid: mapping?.isActive ? mapping.uuid : null,
     }

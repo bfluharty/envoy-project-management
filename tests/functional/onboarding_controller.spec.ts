@@ -82,6 +82,8 @@ test.group('onboarding draft routes', (group) => {
       name: 'Vendor A',
       email: 'a@example.com',
       originator: 'SEARCH',
+      categories: ['Bathroom Contractor', 'General Contractor', 'Kitchen Remodeler'],
+      fsqCategoryIds: ['bathroom-category-id', 'general-category-id', 'kitchen-category-id'],
       sourcePayload: { raw: true },
       isActive: true,
     })
@@ -89,7 +91,13 @@ test.group('onboarding draft routes', (group) => {
       projectDescription: 'I need a general contractor for a cafe renovation.',
       postalCode: '23220',
       anonymousSessionUuid: uuidv4(),
-      vendorSearches: [{ classification: 'general contractor', query: 'general contractor' }],
+      vendorSearches: [
+        {
+          classification: 'Kitchen Remodeler',
+          query: 'kitchen renovation contractor',
+          fsqCategoryIds: ['kitchen-category-id'],
+        },
+      ],
       recommendedVendorListingUuids: [vendor.uuid],
     })
     await OnboardingDraftService.updateSelection(tokenUuid, [vendor.uuid])
@@ -107,6 +115,11 @@ test.group('onboarding draft routes', (group) => {
       step: 'selection',
     })
     assert.equal(response.body().vendors[0].hasEmail, true)
+    assert.deepEqual(response.body().vendors[0].categories, [
+      'Kitchen Remodeler',
+      'Bathroom Contractor',
+      'General Contractor',
+    ])
     assert.equal('email' in response.body().vendors[0], false)
     assert.equal('sourcePayload' in response.body().vendors[0], false)
   })

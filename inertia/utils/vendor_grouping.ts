@@ -12,9 +12,10 @@ const FALLBACK_CLASSIFICATION = 'Other contacts'
 /**
  * Groups an already-ranked vendor list without re-sorting it.
  *
- * Foursquare returns the primary classification first. The first vendor seen for a
- * classification establishes that group's position, and vendors retain their input
- * order inside the group.
+ * Search responses put the best display classification first, using the matched
+ * vendor search when available. The first vendor seen for a classification
+ * establishes that group's position, and vendors retain their input order inside
+ * the group.
  */
 export function groupVendorsByPrimaryClassification<T extends VendorWithCategories>(
   vendors: readonly T[]

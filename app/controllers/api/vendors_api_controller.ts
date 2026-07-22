@@ -48,13 +48,17 @@ export default class VendorsAPIController {
       })
       const mappings = await VendorService.getUserVendorMappingsByListingUuids(
         userId,
-        discovery.listings.map((listing) => listing.uuid)
+        discovery.recommendations.map(({ listing }) => listing.uuid)
       )
 
       return response.status(200).json({
         vendorSearches: discovery.vendorSearches,
-        vendors: discovery.listings.map((listing) =>
-          VendorService.toAuthenticatedRecommendation(listing, mappings.get(listing.uuid))
+        vendors: discovery.recommendations.map(({ listing, matchedSearch }) =>
+          VendorService.toAuthenticatedRecommendation(
+            listing,
+            mappings.get(listing.uuid),
+            matchedSearch
+          )
         ),
         emptyStateReason: discovery.emptyStateReason,
         liveSearchUnavailable: discovery.liveSearchUnavailable,
