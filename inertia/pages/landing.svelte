@@ -336,7 +336,7 @@
   // ── Helpers ────────────────────────────────────────────────────────────────
   const examplePrompts = [
     'I have standing water in my backyard after heavy rain. Need someone to evaluate drainage, possibly install a French drain or regrade part of the yard, and protect the patio foundation from runoff.',
-    'I am opening a small coffee shop in an old retail space and need help with plumbing, electrical upgrades, countertop installation, and signage before opening day',
+    'I am opening a small coffee shop in an old retail space and need help with plumbing, electrical upgrades, countertop installation, and signage before opening day.',
     'Set up internet and low-voltage wiring for a 2,500 sq ft office. We need ethernet drops in six rooms, a network rack, Wi-Fi access points, cable labeling, and coordination with the ISP install.',
   ];
 
@@ -421,16 +421,20 @@
 
           <!-- Example prompts -->
           {#if !seen}
-            <div class="flex flex-wrap gap-2">
-              {#each examplePrompts as prompt}
-                <button
-                  type="button"
-                  onclick={() => applyPrompt(prompt)}
-                  class="btn btn-sm preset-tonal text-xs"
-                >
-                  {prompt}
-                </button>
-              {/each}
+            <div class="space-y-2">
+              <p class="text-xs font-medium text-surface-500">Try a sample project</p>
+              <div class="grid gap-2">
+                {#each examplePrompts as prompt}
+                  <button
+                    type="button"
+                    onclick={() => applyPrompt(prompt)}
+                    class="btn btn-sm preset-tonal h-auto min-h-9 w-full max-w-full justify-start whitespace-normal break-words px-3 py-2 text-left text-xs leading-snug"
+                    aria-label={`Use sample prompt: ${prompt}`}
+                  >
+                    {prompt}
+                  </button>
+                {/each}
+              </div>
             </div>
           {/if}
 
@@ -443,7 +447,7 @@
               type="text"
               class="input"
               class:input-error={!!postalError}
-              placeholder="e.g. 10001 or M5H 2N2"
+              placeholder="e.g. 10001"
               bind:value={postalCode}
               disabled={searching || restoring}
               aria-describedby={postalError ? 'err-postal' : undefined}
