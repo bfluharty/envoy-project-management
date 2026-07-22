@@ -8,6 +8,11 @@ import {
   normalizeVendorListingName,
   normalizeUsPostalCode,
 } from '#utils/vendor_listing_utils'
+import {
+  getMeaningfulVendorSearchTerms,
+  normalizeVendorCategoryMatchText,
+  textMatchesVendorSearchTerms,
+} from '#utils/vendor_category_matching'
 
 const SEARCH_MODIFIED_BY = 'system:vendor-search'
 
@@ -37,6 +42,7 @@ export type PublicVendorRecommendation = {
 
 export type VendorRecommendationCategoryPreference = {
   classification?: string
+  query?: string
   fsqCategoryIds?: readonly string[]
 }
 
@@ -84,22 +90,6 @@ function sameBusiness(candidate: SearchVendorCandidate, listing: VendorListing) 
   return !candidateHasStableKey && !listingHasStableKey && sameWeakIdentity(candidate, listing)
 }
 
-function normalizeCategoryMatchText(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .split(/\s+/u)
-    .filter(Boolean)
-    .map((word) => {
-      if (word.length > 4 && word.endsWith('ies')) return `${word.slice(0, -3)}y`
-      if (word.length > 4 && word.endsWith('ers')) return word.slice(0, -1)
-      if (word.length > 3 && word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1)
-      return word
-    })
-    .join(' ')
-}
-
 function moveCategoryToFront(categories: string[], preferredIndex: number) {
   if (preferredIndex <= 0) return categories
   return [
@@ -114,25 +104,36 @@ function prioritizeVendorCategories(
   fsqCategoryIds: readonly string[],
   preference?: VendorRecommendationCategoryPreference
 ) {
-  if (categories.length <= 1 || !preference) return categories
+  if (!preference) return categories
+
+  const preferredClassification = preference.classification?.trim()
+  if (!preferredClassification) return categories
 
   const requestedCategoryIds = new Set(preference.fsqCategoryIds ?? [])
-  if (requestedCategoryIds.size > 0) {
+  if (categories.length > 1 && requestedCategoryIds.size > 0) {
     const matchedIndex = fsqCategoryIds.findIndex(
       (categoryId, index) => requestedCategoryIds.has(categoryId) && !!categories[index]?.trim()
     )
     if (matchedIndex >= 0) return moveCategoryToFront(categories, matchedIndex)
   }
 
-  const preferredClassification = preference.classification?.trim()
-  if (!preferredClassification) return categories
-
-  const normalizedPreferredClassification = normalizeCategoryMatchText(preferredClassification)
-  const matchedIndex = categories.findIndex(
-    (category) => normalizeCategoryMatchText(category) === normalizedPreferredClassification
+  const normalizedPreferredClassification =
+    normalizeVendorCategoryMatchText(preferredClassification)
+  const exactMatchedIndex = categories.findIndex(
+    (category) => normalizeVendorCategoryMatchText(category) === normalizedPreferredClassification
   )
+  if (exactMatchedIndex >= 0) return moveCategoryToFront(categories, exactMatchedIndex)
 
-  return matchedIndex >= 0 ? moveCategoryToFront(categories, matchedIndex) : categories
+  const meaningfulTerms = getMeaningfulVendorSearchTerms(
+    preference.classification,
+    preference.query
+  )
+  const termMatchedIndex = categories.findIndex((category) =>
+    textMatchesVendorSearchTerms(category, meaningfulTerms)
+  )
+  if (termMatchedIndex >= 0) return moveCategoryToFront(categories, termMatchedIndex)
+
+  return [preferredClassification]
 }
 
 export default class VendorService {

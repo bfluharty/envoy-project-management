@@ -299,7 +299,7 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
             fsq_place_id: noEmailFsqPlaceId,
             name: 'No Email Vendor',
             date_refreshed: '2026-09-01',
-            categories: [{ fsq_category_id: 'ignored-category-id', name: 'Ignored' }],
+            categories: [{ fsq_category_id: 'ignored-category-id', name: 'Painter' }],
             location: { postcode: '23220' },
           },
         ]
@@ -401,7 +401,7 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
       fsq_place_id: noEmailFsqPlaceId,
       name: 'No Email Vendor',
       date_refreshed: '2026-09-01',
-      categories: [{ fsq_category_id: 'ignored-category-id', name: 'Ignored' }],
+      categories: [{ fsq_category_id: 'ignored-category-id', name: 'Painter' }],
       location: { postcode: '23220' },
     })
 
@@ -457,6 +457,102 @@ test.group('OnboardingVendorDiscoveryService', (group) => {
       'General Contractor',
       'Kitchen Remodeler',
     ])
+  })
+
+  test('filters query-only category drift from drainage recommendations', async () => {
+    const landscaperCategoryId = `landscaper-category-${uuidv4()}`
+    stubReasoning({
+      vendorSearches: [
+        {
+          classification: 'Drainage Contractor',
+          query: 'drainage contractor',
+          rationale: 'To evaluate drainage issues and install a French drain.',
+        },
+        {
+          classification: 'Landscaper',
+          query: 'landscaper',
+          fsqCategoryIds: [landscaperCategoryId],
+          rationale: 'To regrade part of the yard and protect the patio foundation from runoff.',
+        },
+      ],
+    })
+    stubFoursquare((query) => {
+      if (query === 'landscaper') {
+        return [
+          {
+            fsq_place_id: `landscaper-one-${uuidv4()}`,
+            name: 'George Self Lawn Service',
+            email: `lawn-${uuidv4()}@example.com`,
+            categories: [
+              { fsq_category_id: landscaperCategoryId, name: 'Landscaper and Gardener' },
+            ],
+            location: { postcode: '23237' },
+          },
+          {
+            fsq_place_id: `landscaper-two-${uuidv4()}`,
+            name: "Moxey's Stump Removal Service",
+            categories: [
+              { fsq_category_id: landscaperCategoryId, name: 'Landscaper and Gardener' },
+            ],
+            location: { postcode: '23831' },
+          },
+        ]
+      }
+
+      return [
+        {
+          fsq_place_id: `entertainment-${uuidv4()}`,
+          name: 'Knickerbocker Contractors',
+          email: `knickerbocker-${uuidv4()}@example.com`,
+          categories: [
+            { fsq_category_id: 'entertainment-category-id', name: 'Entertainment Agency' },
+            { fsq_category_id: 'bathroom-category-id', name: 'Bathroom Contractor' },
+            { fsq_category_id: 'electrician-category-id', name: 'Electrician' },
+          ],
+          location: { postcode: '23831' },
+        },
+        {
+          fsq_place_id: `electrician-${uuidv4()}`,
+          name: 'Spiers J H Electrical Contractor',
+          categories: [{ fsq_category_id: 'electrician-category-id', name: 'Electrician' }],
+          location: { postcode: '23831' },
+        },
+        {
+          fsq_place_id: `government-${uuidv4()}`,
+          name: 'Chesterfield Co Environmental Engineering Dept Drainage Section',
+          categories: [{ fsq_category_id: 'government-category-id', name: 'Government Building' }],
+          location: { postcode: '23832' },
+        },
+        {
+          fsq_place_id: `french-drain-${uuidv4()}`,
+          name: 'French Drain Pros',
+          categories: [{ fsq_category_id: 'general-category-id', name: 'General Contractor' }],
+          location: { postcode: '23831' },
+        },
+      ]
+    })
+
+    const response = await OnboardingVendorDiscoveryService.search({
+      projectDescription:
+        'I have standing water in my backyard after heavy rain. Need someone to evaluate drainage, possibly install a French drain or regrade part of the yard, and protect the patio foundation from runoff.',
+      postalCode: '23831',
+      anonymousSessionUuid: uuidv4(),
+    })
+
+    assert.deepEqual(
+      response.vendors.map((vendor) => vendor.name),
+      ['George Self Lawn Service', 'French Drain Pros', "Moxey's Stump Removal Service"]
+    )
+    assert.deepEqual(response.vendors[0].categories, ['Landscaper and Gardener'])
+    assert.deepEqual(response.vendors[1].categories, ['Drainage Contractor'])
+    assert.equal(
+      response.vendors.some((vendor) =>
+        vendor.categories.some((category) =>
+          ['Entertainment Agency', 'Electrician', 'Government Building'].includes(category)
+        )
+      ),
+      false
+    )
   })
 
   test('returns no-email Foursquare results instead of an empty state', async () => {

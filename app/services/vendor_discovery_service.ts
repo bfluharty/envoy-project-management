@@ -4,6 +4,12 @@ import VendorListing, { type VendorListingLocation } from '#models/vendor_listin
 import ReasoningEngineService from '#services/reasoning_engine_service'
 import VendorSearchService from '#services/vendor_search_service'
 import VendorService, { type SearchVendorCandidate } from '#services/vendor_service'
+import {
+  getMeaningfulVendorSearchTerms,
+  hasInstitutionalCategory,
+  normalizeVendorCategoryMatchText,
+  textMatchesVendorSearchTerms,
+} from '#utils/vendor_category_matching'
 import { getPostalCodesWithinRadius, normalizeVendorListingName } from '#utils/vendor_listing_utils'
 
 const MAX_VENDOR_SEARCHES = 6
@@ -305,23 +311,51 @@ async function persistCandidates(
 }
 
 function normalizedCategoryLabel(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .split(/\s+/u)
-    .filter(Boolean)
-    .map((word) => {
-      if (word.length > 4 && word.endsWith('ies')) return `${word.slice(0, -3)}y`
-      if (word.length > 4 && word.endsWith('ers')) return word.slice(0, -1)
-      if (word.length > 3 && word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1)
-      return word
-    })
-    .join(' ')
+  return normalizeVendorCategoryMatchText(value)
+}
+
+function categoryIdsOverlap(
+  candidateCategoryIds: readonly string[] | undefined,
+  searchCategoryIds: readonly string[] | undefined
+) {
+  if (!candidateCategoryIds?.length || !searchCategoryIds?.length) return false
+  const requestedCategoryIds = new Set(searchCategoryIds)
+  return candidateCategoryIds.some((categoryId) => requestedCategoryIds.has(categoryId))
+}
+
+function candidateMatchesSearchText(
+  candidate: Pick<SearchVendorCandidate, 'name' | 'categories'>,
+  vendorSearch: VendorDiscoverySearch
+) {
+  const meaningfulTerms = getMeaningfulVendorSearchTerms(
+    vendorSearch.classification,
+    vendorSearch.query
+  )
+  if (meaningfulTerms.size === 0) return true
+
+  const categoryMatches = candidate.categories.some((category) =>
+    textMatchesVendorSearchTerms(category, meaningfulTerms)
+  )
+  if (categoryMatches) return true
+
+  const nameMatches = textMatchesVendorSearchTerms(candidate.name, meaningfulTerms)
+  if (!nameMatches) return false
+
+  return !hasInstitutionalCategory(candidate.categories)
+}
+
+function isFoursquareCandidateRelevantToSearch(
+  candidate: RankedVendorCandidate,
+  vendorSearch: VendorDiscoverySearch
+) {
+  if (categoryIdsOverlap(candidate.fsqCategoryIds, vendorSearch.fsqCategoryIds)) return true
+  if (candidate.categories.length === 0) return true
+
+  return candidateMatchesSearchText(candidate, vendorSearch)
 }
 
 export function findMatchingVendorSearchForListing(
-  listing: Pick<VendorListing, 'categories' | 'fsqCategoryIds'>,
+  listing: Pick<VendorListing, 'name' | 'categories' | 'fsqCategoryIds'>,
   vendorSearches: readonly VendorDiscoverySearch[]
 ) {
   if (vendorSearches.length === 0) return undefined
@@ -333,9 +367,12 @@ export function findMatchingVendorSearchForListing(
   if (categoryIdMatch) return categoryIdMatch
 
   const normalizedCategories = new Set((listing.categories ?? []).map(normalizedCategoryLabel))
-  return vendorSearches.find((vendorSearch) =>
+  const categoryLabelMatch = vendorSearches.find((vendorSearch) =>
     normalizedCategories.has(normalizedCategoryLabel(vendorSearch.classification))
   )
+  if (categoryLabelMatch) return categoryLabelMatch
+
+  return vendorSearches.find((vendorSearch) => candidateMatchesSearchText(listing, vendorSearch))
 }
 
 export default class VendorDiscoveryService {
@@ -361,6 +398,7 @@ export default class VendorDiscoveryService {
     const recommendationCandidates: PersistedRankedListing[] = []
     let rawPlaceCount = 0
     let invalidPlaceCount = 0
+    let irrelevantPlaceCount = 0
     let noEmailPlaceCount = 0
     let internalListingCount = 0
     let foursquareSearchCount = 0
@@ -405,6 +443,10 @@ export default class VendorDiscoveryService {
           invalidPlaceCount += 1
           continue
         }
+        if (!isFoursquareCandidateRelevantToSearch(candidate, vendorSearch)) {
+          irrelevantPlaceCount += 1
+          continue
+        }
         if (!candidate.email) noEmailPlaceCount += 1
         normalizedCandidates.push(candidate)
       }
@@ -435,6 +477,7 @@ export default class VendorDiscoveryService {
         vendorSearchCount: vendorSearches.length,
         rawPlaceCount,
         invalidPlaceCount,
+        irrelevantPlaceCount,
         noEmailPlaceCount,
         internalListingCount,
         foursquareSearchCount,

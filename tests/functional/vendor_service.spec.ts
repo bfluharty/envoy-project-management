@@ -244,6 +244,24 @@ test.group('VendorService ownership and availability', (group) => {
     ])
   })
 
+  test('public recommendations use the search classification when returned categories are unrelated', async () => {
+    const listing = await VendorListing.create({
+      name: 'Chesterfield Co Environmental Engineering Dept Drainage Section',
+      originator: 'SEARCH',
+      categories: ['Government Building'],
+      fsqCategoryIds: ['government-category-id'],
+      claimStatus: 'UNCLAIMED',
+      isActive: true,
+    })
+
+    const recommendation = VendorService.toPublicRecommendation(listing, {
+      classification: 'Drainage Contractor',
+      query: 'drainage contractor',
+    })
+
+    assert.deepEqual(recommendation.categories, ['Drainage Contractor'])
+  })
+
   test('reused search listings remain completely unchanged', async () => {
     const fsqPlaceId = `no-refresh-${uuidv4()}`
     const email = `original-${uuidv4()}@example.com`
