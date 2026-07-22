@@ -17,8 +17,8 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import {
-    AlertTriangleIcon,
     CheckCircleIcon,
+    InfoIcon,
     LoaderCircleIcon,
     ShieldAlertIcon,
     MapPinIcon,
@@ -52,6 +52,10 @@
 
   type Context = 'contacts' | 'project' | 'new-project';
   const MAX_SELECTED_VENDORS = 8;
+  const MISSING_CONTACT_BADGE_CLASS =
+    'inline-flex items-center gap-1 rounded-full bg-surface-200 px-2 py-0.5 text-xs font-medium text-surface-950 dark:bg-surface-700 dark:text-surface-50';
+  const MISSING_CONTACT_TOOLTIP =
+    "We'll request that you provide contact info for this vendor before we can automate outreach.";
 
   // ── Props ──────────────────────────────────────────────────────────────────
   const {
@@ -663,8 +667,8 @@
         </span>
       {/if}
       {#if p.vendor.hasEmail === false}
-        <span class="inline-flex items-center gap-1 text-xs font-medium text-warning-500 bg-warning-500/10 rounded-full px-2 py-0.5">
-          <AlertTriangleIcon class="size-3" />
+        <span class={MISSING_CONTACT_BADGE_CLASS} title={MISSING_CONTACT_TOOLTIP}>
+          <InfoIcon class="size-3" aria-label={MISSING_CONTACT_TOOLTIP} />
           Additional contact details required
         </span>
       {/if}

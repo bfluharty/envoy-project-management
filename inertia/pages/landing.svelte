@@ -5,7 +5,7 @@
   import DismissibleBanner from '#components/dismissible_banner.svelte';
   import { page } from '@inertiajs/svelte';
   import { onMount } from 'svelte';
-  import { AlertTriangleIcon, CheckCircleIcon, LoaderCircleIcon, ShieldAlertIcon, MapPinIcon } from '@lucide/svelte';
+  import { CheckCircleIcon, InfoIcon, LoaderCircleIcon, ShieldAlertIcon, MapPinIcon } from '@lucide/svelte';
   import { groupVendorsByPrimaryClassification } from '../utils/vendor_grouping';
 
   // ── Types ──────────────────────────────────────────────────────────────────
@@ -49,6 +49,10 @@
   const TOKEN_KEY = 'envoy_onboarding_token';
   const SEEN_KEY  = 'envoy_seen';
   const MAX_SELECTED_VENDORS = 8;
+  const MISSING_CONTACT_BADGE_CLASS =
+    'inline-flex items-center gap-1 rounded-full bg-surface-200 px-2 py-0.5 text-xs font-medium text-surface-950 dark:bg-surface-700 dark:text-surface-50';
+  const MISSING_CONTACT_TOOLTIP =
+    "We'll request that you provide contact info for this vendor before we can automate outreach.";
 
   // ── State ──────────────────────────────────────────────────────────────────
   let blurb         = $state('');
@@ -337,7 +341,7 @@
   const examplePrompts = [
     'I have standing water in my backyard after heavy rain. Need someone to evaluate drainage, possibly install a French drain or regrade part of the yard, and protect the patio foundation from runoff.',
     'I am opening a small coffee shop in an old retail space and need help with plumbing, electrical upgrades, countertop installation, and signage before opening day.',
-    'Set up internet and low-voltage wiring for a 2,500 sq ft office. We need ethernet drops in six rooms, a network rack, Wi-Fi access points, cable labeling, and coordination with the ISP install.',
+    'We are preparing a vacant condo for sale and need a quick refresh: deep cleaning, carpet replacement, repainting two rooms, fixing a loose closet door, and hauling away old furniture.',
   ];
 
   function applyPrompt(prompt: string) {
@@ -593,8 +597,8 @@
                               </span>
                             {/if}
                             {#if vendor.hasEmail === false}
-                              <span class="inline-flex items-center gap-1 text-xs font-medium text-warning-500 bg-warning-500/10 rounded-full px-2 py-0.5">
-                                <AlertTriangleIcon class="size-3" />
+                              <span class={MISSING_CONTACT_BADGE_CLASS} title={MISSING_CONTACT_TOOLTIP}>
+                                <InfoIcon class="size-3" aria-label={MISSING_CONTACT_TOOLTIP} />
                                 Additional contact details required
                               </span>
                             {/if}
