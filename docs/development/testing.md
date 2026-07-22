@@ -1,7 +1,7 @@
 # Testing Guide
 
-The project uses Japa for unit and functional API tests and Playwright for UI
-tests.
+The project uses Japa for unit, functional, and opt-in live evaluation tests and
+Playwright for UI tests.
 
 ## Test Commands
 
@@ -34,10 +34,11 @@ npm run typecheck
 
 The configured Japa suites are:
 
-| Suite      | Path                            | Command                                |
-| ---------- | ------------------------------- | -------------------------------------- |
-| Unit       | `tests/unit/**/*.spec.ts`       | `node ace test unit --no-assets`       |
-| Functional | `tests/functional/**/*.spec.ts` | `node ace test functional --no-assets` |
+| Suite                    | Path                                          | Command                                 |
+| ------------------------ | --------------------------------------------- | --------------------------------------- |
+| Unit                     | `tests/unit/**/*.spec.ts`                     | `node ace test unit --no-assets`        |
+| Functional               | `tests/functional/**/*.spec.ts`               | `node ace test functional --no-assets`  |
+| Vendor search evaluation | `tests/vendor_search_evaluation/**/*.spec.ts` | `npm run test:vendor-search-evaluation` |
 
 Functional tests start the Adonis HTTP server through `tests/bootstrap.ts`.
 
@@ -109,15 +110,20 @@ query-only, deterministic-category, and gold-query Foursquare searches near
 postal code `23831`:
 
 ```bash
-node ace vendor-search:evaluate
+npm run test:vendor-search-evaluation
 ```
 
-The command uses the configured real Foursquare credential and makes 60 live
-requests: three variants for 12 representative searches plus one verification
-request for each of the 24 newly curated categories. It writes the detailed,
-ignored report to `test-results/vendor-search-live-evaluation.json`. This is a
-manual evaluation command, not a CI test; result counts and ranking can change
-as Foursquare data changes.
+The dedicated Japa suite uses the configured real `FOURSQUARE_PLACES_API_KEY`
+and makes 60 live requests: three variants for 12 representative searches plus
+one verification request for each of the 24 newly curated categories. It writes
+the detailed, ignored report to
+`test-results/vendor-search-live-evaluation.json`. The suite fails when a live
+request fails, but does not fail for sparse or irrelevant results because those
+are the measurements being recorded.
+
+`npm run test:api` explicitly runs only the `unit` and `functional` suites, so
+the live evaluation is not part of normal local tests or CI. Result counts and
+ranking can change as Foursquare data changes.
 
 ## What To Test
 

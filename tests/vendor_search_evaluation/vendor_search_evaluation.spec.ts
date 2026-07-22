@@ -1,7 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { BaseCommand } from '@adonisjs/core/ace'
-import type { CommandOptions } from '@adonisjs/core/types/ace'
+import { test } from '@japa/runner'
 import app from '@adonisjs/core/services/app'
 import VendorSearchService from '#services/vendor_search_service'
 
@@ -57,21 +56,14 @@ function countMatching(results: PlaceSummary[], terms: string[], limit: number) 
     .filter(({ text }) => normalizedTerms.some((term) => text.includes(term))).length
 }
 
-export default class VendorSearchEvaluate extends BaseCommand {
-  static commandName = 'vendor-search:evaluate'
-  static description =
-    'Compare query-only, mapped-category, and gold Foursquare vendor searches near 23831'
-  static options: CommandOptions = {
-    startApp: true,
-    allowUnknownFlags: false,
-    staysAlive: false,
-  }
-
-  async run() {
-    const fixturePath = app.makePath('resources/vendor_search_evaluation_cases.json')
+test.group('Live vendor search evaluation', () => {
+  test('compares query-only, mapped-category, and gold Foursquare searches', async ({ assert }) => {
+    const fixturePath = app.makePath(
+      'tests/vendor_search_evaluation/fixtures/vendor_search_evaluation_cases.json'
+    )
     const cases = JSON.parse(await readFile(fixturePath, 'utf8')) as EvaluationCase[]
     const categoryFixturePath = app.makePath(
-      'resources/vendor_search_category_verification_cases.json'
+      'tests/vendor_search_evaluation/fixtures/vendor_search_category_verification_cases.json'
     )
     const categoryCases = JSON.parse(
       await readFile(categoryFixturePath, 'utf8')
@@ -196,7 +188,14 @@ export default class VendorSearchEvaluate extends BaseCommand {
       `${JSON.stringify({ summary, evaluations, categoryVerifications }, null, 2)}\n`,
       'utf8'
     )
-    this.logger.info(`Vendor search evaluation complete: ${JSON.stringify(summary)}`)
-    this.logger.info(`Detailed report: ${reportPath}`)
-  }
-}
+
+    assert.equal(summary.requestCount, cases.length * 3)
+    assert.equal(summary.categoryVerificationCount, categoryCases.length)
+    assert.equal(summary.failedRequestCount, 0, 'One or more comparison requests failed')
+    assert.equal(
+      summary.categoryVerificationFailureCount,
+      0,
+      'One or more category verification requests failed'
+    )
+  })
+})
