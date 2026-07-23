@@ -29,6 +29,8 @@ function pagePayload(component: string, url: string, props: Record<string, unkno
       backendUrl: '',
       errors: {},
       flash: { success: null, error: null, partial_success: null },
+      feedbackWidget: null,
+      feedbackWidgetContext: { environment: 'dev', appVersion: 'test' },
       projects: [],
       user: null,
       ...props,

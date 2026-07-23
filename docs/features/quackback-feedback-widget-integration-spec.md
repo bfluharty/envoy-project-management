@@ -1,6 +1,6 @@
 # Quackback Self-Hosted Feedback Widget Integration
 
-**Status:** Phases 0–3 complete; Phase 4 not started
+**Status:** Phases 0–4 complete; Phase 5 not started
 **Date:** July 23, 2026  
 **Application:** Envoy Project Management  
 **Related repository:** `envoy-infrastructure`  
@@ -1307,6 +1307,28 @@ Implementation notes:
 - Mount it in eligible authenticated shells.
 - Add safe metadata and cleanup behavior.
 - Add UI tests with the SDK stub.
+
+**Completed:** July 23, 2026
+
+Implementation notes:
+
+- The browser integration requests a short-lived SSO token before creating the
+  Quackback command queue or loading the remote SDK. It initializes with only
+  the verified token and the bottom-right placement.
+- A single non-rendering Svelte component is mounted from both current
+  authenticated shell variants. Future authenticated shells must use the same
+  component instead of loading the SDK directly.
+- Reference-counted lifecycle handling preserves one widget across Inertia
+  shell swaps, updates only the approved environment, page-area, and app-version
+  metadata, and destroys the runtime on logout, account changes, ineligible
+  routes, or final unmount.
+- Token, script, and verified-identity failures remain isolated from Envoy. The
+  integration does not retry in a loop or fall back to anonymous Quackback
+  identity.
+- Unit tests cover metadata minimization. Playwright uses a deterministic SDK
+  stub to cover eligibility, exact initialization, navigation, account changes,
+  cleanup, failure isolation, keyboard activation, bottom-right placement, and
+  mobile full-screen behavior.
 
 ### Phase 5: Privacy and operations
 

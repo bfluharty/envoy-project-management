@@ -6,6 +6,11 @@ import UserConsentService from '#services/user_consent_service'
 import { getQuackbackConfig } from '#config/quackback'
 import { isFeedbackWidgetRouteAllowed, type FeedbackWidgetConfig } from '#utils/quackback_config'
 
+function publicAppVersion(): string {
+  const version = process.env.GIT_SHA?.trim() ?? ''
+  return /^[a-zA-Z0-9._-]{1,64}$/.test(version) ? version : 'unknown'
+}
+
 const inertiaConfig = defineConfig({
   /**
    * Path to the Edge view that will be used as the root view for Inertia responses
@@ -53,6 +58,10 @@ const inertiaConfig = defineConfig({
         baseUrl: config.baseUrl,
       }
     },
+    feedbackWidgetContext: () => ({
+      environment: env.get('APP_ENV') === 'prod' ? ('prod' as const) : ('dev' as const),
+      appVersion: publicAppVersion(),
+    }),
     projects: async (ctx) => {
       // Shared props also run on consent-exempt pages. Never expose product data until the
       // authenticated user has completed every currently required consent acknowledgment.
