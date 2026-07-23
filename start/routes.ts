@@ -26,6 +26,7 @@ const OnboardingController = () => import('#controllers/web/onboarding_controlle
 const OnboardingProjectController = () => import('#controllers/web/onboarding_project_controller')
 const OnboardingConsentController = () => import('#controllers/web/onboarding_consent_controller')
 const VendorOnboardingController = () => import('#controllers/web/vendor_onboarding_controller')
+const FeedbackController = () => import('#controllers/api/feedback_controller')
 
 // Public landing page (no auth required)
 router.get('/', [OnboardingController, 'show']).as('landing').middleware(middleware.silentAuth())
@@ -131,6 +132,14 @@ router
   .patch('/account/data-preferences', [AccountController, 'updateDataPreferences'])
   .middleware([middleware.auth(), middleware.consent(), middleware.sameOrigin()])
 router.post('/logout', [AuthController, 'logout']).as('auth.logout').middleware(middleware.auth())
+
+router
+  .post('/api/feedback/widget-token', [FeedbackController, 'widgetToken'])
+  .middleware([
+    middleware.auth(),
+    middleware.consent({ incompleteStatus: 403 }),
+    middleware.sameOrigin(),
+  ])
 
 router
   .get('/vendor/pending', [VendorOnboardingController, 'pending'])

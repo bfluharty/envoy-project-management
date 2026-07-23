@@ -1,6 +1,6 @@
 # Quackback Self-Hosted Feedback Widget Integration
 
-**Status:** Phases 0–2 complete; Phase 3 not started  
+**Status:** Phases 0–3 complete; Phase 4 not started
 **Date:** July 23, 2026  
 **Application:** Envoy Project Management  
 **Related repository:** `envoy-infrastructure`  
@@ -1285,6 +1285,21 @@ were configured and verified separately.
 - Add eligible shared configuration.
 - Add token service and endpoint.
 - Add unit and functional tests.
+
+**Completed:** July 23, 2026
+
+Implementation notes:
+
+- Envoy validates the enabled configuration at startup and keeps the integration
+  disabled by default.
+- Eligible Inertia responses expose only the public Quackback origin.
+- `POST /api/feedback/widget-token` issues a five-minute HS256 token from the
+  authenticated user model behind auth, current-consent, same-origin, active-user,
+  and per-user rate-limit checks.
+- Development and production ECS task definitions reference separate encrypted
+  SSM parameters. Both deployed feature flags remain disabled pending Phase 6.
+- Focused unit, functional, infrastructure, type, build, and synthesis checks
+  cover the Phase 3 contract.
 
 ### Phase 4: Envoy frontend
 
