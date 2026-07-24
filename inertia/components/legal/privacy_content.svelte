@@ -3,7 +3,7 @@
     <header class="space-y-4">
       <div class="space-y-1 text-sm">
         <p><strong class="text-surface-950-50">Effective Date:</strong> June 15, 2026</p>
-        <p><strong class="text-surface-950-50">Last Updated:</strong> July 15, 2026</p>
+        <p><strong class="text-surface-950-50">Last Updated:</strong> July 23, 2026</p>
       </div>
 
       <p>
@@ -90,6 +90,44 @@
             preferences, and optimize system functionality.
           </li>
         </ul>
+      </div>
+
+      <div class="space-y-3">
+        <h3 class="text-lg font-semibold text-surface-950-50">
+          D. Product Feedback and Community Features
+        </h3>
+        <p>
+          After you sign in and complete any required privacy acknowledgment, Envoy may make a
+          self-hosted feedback widget and private feedback portal available. When you use these
+          features, we process:
+        </p>
+        <ul class="list-disc space-y-2 pl-6">
+          <li>
+            Your Envoy user identifier, current name, and current email address so the feedback
+            system can recognize you without requiring a second account or sign-in.
+          </li>
+          <li>
+            Feedback posts, feature requests, bug reports, votes, comments, and screenshots or
+            other images you choose to attach.
+          </li>
+          <li>
+            Limited operational context consisting of the Envoy environment, broad page area, and
+            application version. Envoy does not automatically send project identifiers, full page
+            URLs, connected-mailbox content, credentials, or payment data to the feedback system.
+          </li>
+        </ul>
+        <p>
+          We use this information to operate and secure the feedback service, understand and
+          prioritize requests, investigate bugs, communicate product decisions, and improve Envoy.
+          Feedback and the name attributed to it may be visible to other authenticated Envoy users
+          who can access the relevant private board. Envoy administrators can review feedback and
+          moderation information.
+        </p>
+        <p>
+          Do not include passwords, access tokens, payment information, connected-email contents,
+          sensitive personal information, or confidential third-party information in feedback,
+          comments, or screenshots.
+        </p>
       </div>
     </section>
 
@@ -341,6 +379,12 @@
           </tbody>
         </table>
       </div>
+      <p>
+        Envoy operates its product-feedback system on AWS infrastructure using self-hosted
+        Quackback software. Quackback Ltd. does not host or have access to data in Envoy's
+        self-hosted deployment. Envoy has disabled Quackback telemetry and AI features for this
+        deployment.
+      </p>
     </section>
 
     <section class="space-y-4">
@@ -359,6 +403,18 @@
           containing the disclosure shown, versions, timestamps, request metadata, and actor. These
           records support legal and operational accountability. Account deletion may remove them in
           accordance with applicable retention, deletion, and legal obligations.
+        </li>
+        <li>
+          <strong class="text-surface-950-50">Feedback Retention and Deletion:</strong> Active
+          feedback remains available while it is useful for product planning, support, security,
+          legal compliance, or the purposes described in this policy. Soft-deleted feedback posts
+          are permanently removed after thirty (30) days. Feedback audit logs may be retained
+          indefinitely for security and accountability. When a feedback user is deleted, their user
+          record is permanently deleted, votes are removed, sessions are invalidated, and retained
+          posts and comments are attributed to “Deleted User.” Feedback text and attachments may
+          therefore remain in anonymized form to preserve discussion continuity unless we also
+          delete the content in response to an applicable request. Backup copies age out under
+          Envoy's backup-retention schedule and are not used for ordinary product access.
         </li>
         <li>
           <strong class="text-surface-950-50">Automated Minimization:</strong>
@@ -418,7 +474,9 @@
       <p>
         To exercise any of these privacy rights, please submit a formal request to our privacy team
         at <strong class="text-surface-950-50">contact@hello-envoy.com</strong>. We will verify your
-        identity and respond within the legally mandated timeframes.
+        identity and respond within the legally mandated timeframes. A request may include access
+        to or export of your feedback, correction of the identity associated with it, deletion of
+        your feedback-system user, or deletion of specific feedback content or attachments.
       </p>
     </section>
 

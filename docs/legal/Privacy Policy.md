@@ -2,7 +2,7 @@
 
 **Effective Date:** June 15, 2026
 
-**Last Updated:** July 13, 2026
+**Last Updated:** July 23, 2026
 
 **Envoy Technologies LLC** (“Envoy,” “we,” “us,” or “our”), a South Carolina limited liability company, is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our SaaS platform, website (hello-envoy.com), and AI project-scoping and marketplace services (collectively, the “Service”).
 
@@ -31,6 +31,18 @@ If you utilize our Gmail or Microsoft Outlook integration features, we request a
 
 * **Usage, Device, and Telemetry Data:** IP addresses, browser types, operating systems, referring URLs, specific platform pages viewed, dates/times of visits, and AI system performance logs.  
 * **Cookies and Tracking:** We utilize cookies, web beacons, and similar tracking technologies to handle secure session states, remember preferences, and optimize system functionality.
+
+#### **D. Product Feedback and Community Features**
+
+After you sign in and complete any required privacy acknowledgment, Envoy may make a self-hosted feedback widget and private feedback portal available. When you use these features, we process:
+
+* Your Envoy user identifier, current name, and current email address so the feedback system can recognize you without requiring a second account or sign-in.
+* Feedback posts, feature requests, bug reports, votes, comments, and screenshots or other images you choose to attach.
+* Limited operational context consisting of the Envoy environment, broad page area, and application version. Envoy does not automatically send project identifiers, full page URLs, connected-mailbox content, credentials, or payment data to the feedback system.
+
+We use this information to operate and secure the feedback service, understand and prioritize requests, investigate bugs, communicate product decisions, and improve Envoy. Feedback and the name attributed to it may be visible to other authenticated Envoy users who can access the relevant private board. Envoy administrators can review feedback and moderation information.
+
+Do not include passwords, access tokens, payment information, connected-email contents, sensitive personal information, or confidential third-party information in feedback, comments, or screenshots.
 
 ### **2\. THIRD-PARTY EMAIL SERVICES & LIMITED USE COMPLIANCE (GOOGLE & MICROSOFT)**
 
@@ -64,9 +76,12 @@ To securely host our platform and process specialized data requests, Envoy trans
 | **Payment Processors** (Stripe) | Secure subscription billing and financial compliance | Payment methods, billing addresses, and tax details |
 | **Product Analytics Platforms** | Monitoring application uptime and error reporting | De-identified usage logs, browser type, and device telemetry |
 
+Envoy operates its product-feedback system on AWS infrastructure using self-hosted Quackback software. Quackback Ltd. does not host or have access to data in Envoy's self-hosted deployment. Envoy has disabled Quackback telemetry and AI features for this deployment.
+
 ### **5\. DATA RETENTION, MINIMIZATION, AND SECURITY**
 
 * **Retention Parameters:** We retain your personal data only as long as necessary to provide your active subscription, maintain your marketplace historical record, or fulfill legal obligations.  
+* **Feedback Retention and Deletion:** Active feedback remains available while it is useful for product planning, support, security, legal compliance, or the purposes described in this policy. Soft-deleted feedback posts are permanently removed after thirty (30) days. Feedback audit logs may be retained indefinitely for security and accountability. When a feedback user is deleted, their user record is permanently deleted, votes are removed, sessions are invalidated, and retained posts and comments are attributed to "Deleted User." Feedback text and attachments may therefore remain in anonymized form to preserve discussion continuity unless we also delete the content in response to an applicable request. Backup copies age out under Envoy's backup-retention schedule and are not used for ordinary product access.
 * **Automated Minimization:** \* *Gmail Interaction Logs:* Metadata logs regarding emails sent via the Gmail API are automatically deleted or fully anonymized after ninety (90) days.  
   * *AI Cache & Context Logs:* Raw API interaction logs submitted to external AI sub-processors are set to auto-expire or be deleted within thirty (30) days, subject to the sub-processor's standard data safety windows.  
 * **Security Architecture:** We implement robust administrative, technical, and physical security measures (including TLS encryption in transit and AES-256 encryption at rest) designed to shield your data from accidental loss or unauthorized breach. However, no transmission medium over the internet is completely infallible.
@@ -80,7 +95,7 @@ Depending on your local jurisdiction (including the European Economic Area under
 * **Right to Erasure ("Right to be Forgotten"):** You may request that we completely delete your personal data, past AI generation histories, and platform credentials.  
 * **Right to Revoke Authorization:** You may revoke Envoy's access to your Google/Gmail account at any time either through your Envoy profile configuration panel or directly via your Google Security Account Permissions dashboard.
 
-To exercise any of these privacy rights, please submit a formal request to our privacy team at **contact@hello-envoy.com**. We will verify your identity and respond within the legally mandated timeframes.
+To exercise any of these privacy rights, please submit a formal request to our privacy team at **contact@hello-envoy.com**. We will verify your identity and respond within the legally mandated timeframes. A request may include access to or export of your feedback, correction of the identity associated with it, deletion of your feedback-system user, or deletion of specific feedback content or attachments.
 
 ### **7\. CHANGES TO THIS PRIVACY POLICY**
 

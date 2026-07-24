@@ -1,6 +1,6 @@
 # Quackback Self-Hosted Feedback Widget Integration
 
-**Status:** Phases 0–4 complete; Phase 5 not started
+**Status:** Phases 0–5 complete; Phase 6 not started
 **Date:** July 23, 2026  
 **Application:** Envoy Project Management  
 **Related repository:** `envoy-infrastructure`  
@@ -1336,6 +1336,32 @@ Implementation notes:
 - Document admin access, deletion, backup, restore, upgrade, secret rotation, and
   incident procedures.
 - Perform a restore drill.
+
+**Completed:** July 23, 2026
+
+Implementation notes:
+
+- The user-facing and repository Privacy Policies now disclose the self-hosted
+  feedback system's identity data, submissions, votes, comments, optional
+  screenshots, limited page metadata, processing purposes, private-board
+  visibility, retention/anonymization, and access/export/correction/deletion
+  procedures.
+- The material revision is versioned as `2026-07-23-privacy-v2`. Existing
+  accepted users must complete the existing privacy-only re-acknowledgment
+  before they become eligible for the widget.
+- The feedback-host runbook now covers administrator access and credential
+  recovery without email, privacy requests and deletion, backup and both
+  recovery paths, upgrades and rollback, coordinated secret rotation, incident
+  response, and quarterly drills.
+- A production recovery drill restored a same-size isolated Lightsail clone
+  from a temporary snapshot and independently restored the latest logical dump.
+  Health, database invariants, source/dump-time counts, and MinIO state were
+  verified. The drill identified and documented the pinned PostgreSQL image's
+  requirement that a full logical restore target be named `quackback` because
+  of `pg_cron`.
+- The disposable instance and drill-only manual snapshot were deleted after AWS
+  reported successful cleanup. The production instance, static IP, and public
+  health remained intact.
 
 ### Phase 6: Development and production validation
 

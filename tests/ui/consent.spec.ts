@@ -5,7 +5,7 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:18080'
 
 const consentProps = {
   termsVersion: '2026-07-15-terms-v1',
-  privacyPolicyVersion: '2026-07-15-privacy-v1',
+  privacyPolicyVersion: '2026-07-23-privacy-v2',
   modelTrainingNoticeVersion: '2026-07-15-model-training-v1',
   privacyReackOnly: false,
 }
@@ -207,6 +207,21 @@ test.describe('onboarding consent', () => {
 
     const privacyDialog = page.getByRole('dialog', { name: 'Privacy Policy' })
     await expect(privacyDialog).toBeVisible()
+    await expect(
+      privacyDialog.getByRole('heading', { name: 'D. Product Feedback and Community Features' })
+    ).toBeVisible()
+    await expect(
+      privacyDialog.getByText(/feedback posts, feature requests, bug reports, votes, comments/i)
+    ).toBeVisible()
+    await expect(
+      privacyDialog.getByText(/does not automatically send project identifiers/i)
+    ).toBeVisible()
+    const feedbackRetention = privacyDialog
+      .getByText('Feedback Retention and Deletion:')
+      .locator('..')
+    await expect(feedbackRetention).toContainText(
+      'retained posts and comments are attributed to “Deleted User.”'
+    )
     await privacyDialog.locator('.overflow-y-auto').evaluate((element) => {
       element.scrollTop = element.scrollHeight
     })
