@@ -246,9 +246,6 @@ test('identifies the Envoy user without another login and cleans up on logout', 
   await expect.poll(() => sdkStatus).toBe(200)
 
   const frame = await openFeedbackPanel(page)
-  await expect(page.getByRole('complementary', { name: 'Screenshot tip' })).toContainText(
-    'Paste or drag a screenshot into “Add more details…”'
-  )
   const body = await frame.locator('body').innerText()
   expect(body).not.toMatch(/sign in|log in|create account/i)
   expect(body).toMatch(/changelog/i)

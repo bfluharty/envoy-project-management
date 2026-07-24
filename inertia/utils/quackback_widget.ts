@@ -9,8 +9,6 @@ type IdentifyPayload = {
   success?: boolean
 }
 
-type WidgetVisibilitySubscriber = (isOpen: boolean) => void
-
 declare global {
   interface Window {
     Quackback?: QuackbackCommand
@@ -26,13 +24,9 @@ let latestMetadata: FeedbackWidgetMetadata | null = null
 let activationPromise: Promise<void> | null = null
 let tokenRequestController: AbortController | null = null
 let identifyHandler: ((payload: IdentifyPayload) => void) | null = null
-let openHandler: (() => void) | null = null
-let closeHandler: (() => void) | null = null
 let cleanupTimer: ReturnType<typeof setTimeout> | null = null
 let runtimeGeneration = 0
 let activationFailed = false
-let isWidgetOpen = false
-const visibilitySubscribers = new Set<WidgetVisibilitySubscriber>()
 
 function isBrowser(): boolean {
   return typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -66,15 +60,6 @@ function removeSdkElement() {
   document.getElementById(SDK_ELEMENT_ID)?.remove()
 }
 
-function updateWidgetVisibility(isOpen: boolean) {
-  if (isWidgetOpen === isOpen) return
-
-  isWidgetOpen = isOpen
-  for (const subscriber of visibilitySubscribers) {
-    subscriber(isOpen)
-  }
-}
-
 function teardownRuntime(options: { logout: boolean; preserveFailure?: boolean }) {
   if (!isBrowser()) return
 
@@ -85,12 +70,6 @@ function teardownRuntime(options: { logout: boolean; preserveFailure?: boolean }
   if (identifyHandler) {
     command('off', 'identify', identifyHandler)
   }
-  if (openHandler) {
-    command('off', 'open', openHandler)
-  }
-  if (closeHandler) {
-    command('off', 'close', closeHandler)
-  }
   if (options.logout) {
     command('logout')
   }
@@ -98,12 +77,9 @@ function teardownRuntime(options: { logout: boolean; preserveFailure?: boolean }
 
   removeSdkElement()
   identifyHandler = null
-  openHandler = null
-  closeHandler = null
   activationPromise = null
   activeBaseUrl = null
   latestMetadata = null
-  updateWidgetVisibility(false)
 
   if (window.Quackback) {
     delete window.Quackback
@@ -179,11 +155,7 @@ async function initialize(baseUrl: string, generation: number) {
 
     ensureCommandQueue()
     identifyHandler = handleIdentify
-    openHandler = () => updateWidgetVisibility(true)
-    closeHandler = () => updateWidgetVisibility(false)
     command('on', 'identify', identifyHandler)
-    command('on', 'open', openHandler)
-    command('on', 'close', closeHandler)
     command('init', {
       placement: 'right',
       identity: { ssoToken: body.ssoToken },
@@ -207,17 +179,6 @@ export function updateQuackbackMetadata(metadata: FeedbackWidgetMetadata) {
   latestMetadata = safeFeedbackWidgetMetadata(metadata)
   if (isBrowser() && window.Quackback) {
     command('metadata', latestMetadata)
-  }
-}
-
-export function subscribeQuackbackWidgetVisibility(
-  subscriber: WidgetVisibilitySubscriber
-): () => void {
-  visibilitySubscribers.add(subscriber)
-  subscriber(isWidgetOpen)
-
-  return () => {
-    visibilitySubscribers.delete(subscriber)
   }
 }
 
