@@ -98,8 +98,9 @@
         </h3>
         <p>
           After you sign in and complete any required privacy acknowledgment, Envoy may make a
-          self-hosted feedback widget and private feedback portal available. When you use these
-          features, we process:
+          self-hosted feedback widget available. Envoy also operates a public feedback portal where
+          published feedback can be viewed without an Envoy account. When you use these features,
+          we process:
         </p>
         <ul class="list-disc space-y-2 pl-6">
           <li>
@@ -119,9 +120,11 @@
         <p>
           We use this information to operate and secure the feedback service, understand and
           prioritize requests, investigate bugs, communicate product decisions, and improve Envoy.
-          Feedback and the name attributed to it may be visible to other authenticated Envoy users
-          who can access the relevant private board. Envoy administrators can review feedback and
-          moderation information.
+          Published feedback and the name attributed to it may be visible to anyone on the
+          Internet, together with its status, vote count, published comments, roadmap placement, and
+          changelog information. Submitting feedback, voting, and commenting require an
+          authenticated Envoy user. Some submissions may be moderated before publication, and Envoy
+          administrators can review unpublished feedback and moderation information.
         </p>
         <p>
           Do not include passwords, access tokens, payment information, connected-email contents,

@@ -1,6 +1,6 @@
 # Quackback Self-Hosted Feedback Widget Integration
 
-**Status:** Phases 0–5 complete; Phase 6 not started
+**Status:** Phases 0–5 complete; Phase 6 development access gate passed; production intentionally disabled
 **Date:** July 23, 2026  
 **Application:** Envoy Project Management  
 **Related repository:** `envoy-infrastructure`  
@@ -43,8 +43,9 @@ The following decisions are final for the initial implementation:
    will be disabled.
 8. Envoy authentication is authoritative. Users will not create or enter a
    separate Quackback password to use the widget.
-9. The standalone feedback portal will be private. Verified widget sign-in will
-   carry an Envoy user into the portal without another login.
+9. The standalone feedback portal and published content will be readable
+   without authentication. Submitting, voting, and commenting require verified
+   Envoy identity, with no separate Quackback login.
 10. The launcher will be Quackback's floating bottom-right button.
 11. The initial boards will be `Feature Requests` and `Bug Reports`.
 12. Users may browse, search, vote, comment, and submit feedback.
@@ -215,17 +216,17 @@ recorded below. Every later upgrade must repeat the same gate.
 
 The approved release is Quackback `v0.13.1`, published June 29, 2026:
 
-| Item                                   | Approved value                                                            |
-| -------------------------------------- | ------------------------------------------------------------------------- |
-| Release                                | `v0.13.1`                                                                 |
-| Source commit                          | `003c850fac71b4cbbbe7f40e25cc5d439aa7a591`                                |
-| Release state                          | Stable; not a draft or prerelease                                         |
-| Application image tag                  | `ghcr.io/quackbackio/quackback:0.13.1`                                    |
-| Multi-platform image digest            | `sha256:f3a166771f6d78f6a50e7bc9372740e3a0896e129437689870172ca5465b9f42` |
-| Linux `amd64` manifest digest          | `sha256:5e8424848e5ea3e4a69995d5e626d16dc4de5636374a140d745ad29f3989072b` |
+| Item                                                  | Approved value                                                            |
+| ----------------------------------------------------- | ------------------------------------------------------------------------- |
+| Release                                               | `v0.13.1`                                                                 |
+| Source commit                                         | `003c850fac71b4cbbbe7f40e25cc5d439aa7a591`                                |
+| Release state                                         | Stable; not a draft or prerelease                                         |
+| Application image tag                                 | `ghcr.io/quackbackio/quackback:0.13.1`                                    |
+| Multi-platform image digest                           | `sha256:f3a166771f6d78f6a50e7bc9372740e3a0896e129437689870172ca5465b9f42` |
+| Linux `amd64` manifest digest                         | `sha256:5e8424848e5ea3e4a69995d5e626d16dc4de5636374a140d745ad29f3989072b` |
 | Production Compose SHA-256 (canonical LF)             | `c2c73297edc49eaa6a749f0ea0a1d3cd4b0f4de95160ad6671b635148989fd61`        |
 | Production environment example SHA-256 (canonical LF) | `66d7792995c6c0e210a4f6e1045aed48ff8033a91858d166ef3398b61b5f5816`        |
-| License file SHA-256                   | `36feaed6e6d42e6f84db2eaadbea503caf2cd81ce43a5b4b69594f290ded91cb`        |
+| License file SHA-256                                  | `36feaed6e6d42e6f84db2eaadbea503caf2cd81ce43a5b4b69594f290ded91cb`        |
 
 The release commit is signed by GitHub's release key. Local Git could inspect
 the signature but could not independently establish trust because that public
@@ -307,27 +308,26 @@ constraint:
 | Reject invalid or expired identity   | Live validation returned HTTP `403` with `TOKEN_INVALID`                                         |
 | Accept valid signed identity         | Live validation returned HTTP `200` and a Quackback Bearer session for the same user             |
 | Restore authenticated widget session | Live `/api/widget/session` validation returned the identified Envoy email                        |
-| Private portal handoff               | Supported by widget-origin session provenance, one-time-token handoff, and `widgetSignIn`        |
-| Browse and search protected boards   | Supported; live authenticated search returned only the requested protected board                 |
+| Verified portal handoff              | Supported by widget-origin session provenance, one-time-token handoff, and `widgetSignIn`        |
+| Browse and search public boards      | Supported; anonymous viewers can read both boards while write actions remain authenticated       |
 | Vote, comment, and submit            | Supported by the feedback widget and per-board authenticated permission model                    |
 | Screenshot/image upload              | Supported through authenticated `/api/widget/upload` and private S3/MinIO storage                |
 | Changelog in widget                  | Supported as a native widget tab                                                                 |
 | Roadmap in widget                    | Not a native widget tab in `v0.13.1`                                                             |
-| Roadmap in private portal            | Supported at `/roadmap` after verified widget handoff                                            |
+| Roadmap in full portal               | Supported at `/roadmap`; published portal content is intentionally public                        |
 | Help center and live chat disabled   | Supported by widget tab and feature flags                                                        |
 | AI disabled                          | Supported by leaving the OpenAI and AI model variables unset                                     |
 | Telemetry disabled                   | Supported by `DISABLE_TELEMETRY=true`                                                            |
 
 The native widget tab model in `v0.13.1` is Home, Feedback, Changelog, and a
 combined Help/Chat surface. The implementation must expose roadmap through the
-private portal handoff rather than promising a roadmap tab inside the floating
-panel.
+full portal rather than promising a roadmap tab inside the floating panel.
 
 Five focused upstream widget suites passed against the tagged source: widget
-navigation, identify precedence, private-portal URL construction, JWT
+navigation, identify precedence, portal URL construction, JWT
 verification, and uploads. The result was 55 passing tests. Live artifact tests
 also confirmed the health endpoint, widget configuration and SDK endpoints,
-private portal gate, valid/invalid/expired identity behavior, Bearer-session
+portal access behavior, valid/invalid/expired identity behavior, Bearer-session
 resolution, and authenticated board search. Purely visual and responsive
 browser checks remain in Phase 6.
 
@@ -426,12 +426,12 @@ The initial widget home lets users:
 - Submit a feature request.
 - Submit a bug report with an optional screenshot.
 - Read the changelog.
-- Follow a verified handoff to the private full portal and roadmap.
+- Follow a verified handoff to the full portal and roadmap.
 
 Quackback `v0.13.1` does not have a native roadmap widget tab. Roadmap
-navigation must use the verified handoff to the private portal. It remains part
-of the approved user experience, but the launcher panel itself will expose only
-Home, Feedback, and Changelog.
+navigation uses the full portal. It remains part of the approved user
+experience, but the launcher panel itself will expose only Home, Feedback, and
+Changelog.
 
 ### 7.5 Logout and account switching
 
@@ -747,11 +747,11 @@ not log post titles or user email addresses as observability events.
 - Name: `Envoy`.
 - Header display name: `Envoy Feedback`.
 - Use case: `saas`.
-- Portal visibility: private.
+- Portal visibility: public for published read-only content.
 - Open signup: off after the initial administrator is created.
 - Widget: enabled.
 - Verified identity only: enabled.
-- Widget sign-in to private portal: enabled.
+- Verified widget identity: enabled for authenticated write actions.
 - Anonymous interaction: disabled.
 - Help center: disabled.
 - Live chat: disabled.
@@ -896,8 +896,9 @@ proxy, evaluate replacing its `frame-ancestors` policy with an allowlist for:
 - `https://dev-app.hello-envoy.com` if dev is permitted to use production,
   though this is not recommended.
 
-Do not deploy this header until the real widget and private-portal handoff pass
-end-to-end testing. Local development needs a separate localhost policy.
+Do not deploy this header until the real widget and
+public-read/authenticated-write handoff pass end-to-end testing. Local
+development needs a separate localhost policy.
 
 ### 12.4 Host and container hardening
 
@@ -1035,8 +1036,8 @@ For every Quackback upgrade:
 
 1. Review release notes and AGPL/source changes.
 2. Test the target version in local development.
-3. Confirm widget identity, private portal handoff, boards, images, and mobile
-   behavior.
+3. Confirm widget identity, public-read/authenticated-write handoff, boards,
+   images, and mobile behavior.
 4. Take a Lightsail snapshot and fresh logical database dump.
 5. Pin the new version/digest.
 6. Pull images and restart the production Compose stack.
@@ -1063,7 +1064,8 @@ The single-host design permits a maintenance window during upgrades and restore.
 
 - Use HTTPS for Envoy and Quackback in production.
 - Require verified widget identity.
-- Keep the portal private.
+- Permit anonymous reads only for published portal content.
+- Require authenticated board tiers for submit, vote, and comment actions.
 - Disable anonymous interactions.
 - Keep the widget secret only in Quackback admin storage and Envoy SSM/runtime.
 - Use five-minute identity-token expiration.
@@ -1087,7 +1089,8 @@ Before launch, update Envoy's Privacy Policy to disclose:
 - Purpose of processing.
 - Retention and anonymization behavior.
 - How a user can request access, export, correction, or deletion.
-- That feedback may be visible to other authenticated Envoy users.
+- That published feedback and attributed names may be visible to anyone on the
+  Internet, while submit, vote, and comment actions require authentication.
 - That users should not submit sensitive mailbox, credential, payment, or
   personal information in feedback.
 
@@ -1180,8 +1183,9 @@ Run before production deployment:
 - Email/name updates preserve identity by Envoy UUID.
 - Direct unverified identity is rejected.
 - Anonymous interaction is rejected.
-- Direct anonymous portal access is rejected.
-- Widget-to-private-portal handoff requires no second sign-in.
+- Direct anonymous portal access can read both boards and published content.
+- Anonymous submit, vote, and comment actions are rejected.
+- Widget identity requires no second sign-in.
 - Feature request submission works.
 - Bug report plus screenshot works.
 - Search, vote, unvote, comment, and changelog work.
@@ -1233,14 +1237,14 @@ validation all passed.
 
 - [x] Create and verify exactly one initial administrator.
 - [x] Create both boards and the six default statuses.
-- [x] Configure private portal access and signed-in board permissions.
+- [x] Configure public board viewing with authenticated submit, vote, and
+      comment permissions.
 - [x] Enable verified widget identity and store its secret as an AWS SSM
-  `SecureString`.
-- [x] Enable private-portal widget sign-in.
+      `SecureString`.
 - [x] Disable anonymous interaction, open registration, social sign-in, magic
-  link, help, chat, AI, and telemetry.
+      link, help, chat, AI, and telemetry.
 - [x] Configure Envoy branding, feedback and changelog tabs, the product
-  roadmap, and screenshot-capable object storage.
+      roadmap, and screenshot-capable object storage.
 
 Production evidence:
 
@@ -1250,12 +1254,12 @@ Production evidence:
 - Quackback has one administrator, two active boards, six active statuses, and
   one public `Product Roadmap`. Only Planned, In Progress, and Complete are
   roadmap statuses.
-- Both boards require an authenticated actor for view, vote, submit, and
-  comment. Feature requests publish immediately; signed-in bug reports enter
-  moderation. The bug-report description warns against submitting secrets or
-  sensitive connected data.
-- The portal is private, widget sign-in is on, and anonymous interaction is
-  off. Direct unsigned widget identification returns `TOKEN_REQUIRED`.
+- Both boards permit anonymous viewing but require an authenticated actor for
+  vote, submit, and comment. Feature requests publish immediately; signed-in
+  bug reports enter moderation. The bug-report description warns against
+  submitting secrets or sensitive connected data.
+- The portal is public, widget sign-in is on, and anonymous interaction is off.
+  Direct unsigned widget identification returns `TOKEN_REQUIRED`.
 - A correctly signed, deliberately incomplete probe reached claim validation,
   proving the Quackback and SSM secret copies match without creating a test
   user. Both copies had SHA-256 prefix `6df7df35e6864823` at validation time.
@@ -1343,12 +1347,13 @@ Implementation notes:
 
 - The user-facing and repository Privacy Policies now disclose the self-hosted
   feedback system's identity data, submissions, votes, comments, optional
-  screenshots, limited page metadata, processing purposes, private-board
-  visibility, retention/anonymization, and access/export/correction/deletion
+  screenshots, limited page metadata, processing purposes, public visibility
+  of published feedback, retention/anonymization, and
+  access/export/correction/deletion
   procedures.
-- The material revision is versioned as `2026-07-23-privacy-v2`. Existing
-  accepted users must complete the existing privacy-only re-acknowledgment
-  before they become eligible for the widget.
+- The public-read decision is a material disclosure change, versioned as
+  `2026-07-23-privacy-v3`. Existing accepted users must complete the existing
+  privacy-only re-acknowledgment before they become eligible for the widget.
 - The feedback-host runbook now covers administrator access and credential
   recovery without email, privacy requests and deletion, backup and both
   recovery paths, upgrades and rollback, coordinated secret rotation, incident
@@ -1365,12 +1370,106 @@ Implementation notes:
 
 ### Phase 6: Development and production validation
 
-- Complete the real local integration test matrix.
-- Deploy Envoy changes to dev with a dev/local Quackback target.
-- Run smoke, responsive, accessibility, and failure-isolation tests.
-- Enable the production feature flag for internal accounts first.
-- Verify attribution and moderation.
-- Expand to all eligible users.
+**Status:** The development access and identity gate passed on July 23, 2026.
+The widget is functional in development with public read access and
+authenticated write actions. Production remains intentionally disabled until a
+controlled submission, attribution, moderation, and account-lifecycle pass is
+completed.
+
+- [x] Add the opt-in real local-to-live Playwright integration suite.
+- [x] Deploy Envoy changes to dev with the approved self-hosted Quackback target.
+- [x] Run deterministic responsive, accessibility, account-lifecycle, and
+      failure-isolation tests against the SDK contract.
+- [x] Render both authenticated boards and exercise board selection in the live
+      development integration.
+- [ ] Complete a non-destructive end-to-end development submission and verify
+      attribution and moderation.
+- [ ] Enable the production feature flag for internal accounts first.
+- [ ] Verify live production attribution and moderation.
+- [ ] Expand to all eligible users.
+
+Development rollout evidence:
+
+- `/envoy/dev/QUACKBACK_WIDGET_SECRET` was synchronized to the protected
+  Quackback workspace secret because dev intentionally reuses the single
+  approved host. Only cryptographic fingerprints were compared; the value was
+  not logged or committed.
+- `EnvoyDevStack` completed its update with Quackback enabled at
+  `https://feedback.hello-envoy.com`. ECS task definition revision `107` is
+  healthy and runs the commit-tagged image
+  `2eac45efb9c7ca5075d07949540844c7859da0f7`.
+- GitHub Actions run `30055597955` passed lint, typechecking, API/UI tests, image
+  publication, migrations, and the dev deployment.
+- Anonymous dev requests receive `401` from the widget-token endpoint and the
+  signed-out page does not load the Quackback SDK.
+- Live validation is an opt-in Playwright suite at
+  `tests/integration/quackback_live.spec.ts`, run with
+  `npm run test:quackback:live`. Test orchestration and browser assertions do
+  not live in `scripts/`.
+- The suite creates a dedicated, disposable local Envoy database, obtains
+  only the development widget secret, exercises real HMAC token issuance
+  against the live self-hosted SDK, stops its local server, and removes the
+  database in teardown. It refuses to reuse an existing database.
+- All five live checks pass: signed-out Envoy users cannot issue a token or
+  load the SDK; the public portal renders both boards; an Envoy user is
+  identified without a second login and is cleaned up on logout; both boards
+  are selectable and Submit becomes enabled only for the identified user; and
+  an SDK outage is isolated from the Envoy page.
+- The live identity check created one synthetic `alice@example.com` portal user
+  and identified sessions. No posts, votes, comments, or attachments were
+  created. Every isolated local database was deleted after its test run.
+- The existing automated matrix continues to cover both approved boards,
+  responsive desktop/mobile behavior, keyboard accessibility, account
+  switching, consent gating, metadata minimization, and failure isolation.
+
+Approved public-read/authenticated-write resolution:
+
+- A fresh validated logical backup,
+  `quackback-20260724T012200Z.dump`, was completed before the access change.
+- Portal visibility was changed from private to public.
+- The `view` tier for Feature Requests and Bug Reports was changed from
+  authenticated to anonymous.
+- The `submit`, `vote`, and `comment` tiers for both boards remain
+  authenticated.
+- Workspace `allowAnonymous` remains `false`, verified widget identity remains
+  required, open registration remains blocked, and the widget configuration
+  still reports `hmacRequired: true`.
+- The widget settings cache was invalidated after the transaction. Public
+  health and the widget configuration endpoint remained successful.
+- The previously removed `defaultBoard` restriction remains absent so users can
+  select either approved board.
+
+The access boundary is:
+
+| Operation                                | Anonymous Internet visitor | Verified Envoy widget user                                       |
+| ---------------------------------------- | -------------------------- | ---------------------------------------------------------------- |
+| Read boards and published posts/comments | Allowed                    | Allowed                                                          |
+| Read published roadmap/changelog         | Allowed                    | Allowed                                                          |
+| Submit feedback                          | Denied                     | Allowed by authenticated board tier                              |
+| Vote                                     | Denied                     | Allowed by authenticated board tier                              |
+| Comment                                  | Denied                     | Allowed by authenticated board tier                              |
+| Edit or delete feedback                  | Denied                     | Limited to the authenticated owner and existing engagement rules |
+| Moderate content                         | Denied                     | Limited to Quackback team administrators                         |
+
+This works around the Quackback `v0.13.1` ordering mismatch without modifying
+vendor code. The iframe's initial anonymous request can now receive the public
+board list. Envoy's signed identity then arrives through the SDK bridge, and
+Quackback's existing session-version refresh loads authenticated per-board
+write capabilities. The live test verifies that the form is not labeled
+“Posting anonymously,” both boards are selectable, and Submit is enabled after
+selection; it deliberately does not create a post.
+
+Published feedback content, author display information, vote counts, statuses,
+published comments, roadmap, and changelog are now Internet-readable. Product
+explicitly approved this exposure. Secrets, unpublished/moderated content,
+administrative surfaces, write actions, and Envoy application data remain
+protected by their existing controls.
+
+The remaining development gate is a controlled synthetic submission followed
+by attribution, moderation, vote/comment, account-switching, and cleanup
+verification. The identified-session disruption risk tracked upstream must also
+be tested before production rollout. Envoy production remains on its previous
+image with no deployed Quackback environment or secret.
 
 ## 18. Rollback and Kill Switch
 
@@ -1440,7 +1539,8 @@ and move to the pre-priced 4 GB tier when evidence warrants it.
 Users may accidentally submit project or account information.
 
 Mitigation: show submission guidance, moderate Bug Reports before publication,
-keep the portal private, restrict team access, and support deletion.
+make the public-visibility boundary clear before submission, restrict team
+access, and support deletion.
 
 ### Secret mismatch or rotation gap
 

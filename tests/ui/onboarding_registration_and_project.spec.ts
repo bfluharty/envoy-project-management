@@ -116,7 +116,7 @@ async function mockRegisterPage(
 async function mockConsentPage(page: Page) {
   await mockInertiaPage(page, '/onboarding/consent', 'onboarding/consent', {
     termsVersion: '2026-07-15-terms-v1',
-    privacyPolicyVersion: '2026-07-23-privacy-v2',
+    privacyPolicyVersion: '2026-07-23-privacy-v3',
     modelTrainingNoticeVersion: '2026-07-15-model-training-v1',
     privacyReackOnly: false,
   })

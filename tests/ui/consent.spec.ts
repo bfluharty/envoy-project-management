@@ -5,7 +5,7 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:18080'
 
 const consentProps = {
   termsVersion: '2026-07-15-terms-v1',
-  privacyPolicyVersion: '2026-07-23-privacy-v2',
+  privacyPolicyVersion: '2026-07-23-privacy-v3',
   modelTrainingNoticeVersion: '2026-07-15-model-training-v1',
   privacyReackOnly: false,
 }
@@ -216,6 +216,15 @@ test.describe('onboarding consent', () => {
     await expect(
       privacyDialog.getByText(/does not automatically send project identifiers/i)
     ).toBeVisible()
+    await expect(privacyDialog).toContainText(
+      'public feedback portal where published feedback can be viewed'
+    )
+    await expect(privacyDialog).toContainText(
+      'Published feedback and the name attributed to it may be visible to anyone on the Internet'
+    )
+    await expect(privacyDialog).toContainText(
+      'Submitting feedback, voting, and commenting require an authenticated Envoy user'
+    )
     const feedbackRetention = privacyDialog
       .getByText('Feedback Retention and Deletion:')
       .locator('..')
