@@ -10,8 +10,9 @@
 */
 
 import { Env } from '@adonisjs/core/env'
+import { resolveQuackbackConfig } from '../app/utils/quackback_config.js'
 
-export default await Env.create(new URL('../', import.meta.url), {
+const env = await Env.create(new URL('../', import.meta.url), {
   /* App */
   NODE_ENV: Env.schema.enum(['development', 'production', 'test'] as const),
   APP_ENV: Env.schema.enum(['local', 'dev', 'prod', 'test'] as const),
@@ -57,4 +58,17 @@ export default await Env.create(new URL('../', import.meta.url), {
 
   /* Feature flags */
   PASSWORD_AUTH_ENABLED: Env.schema.boolean.optional(),
+  QUACKBACK_ENABLED: Env.schema.boolean.optional(),
+  QUACKBACK_BASE_URL: Env.schema.string.optional(),
+  QUACKBACK_WIDGET_SECRET: Env.schema.string.optional(),
 })
+
+// Cross-field validation belongs at startup so an enabled deployment cannot serve with an
+// incomplete signing configuration. The validator never includes the secret value in errors.
+resolveQuackbackConfig({
+  enabled: env.get('QUACKBACK_ENABLED') ?? false,
+  baseUrl: env.get('QUACKBACK_BASE_URL'),
+  widgetSecret: env.get('QUACKBACK_WIDGET_SECRET'),
+})
+
+export default env

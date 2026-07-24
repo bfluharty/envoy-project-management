@@ -761,7 +761,7 @@ Response:
 The prompt should instruct the model to:
 
 1. Identify the most relevant vendor/service classifications needed for the project.
-2. Return at most four classifications.
+2. Return at most six classifications.
 3. Return practical Foursquare search query strings without adding ZIP/postal code location context.
 4. Keep classification names concise.
 5. Avoid recommending specific businesses.
@@ -775,7 +775,7 @@ Project-management should validate reasoning output before using it:
 - `vendorSearches` is an array.
 - Each item has non-empty `classification`.
 - Each item has non-empty `query`.
-- Limit vendor searches to 4.
+- Limit vendor searches to 6.
 - Drop duplicate or near-duplicate queries.
 
 ---
@@ -864,8 +864,8 @@ type VendorCandidate = {
 
 Recommended MVP limits:
 
-- Max vendor searches/classifications: 4.
-- Max Foursquare calls: 4.
+- Max vendor searches/classifications: 6.
+- Max Foursquare calls: 6.
 - Max Foursquare results per query: 50.
 - Max recommendations returned: 8.
 - Max selected vendors: 8.
@@ -1423,7 +1423,7 @@ Cover:
 - Prompt instructs strict JSON.
 - Output parsing.
 - Invalid JSON handling.
-- Maximum vendor search limit of 4.
+- Maximum vendor search limit of 6.
 - Duplicate or near-duplicate search queries are dropped.
 
 Project-management Foursquare client tests should also verify that ZIP/postal code is sent as

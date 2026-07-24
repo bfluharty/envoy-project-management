@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import testUtils from '@adonisjs/core/services/test_utils'
 import User from '#models/user'
 import UserEntitlement from '#models/user_entitlement'
+import VendorListing from '#models/vendor_listing'
 import VendorService, { VendorAuthorizationError } from '#services/vendor_service'
 
 test.group('VendorService ownership and availability', (group) => {
@@ -218,6 +219,47 @@ test.group('VendorService ownership and availability', (group) => {
     assert.match(recommendation.ownershipWarning!, /consumer-owned/i)
     assert.equal('email' in recommendation, false)
     assert.equal('sourcePayload' in recommendation, false)
+  })
+
+  test('public recommendations put the search-matched category first for display', async () => {
+    const listing = await VendorListing.create({
+      name: 'Us Industries New Cabinets',
+      email: 'cabinets@example.com',
+      originator: 'SEARCH',
+      categories: ['Bathroom Contractor', 'General Contractor', 'Kitchen Remodeler'],
+      fsqCategoryIds: ['bathroom-category-id', 'general-category-id', 'kitchen-category-id'],
+      claimStatus: 'UNCLAIMED',
+      isActive: true,
+    })
+
+    const recommendation = VendorService.toPublicRecommendation(listing, {
+      classification: 'Kitchen Remodelers',
+      fsqCategoryIds: ['kitchen-category-id'],
+    })
+
+    assert.deepEqual(recommendation.categories, [
+      'Kitchen Remodeler',
+      'Bathroom Contractor',
+      'General Contractor',
+    ])
+  })
+
+  test('public recommendations use the search classification when returned categories are unrelated', async () => {
+    const listing = await VendorListing.create({
+      name: 'Chesterfield Co Environmental Engineering Dept Drainage Section',
+      originator: 'SEARCH',
+      categories: ['Government Building'],
+      fsqCategoryIds: ['government-category-id'],
+      claimStatus: 'UNCLAIMED',
+      isActive: true,
+    })
+
+    const recommendation = VendorService.toPublicRecommendation(listing, {
+      classification: 'Drainage Contractor',
+      query: 'drainage contractor',
+    })
+
+    assert.deepEqual(recommendation.categories, ['Drainage Contractor'])
   })
 
   test('reused search listings remain completely unchanged', async () => {

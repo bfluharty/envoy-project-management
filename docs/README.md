@@ -28,6 +28,7 @@ files hold the longer explanations that should stay close to the codebase.
 - [Email Authorization And Provider Sync Implementation Spec](features/Email%20Authorization%20And%20Provider%20Sync%20Implementation%20Spec.md)
 - [Production Rate Limiting Guide](features/Production%20Rate%20Limiting%20Guide.md)
 - [Project-Scoped Insights Generator Spec](features/Project-Scoped%20Insights%20Generator%20Spec.md)
+- [Quackback Self-Hosted Feedback Widget Integration Spec](features/quackback-feedback-widget-integration-spec.md)
 - [User Onboarding Consent And Model Training Preferences Spec](features/user-onboarding-consent-and-model-training-preferences-spec.md)
 
 ## Legal Docs

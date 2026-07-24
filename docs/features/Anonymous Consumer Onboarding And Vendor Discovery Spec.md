@@ -70,7 +70,7 @@ Relevant current behavior:
 
 1. Make the root public experience useful before registration.
 2. Let anonymous consumers describe a project and enter a ZIP code.
-3. Use the reasoning-engine to infer up to four relevant vendor search classifications and Foursquare search queries.
+3. Use the reasoning-engine to infer up to six relevant vendor search classifications and Foursquare search queries.
 4. Use project-management to call Foursquare through the existing vendor search service.
 5. Show up to eight vendor results. Existing Envoy listings that match an inferred category and the search postal-code radius rank first regardless of claim status; remaining results prioritize vendors with email while retaining high-ranking vendors without email when needed to fill the result set.
 6. Persist every normalized Foursquare result as a global `vendor_listing`, then store recommended and selected listing UUIDs on the anonymous draft for 24 hours.
@@ -238,7 +238,7 @@ Project-management creates anonymous onboarding draft
   v
 Project-management calls reasoning-engine
   - send the project blurb only
-  - infer up to four vendor search classifications
+  - infer up to six vendor search classifications
   - produce Foursquare search queries
   |
   v
@@ -345,7 +345,7 @@ Selection behavior:
 Reasoning-engine:
 
 - Receives the project blurb only. ZIP/postal code is intentionally excluded from the reasoning contract.
-- Infers up to four vendor search classifications.
+- Infers up to six vendor search classifications.
 - Produces Foursquare search queries for those classifications.
 - Returns structured JSON only.
 

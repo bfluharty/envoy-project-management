@@ -17,8 +17,8 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import {
-    AlertTriangleIcon,
     CheckCircleIcon,
+    InfoIcon,
     LoaderCircleIcon,
     ShieldAlertIcon,
     MapPinIcon,
@@ -52,6 +52,10 @@
 
   type Context = 'contacts' | 'project' | 'new-project';
   const MAX_SELECTED_VENDORS = 8;
+  const MISSING_CONTACT_BADGE_CLASS =
+    'inline-flex items-center gap-1 rounded-full bg-surface-200 px-2 py-0.5 text-xs font-medium text-surface-950 dark:bg-surface-700 dark:text-surface-50';
+  const MISSING_CONTACT_TOOLTIP =
+    "We'll request that you provide contact info for this vendor before we can automate outreach.";
 
   // ── Props ──────────────────────────────────────────────────────────────────
   const {
@@ -94,6 +98,7 @@
     )
   );
   let hasSearched = $state(false);
+  let needsMoreSpecificDetails = $state(false);
 
   // Per-listing contact save state
   let savingContact  = $state<Record<string, boolean>>({});
@@ -182,9 +187,13 @@
         return;
       }
 
-      const data: { vendors: VendorResult[] } = await res.json();
+      const data: { vendors: VendorResult[]; vendorSearches?: unknown[] } = await res.json();
       const nextResults = (data.vendors ?? []).slice(0, 8);
       results    = nextResults;
+      needsMoreSpecificDetails =
+        Array.isArray(data.vendorSearches) &&
+        data.vendorSearches.length === 0 &&
+        nextResults.length === 0;
       vendorByUuid = {
         ...vendorByUuid,
         ...Object.fromEntries(nextResults.map((vendor) => [vendor.vendorListingUuid, vendor])),
@@ -460,8 +469,15 @@
   {#if hasSearched}
     {#if results.length === 0}
       <div class="text-center py-6 space-y-1" aria-live="polite">
-        <p class="font-medium">No matches found</p>
-        <p class="text-sm text-surface-600-400">Try adjusting your description or location.</p>
+        {#if needsMoreSpecificDetails}
+          <p class="font-medium">Tell us what kind of help you need</p>
+          <p class="text-sm text-surface-600-400">
+            Describe the specific work, service, item, rental, or venue you want to find.
+          </p>
+        {:else}
+          <p class="font-medium">No matches found</p>
+          <p class="text-sm text-surface-600-400">Try adjusting your description or location.</p>
+        {/if}
       </div>
     {:else}
       <section aria-label="Search results" aria-live="polite" class="space-y-3">
@@ -651,8 +667,8 @@
         </span>
       {/if}
       {#if p.vendor.hasEmail === false}
-        <span class="inline-flex items-center gap-1 text-xs font-medium text-warning-500 bg-warning-500/10 rounded-full px-2 py-0.5">
-          <AlertTriangleIcon class="size-3" />
+        <span class={MISSING_CONTACT_BADGE_CLASS} title={MISSING_CONTACT_TOOLTIP}>
+          <InfoIcon class="size-3" aria-label={MISSING_CONTACT_TOOLTIP} />
           Additional contact details required
         </span>
       {/if}

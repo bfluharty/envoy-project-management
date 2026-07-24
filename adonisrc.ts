@@ -106,6 +106,11 @@ export default defineConfig({
         name: 'functional',
         timeout: 30000,
       },
+      {
+        files: ['tests/vendor_search_evaluation/**/*.spec(.ts|.js)'],
+        name: 'vendor-search-evaluation',
+        timeout: 300000,
+      },
     ],
     forceExit: false,
   },

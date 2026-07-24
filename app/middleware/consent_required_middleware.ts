@@ -5,7 +5,7 @@ import { normalizePostAuthReturnPath } from '#services/post_auth_redirect_servic
 import { expectsJsonResponse } from '#utils/request_mode'
 
 export default class ConsentRequiredMiddleware {
-  async handle(ctx: HttpContext, next: NextFn) {
+  async handle(ctx: HttpContext, next: NextFn, options: { incompleteStatus?: 403 | 428 } = {}) {
     const user = ctx.auth.getUserOrFail()
     const preference = await UserConsentService.ensurePreference(user.uuid, user.uuid)
 
@@ -23,7 +23,7 @@ export default class ConsentRequiredMiddleware {
     }
 
     if (jsonResponse) {
-      return ctx.response.status(428).send({
+      return ctx.response.status(options.incompleteStatus ?? 428).send({
         code: 'CONSENT_REQUIRED',
         message: preference.termsAccepted
           ? "Acknowledge Envoy's updated Privacy Policy before continuing."

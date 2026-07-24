@@ -1,0 +1,98 @@
+[
+  {
+    "id": "birthday_catering",
+    "query": "birthday catering service",
+    "categoryIds": ["63be6904847c3692a84b9b46"],
+    "goldQuery": "event caterer",
+    "relevanceTerms": ["cater", "food service"],
+    "wrongProviderTerms": ["event venue", "restaurant", "grocery"]
+  },
+  {
+    "id": "water_heater_plumber",
+    "query": "water heater replacement service",
+    "categoryIds": ["63be6904847c3692a84b9b5f"],
+    "goldQuery": "water heater plumber",
+    "relevanceTerms": ["plumb", "water heater"],
+    "wrongProviderTerms": ["automotive", "car repair", "water treatment"]
+  },
+  {
+    "id": "coffee_shop_buildout",
+    "query": "coffee shop buildout contractor",
+    "categoryIds": ["63be6904847c3692a84b9b55"],
+    "goldQuery": "commercial general contractor",
+    "relevanceTerms": ["contractor", "construction", "builder", "remodel"],
+    "wrongProviderTerms": ["coffee shop", "cafe", "restaurant"]
+  },
+  {
+    "id": "commercial_electrician",
+    "query": "commercial electrician",
+    "categoryIds": ["63be6904847c3692a84b9b52"],
+    "goldQuery": "commercial electrical contractor",
+    "relevanceTerms": ["electric"],
+    "wrongProviderTerms": ["electrical supply", "hardware store"]
+  },
+  {
+    "id": "wheelchair_ramp",
+    "query": "wheelchair ramp installation",
+    "categoryIds": [],
+    "goldQuery": "accessibility ramp contractor",
+    "relevanceTerms": ["accessib", "ramp", "mobility", "contractor"],
+    "wrongProviderTerms": ["medical supply", "wheelchair store"]
+  },
+  {
+    "id": "podcast_soundproofing",
+    "query": "soundproofing service for podcast room",
+    "categoryIds": [],
+    "goldQuery": "acoustic treatment contractor",
+    "relevanceTerms": ["acoustic", "soundproof", "sound", "audio"],
+    "wrongProviderTerms": ["recording studio", "electronics store"]
+  },
+  {
+    "id": "wedding_shuttle",
+    "query": "wedding shuttle service",
+    "categoryIds": ["54541b70498ea6ccd0204bff"],
+    "goldQuery": "wedding shuttle bus service",
+    "relevanceTerms": ["shuttle", "transport", "bus", "limousine", "limo"],
+    "wrongProviderTerms": ["wedding venue", "event space"]
+  },
+  {
+    "id": "restaurant_hood",
+    "query": "commercial kitchen hood inspection and repair",
+    "categoryIds": [],
+    "goldQuery": "restaurant hood fire suppression service",
+    "relevanceTerms": ["hood", "fire", "duct", "exhaust", "kitchen"],
+    "wrongProviderTerms": ["restaurant", "food safety"]
+  },
+  {
+    "id": "backyard_drainage",
+    "query": "backyard drainage contractor",
+    "categoryIds": [],
+    "goldQuery": "french drain contractor",
+    "relevanceTerms": ["drain", "landscap", "grading", "waterproof"],
+    "wrongProviderTerms": ["sewer", "water treatment"]
+  },
+  {
+    "id": "office_ethernet",
+    "query": "low-voltage wiring installation",
+    "categoryIds": ["63be6904847c3692a84b9b93"],
+    "goldQuery": "network cabling contractor",
+    "relevanceTerms": ["network", "cabl", "telecom", "communication", "low voltage"],
+    "wrongProviderTerms": ["electronics store", "electrical supply"]
+  },
+  {
+    "id": "professional_cleaner",
+    "query": "condo deep cleaning service",
+    "categoryIds": ["63be6904847c3692a84b9b60"],
+    "goldQuery": "professional house cleaner",
+    "relevanceTerms": ["clean", "maid", "janitorial"],
+    "wrongProviderTerms": ["real estate", "laundromat"]
+  },
+  {
+    "id": "carpet_flooring",
+    "query": "carpet stretching and replacement service",
+    "categoryIds": ["63be6904847c3692a84b9b4e"],
+    "goldQuery": "carpet flooring contractor",
+    "relevanceTerms": ["carpet", "floor"],
+    "wrongProviderTerms": ["furniture store", "upholstery"]
+  }
+]

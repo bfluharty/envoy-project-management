@@ -119,7 +119,37 @@ test.describe('authenticated vendor search component', () => {
     expect(selectUserHeader).toBeUndefined()
   })
 
-  test('groups ranked results by primary Foursquare classification without reordering them', async ({
+  test('distinguishes an ambiguous description from a valid search with no matches', async ({
+    page,
+  }) => {
+    let searchAttempt = 0
+    await page.route('/api/vendors/search', (route) => {
+      searchAttempt += 1
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          vendors: [],
+          vendorSearches:
+            searchAttempt === 1
+              ? []
+              : [{ classification: 'Electrician', query: 'commercial electrician' }],
+        }),
+      })
+    })
+    await openContactsSearch(page)
+    await fillVendorSearch(page)
+
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
+    await expect(page.getByText('Tell us what kind of help you need')).toBeVisible()
+    await expect(page.getByText('No matches found', { exact: true })).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Search again', exact: true }).click()
+    await expect(page.getByText('No matches found', { exact: true })).toBeVisible()
+    await expect(page.getByText('Tell us what kind of help you need')).toHaveCount(0)
+  })
+
+  test('groups ranked results by response classification without reordering them', async ({
     page,
   }) => {
     const rankedVendors = [

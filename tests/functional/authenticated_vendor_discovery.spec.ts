@@ -129,6 +129,45 @@ test.group('authenticated vendor discovery API', (group) => {
     assert.equal(mappingsAfter[0].$extras.total, mappingsBefore[0].$extras.total)
   })
 
+  test('returns the matched search category first when a result has multiple Foursquare categories', async ({
+    client,
+  }) => {
+    stubReasoning({
+      vendorSearches: [
+        {
+          classification: 'Kitchen Remodeler',
+          query: 'kitchen renovation contractor',
+          fsqCategoryIds: ['kitchen-category-id'],
+        },
+      ],
+    })
+    stubFoursquare([
+      {
+        fsq_place_id: `authenticated-kitchen-${uuidv4()}`,
+        name: 'Us Industries New Cabinets',
+        email: `authenticated-kitchen-${uuidv4()}@example.com`,
+        categories: [
+          { fsq_category_id: 'bathroom-category-id', name: 'Bathroom Contractor' },
+          { fsq_category_id: 'general-category-id', name: 'General Contractor' },
+          { fsq_category_id: 'kitchen-category-id', name: 'Kitchen Remodeler' },
+        ],
+        location: { postcode: '23831' },
+      },
+    ])
+
+    const response = await client.post('/api/vendors/search').loginAs(consumer).json({
+      projectDescription: 'Renovate a 1920s kitchen',
+      postalCode: '23831',
+    })
+
+    response.assertStatus(200)
+    assert.deepEqual(response.body().vendors[0].categories, [
+      'Kitchen Remodeler',
+      'Bathroom Contractor',
+      'General Contractor',
+    ])
+  })
+
   test('validates authenticated search input', async ({ client }) => {
     stubReasoning({
       vendorSearches: [{ classification: 'Painter', query: 'commercial painter' }],

@@ -3,6 +3,13 @@ import type { InferSharedProps } from '@adonisjs/inertia/types'
 import env from '#start/env'
 import { serializeAuthenticatedUser } from '#services/user_avatar_service'
 import UserConsentService from '#services/user_consent_service'
+import { getQuackbackConfig } from '#config/quackback'
+import { isFeedbackWidgetRouteAllowed, type FeedbackWidgetConfig } from '#utils/quackback_config'
+
+function publicAppVersion(): string {
+  const version = process.env.GIT_SHA?.trim() ?? ''
+  return /^[a-zA-Z0-9._-]{1,64}$/.test(version) ? version : 'unknown'
+}
 
 const inertiaConfig = defineConfig({
   /**
@@ -30,6 +37,30 @@ const inertiaConfig = defineConfig({
       success: ctx.session?.flashMessages?.get('success') ?? null,
       error: ctx.session?.flashMessages?.get('error') ?? null,
       partial_success: ctx.session?.flashMessages?.get('partial_success') ?? null,
+    }),
+    feedbackWidget: async (ctx): Promise<FeedbackWidgetConfig | null> => {
+      let config
+      try {
+        config = getQuackbackConfig()
+      } catch {
+        // Startup validation normally prevents this state. Fail closed if configuration is
+        // changed dynamically during a test or process lifecycle.
+        return null
+      }
+
+      const user = ctx.auth?.user
+      if (!config.enabled || !user || !user.isActive) return null
+      if (!isFeedbackWidgetRouteAllowed(ctx.request.url())) return null
+      if (!(await UserConsentService.hasCurrentRequiredConsent(user.uuid))) return null
+
+      return {
+        enabled: true,
+        baseUrl: config.baseUrl,
+      }
+    },
+    feedbackWidgetContext: () => ({
+      environment: env.get('APP_ENV') === 'prod' ? ('prod' as const) : ('dev' as const),
+      appVersion: publicAppVersion(),
     }),
     projects: async (ctx) => {
       // Shared props also run on consent-exempt pages. Never expose product data until the

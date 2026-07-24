@@ -2,6 +2,8 @@
 import { router, page, Link } from '@inertiajs/svelte'
 import { HouseIcon, LogOutIcon } from '@lucide/svelte'
 import Logo from './logo.svelte';
+import FeedbackWidget from './feedback_widget.svelte';
+import { destroyQuackbackWidget } from '../utils/quackback_widget';
 
 type GuestAction = {
   label: string;
@@ -12,12 +14,14 @@ const props = $props<{ showGuestCta?: boolean; guestAction?: GuestAction | null 
 const showGuestCta = $derived(props.showGuestCta ?? true);
 const guestAction = $derived(props.guestAction ?? null);
 const user = $derived($page.props.user);
+const feedbackWidget = $derived($page.props.feedbackWidget);
 const isDashboard = $derived($page.url.startsWith('/dashboard'));
 const isLogin = $derived($page.url.startsWith('/login'));
 const isRegister = $derived($page.url.startsWith('/register'));
 let isLoggingOut = $state(false);
 
 function handleLogout() {
+  destroyQuackbackWidget()
   isLoggingOut = true
   router.post('/logout', {}, {
     onFinish: () => { isLoggingOut = false },
@@ -80,3 +84,7 @@ function handleLogout() {
     {/if}
   </div>
 </nav>
+
+{#if user && feedbackWidget}
+  <FeedbackWidget />
+{/if}

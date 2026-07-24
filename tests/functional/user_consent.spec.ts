@@ -8,6 +8,7 @@ import UserEntitlement from '#models/user_entitlement'
 import Project from '#models/project'
 import {
   ACCOUNT_MODEL_TRAINING_DISCLOSURE_TEXT,
+  CURRENT_PRIVACY_POLICY_VERSION,
   MODEL_TRAINING_DISCLOSURE_TEXT,
 } from '#constants/user_consent'
 
@@ -50,6 +51,7 @@ async function renderConsentPage(client: any, user: User) {
   assert.ok(props.termsVersion.length > 0)
   assert.equal(typeof props.privacyPolicyVersion, 'string')
   assert.ok(props.privacyPolicyVersion.length > 0)
+  assert.equal(props.privacyPolicyVersion, CURRENT_PRIVACY_POLICY_VERSION)
   assert.equal(typeof props.modelTrainingNoticeVersion, 'string')
   assert.ok(props.modelTrainingNoticeVersion.length > 0)
 

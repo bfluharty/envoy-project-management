@@ -5,7 +5,7 @@
   import DismissibleBanner from '#components/dismissible_banner.svelte';
   import { page } from '@inertiajs/svelte';
   import { onMount } from 'svelte';
-  import { AlertTriangleIcon, CheckCircleIcon, LoaderCircleIcon, ShieldAlertIcon, MapPinIcon } from '@lucide/svelte';
+  import { CheckCircleIcon, InfoIcon, LoaderCircleIcon, ShieldAlertIcon, MapPinIcon } from '@lucide/svelte';
   import { groupVendorsByPrimaryClassification } from '../utils/vendor_grouping';
 
   // ── Types ──────────────────────────────────────────────────────────────────
@@ -40,6 +40,7 @@
 
   interface VendorSearchResponse {
     onboardingToken: string;
+    vendorSearches?: unknown[];
     vendors: VendorListing[];
     emptyStateReason?: 'NO_VENDOR_RESULTS';
   }
@@ -48,6 +49,10 @@
   const TOKEN_KEY = 'envoy_onboarding_token';
   const SEEN_KEY  = 'envoy_seen';
   const MAX_SELECTED_VENDORS = 8;
+  const MISSING_CONTACT_BADGE_CLASS =
+    'inline-flex items-center gap-1 rounded-full bg-surface-200 px-2 py-0.5 text-xs font-medium text-surface-950 dark:bg-surface-700 dark:text-surface-50';
+  const MISSING_CONTACT_TOOLTIP =
+    "We'll request that you provide contact info for this vendor before we can automate outreach.";
 
   // ── State ──────────────────────────────────────────────────────────────────
   let blurb         = $state('');
@@ -66,6 +71,7 @@
 
   // Derived: has the anonymous user seen results?
   let seen          = $state(false);
+  let needsMoreSpecificDetails = $state(false);
   let restoring     = $state(false);
   const recommendationGroups = $derived(groupVendorsByPrimaryClassification(recommendations));
   const allRecommendationsSelected = $derived(
@@ -86,6 +92,7 @@
     postalError = '';
     selectionError = '';
     seen = false;
+    needsMoreSpecificDetails = false;
   }
 
   function isInvalidDraftResponse(response: Response) {
@@ -131,6 +138,11 @@
         data.step === 'selection' ||
         (data.vendorSearches?.length ?? 0) > 0 ||
         recommendations.length > 0;
+      needsMoreSpecificDetails =
+        seen &&
+        Array.isArray(data.vendorSearches) &&
+        data.vendorSearches.length === 0 &&
+        recommendations.length === 0;
     } catch {
       // Keep the token on retryable network failures so a valid draft is not lost.
       searchError = 'We could not restore your search. Check your connection and try again.';
@@ -190,6 +202,10 @@
       const data: VendorSearchResponse = await res.json();
       token = data.onboardingToken;
       recommendations = (data.vendors ?? []).slice(0, 8);
+      needsMoreSpecificDetails =
+        Array.isArray(data.vendorSearches) &&
+        data.vendorSearches.length === 0 &&
+        recommendations.length === 0;
       selected = new Set(recommendations.map((vendor) => vendor.vendorListingUuid));
       selectionError = '';
 
@@ -323,9 +339,9 @@
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   const examplePrompts = [
-    'Outdoor wedding for 150 guests in fall',
-    'Renovate a 1920s kitchen',
-    'Company offsite for 40 people',
+    'I have standing water in my backyard after heavy rain. Need someone to evaluate drainage, possibly install a French drain or regrade part of the yard, and protect the patio foundation from runoff.',
+    'I am opening a small coffee shop in an old retail space and need help with plumbing, electrical upgrades, countertop installation, and signage before opening day.',
+    'We are preparing a vacant condo for sale and need a quick refresh: deep cleaning, carpet replacement, repainting two rooms, fixing a loose closet door, and hauling away old furniture.',
   ];
 
   function applyPrompt(prompt: string) {
@@ -409,16 +425,20 @@
 
           <!-- Example prompts -->
           {#if !seen}
-            <div class="flex flex-wrap gap-2">
-              {#each examplePrompts as prompt}
-                <button
-                  type="button"
-                  onclick={() => applyPrompt(prompt)}
-                  class="btn btn-sm preset-tonal text-xs"
-                >
-                  {prompt}
-                </button>
-              {/each}
+            <div class="space-y-2">
+              <p class="text-xs font-medium text-surface-500">Try a sample project</p>
+              <div class="grid gap-2">
+                {#each examplePrompts as prompt}
+                  <button
+                    type="button"
+                    onclick={() => applyPrompt(prompt)}
+                    class="btn btn-sm preset-tonal h-auto min-h-9 w-full max-w-full justify-start whitespace-normal break-words px-3 py-2 text-left text-xs leading-snug"
+                    aria-label={`Use sample prompt: ${prompt}`}
+                  >
+                    {prompt}
+                  </button>
+                {/each}
+              </div>
             </div>
           {/if}
 
@@ -431,7 +451,7 @@
               type="text"
               class="input"
               class:input-error={!!postalError}
-              placeholder="e.g. 10001 or M5H 2N2"
+              placeholder="e.g. 10001"
               bind:value={postalCode}
               disabled={searching || restoring}
               aria-describedby={postalError ? 'err-postal' : undefined}
@@ -483,8 +503,15 @@
           {#if recommendations.length === 0}
             <!-- Empty state — no vendors found -->
             <div class="text-center space-y-2 py-6">
-              <p class="font-medium">No matches found for your search.</p>
-              <p class="text-surface-600-400 text-sm">Try adjusting your description or location and search again.</p>
+              {#if needsMoreSpecificDetails}
+                <p class="font-medium">Tell us what kind of help you need.</p>
+                <p class="text-surface-600-400 text-sm">
+                  Describe the specific work, service, item, rental, or venue you want to find, then search again.
+                </p>
+              {:else}
+                <p class="font-medium">No matches found for your search.</p>
+                <p class="text-surface-600-400 text-sm">Try adjusting your description or location and search again.</p>
+              {/if}
             </div>
           {:else}
             <section aria-label="Recommendations" class="space-y-4">
@@ -570,8 +597,8 @@
                               </span>
                             {/if}
                             {#if vendor.hasEmail === false}
-                              <span class="inline-flex items-center gap-1 text-xs font-medium text-warning-500 bg-warning-500/10 rounded-full px-2 py-0.5">
-                                <AlertTriangleIcon class="size-3" />
+                              <span class={MISSING_CONTACT_BADGE_CLASS} title={MISSING_CONTACT_TOOLTIP}>
+                                <InfoIcon class="size-3" aria-label={MISSING_CONTACT_TOOLTIP} />
                                 Additional contact details required
                               </span>
                             {/if}

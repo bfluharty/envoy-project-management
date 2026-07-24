@@ -8,6 +8,11 @@ import {
   normalizeVendorListingName,
   normalizeUsPostalCode,
 } from '#utils/vendor_listing_utils'
+import {
+  getMeaningfulVendorSearchTerms,
+  normalizeVendorCategoryMatchText,
+  textMatchesVendorSearchTerms,
+} from '#utils/vendor_category_matching'
 
 const SEARCH_MODIFIED_BY = 'system:vendor-search'
 
@@ -33,6 +38,12 @@ export type PublicVendorRecommendation = {
   onboardedToEnvoy: boolean
   consumerOwned: boolean
   ownershipWarning: string | null
+}
+
+export type VendorRecommendationCategoryPreference = {
+  classification?: string
+  query?: string
+  fsqCategoryIds?: readonly string[]
 }
 
 export type AuthenticatedVendorRecommendation = PublicVendorRecommendation & {
@@ -79,6 +90,52 @@ function sameBusiness(candidate: SearchVendorCandidate, listing: VendorListing) 
   return !candidateHasStableKey && !listingHasStableKey && sameWeakIdentity(candidate, listing)
 }
 
+function moveCategoryToFront(categories: string[], preferredIndex: number) {
+  if (preferredIndex <= 0) return categories
+  return [
+    categories[preferredIndex],
+    ...categories.slice(0, preferredIndex),
+    ...categories.slice(preferredIndex + 1),
+  ]
+}
+
+function prioritizeVendorCategories(
+  categories: string[],
+  fsqCategoryIds: readonly string[],
+  preference?: VendorRecommendationCategoryPreference
+) {
+  if (!preference) return categories
+
+  const preferredClassification = preference.classification?.trim()
+  if (!preferredClassification) return categories
+
+  const requestedCategoryIds = new Set(preference.fsqCategoryIds ?? [])
+  if (categories.length > 1 && requestedCategoryIds.size > 0) {
+    const matchedIndex = fsqCategoryIds.findIndex(
+      (categoryId, index) => requestedCategoryIds.has(categoryId) && !!categories[index]?.trim()
+    )
+    if (matchedIndex >= 0) return moveCategoryToFront(categories, matchedIndex)
+  }
+
+  const normalizedPreferredClassification =
+    normalizeVendorCategoryMatchText(preferredClassification)
+  const exactMatchedIndex = categories.findIndex(
+    (category) => normalizeVendorCategoryMatchText(category) === normalizedPreferredClassification
+  )
+  if (exactMatchedIndex >= 0) return moveCategoryToFront(categories, exactMatchedIndex)
+
+  const meaningfulTerms = getMeaningfulVendorSearchTerms(
+    preference.classification,
+    preference.query
+  )
+  const termMatchedIndex = categories.findIndex((category) =>
+    textMatchesVendorSearchTerms(category, meaningfulTerms)
+  )
+  if (termMatchedIndex >= 0) return moveCategoryToFront(categories, termMatchedIndex)
+
+  return [preferredClassification]
+}
+
 export default class VendorService {
   private static readonly DEFAULT_VENDOR_LIMIT = 10
   private static readonly DEFAULT_VENDOR_OFFSET = 0
@@ -103,12 +160,19 @@ export default class VendorService {
     return !!listing.ownerUserUuid && listing.ownerUserUuid === userUuid
   }
 
-  public static toPublicRecommendation(listing: VendorListing): PublicVendorRecommendation {
+  public static toPublicRecommendation(
+    listing: VendorListing,
+    categoryPreference?: VendorRecommendationCategoryPreference
+  ): PublicVendorRecommendation {
     const consumerOwned = this.isConsumerOwnedListing(listing)
     return {
       vendorListingUuid: listing.uuid,
       name: listing.name,
-      categories: listing.categories ?? [],
+      categories: prioritizeVendorCategories(
+        listing.categories ?? [],
+        listing.fsqCategoryIds ?? [],
+        categoryPreference
+      ),
       location: listing.location,
       hasEmail: !!normalizeVendorListingEmail(listing.email),
       onboardedToEnvoy: this.isOnboardedListing(listing),
@@ -121,10 +185,11 @@ export default class VendorService {
 
   public static toAuthenticatedRecommendation(
     listing: VendorListing,
-    mapping?: Vendor | null
+    mapping?: Vendor | null,
+    categoryPreference?: VendorRecommendationCategoryPreference
   ): AuthenticatedVendorRecommendation {
     return {
-      ...this.toPublicRecommendation(listing),
+      ...this.toPublicRecommendation(listing, categoryPreference),
       inContacts: !!mapping?.isActive,
       vendorUuid: mapping?.isActive ? mapping.uuid : null,
     }

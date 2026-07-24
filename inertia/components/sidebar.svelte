@@ -5,11 +5,14 @@ import { Navigation } from "@skeletonlabs/skeleton-svelte";
 import { router, page } from '@inertiajs/svelte'
 import { showNewProjectForm } from '../stores/ui';
 import UserStatus from './user_status.svelte';
+import FeedbackWidget from './feedback_widget.svelte';
+import { destroyQuackbackWidget } from '../utils/quackback_widget';
 
 const { children } = $props();
 
 const user = $derived($page.props.user);
 const projects = $derived($page.props.projects || []);
+const feedbackWidget = $derived($page.props.feedbackWidget);
 
 let drawerOpen = $state(false);
 let dialogEl = $state<HTMLDialogElement | null>(null);
@@ -78,6 +81,7 @@ const newProjectClasses = $derived(
 let isLoggingOut = $state(false);
 
 function handleLogout() {
+	destroyQuackbackWidget();
 	isLoggingOut = true;
 	router.post('/logout', {}, {
 		onFinish: () => {
@@ -208,6 +212,10 @@ function handleLogout() {
 		{@render children()}
 	</main>
 </div>
+
+{#if user && feedbackWidget}
+	<FeedbackWidget />
+{/if}
 
 <style>
 	dialog {
