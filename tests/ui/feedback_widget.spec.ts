@@ -141,6 +141,7 @@ async function installQuackbackStub(page: Page, options: StubOptions = {}) {
               });
             }
             document.body.appendChild(panel);
+            emit('open', {});
           }
 
           function createLauncher() {
@@ -194,6 +195,11 @@ async function installQuackbackStub(page: Page, options: StubOptions = {}) {
             }
             if (command === 'metadata') {
               history.metadata.push(args[0]);
+              return;
+            }
+            if (command === 'close') {
+              document.querySelector('[data-testid="quackback-stub-panel"]')?.remove();
+              emit('close', {});
               return;
             }
             if (command === 'logout') {
@@ -270,7 +276,7 @@ test('queues verified initialization, safe metadata, and one accessible desktop 
   const history = await stubHistory(page)
   expect(history.initCount).toBe(1)
   expect(history.calls[0].command).toBe('on')
-  expect(history.calls[1]).toMatchObject({
+  expect(history.calls.find(({ command }) => command === 'init')).toMatchObject({
     command: 'init',
     args: [
       {
@@ -297,6 +303,35 @@ test('queues verified initialization, safe metadata, and one accessible desktop 
   await launcher.focus()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('dialog', { name: 'Feedback panel' })).toBeVisible()
+  await expect(page.getByRole('complementary', { name: 'Screenshot tip' })).toContainText(
+    'Paste or drag a screenshot into “Add more details…”'
+  )
+})
+
+test('shows the screenshot tip when feedback opens and remembers dismissal', async ({ page }) => {
+  await installQuackbackStub(page)
+  await mockDashboard(page)
+
+  await page.goto('/dashboard')
+  const launcher = await expectLauncher(page)
+  await expect(page.getByRole('complementary', { name: 'Screenshot tip' })).toHaveCount(0)
+
+  await launcher.click()
+  const screenshotTip = page.getByRole('complementary', { name: 'Screenshot tip' })
+  await expect(screenshotTip).toBeVisible()
+  await expect(screenshotTip).toContainText('Reporting a bug?')
+
+  await page.getByRole('button', { name: 'Dismiss screenshot tip' }).click()
+  await expect(screenshotTip).toHaveCount(0)
+  expect(
+    await page.evaluate(() =>
+      globalThis.localStorage.getItem('envoy_feedback_screenshot_tip_dismissed')
+    )
+  ).toBe('true')
+
+  await page.evaluate(() => (globalThis as any).Quackback('close'))
+  await page.getByRole('button', { name: 'Send feedback' }).click()
+  await expect(page.getByRole('complementary', { name: 'Screenshot tip' })).toHaveCount(0)
 })
 
 test('updates only page-area metadata and retains one instance across Inertia navigation', async ({

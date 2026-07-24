@@ -413,6 +413,10 @@ recovery, or required consent page.
   toast region, or other fixed controls.
 - Quackback's built-in accessible name and keyboard behavior must remain intact.
 - Reduced-motion behavior must follow the SDK and browser preference.
+- When the panel opens, Envoy shows a dismissible helper message explaining that
+  screenshots can be pasted or dragged into the `Add more details...` editor.
+  Dismissal is remembered in local browser storage. The helper is Envoy-owned
+  because Quackback `v0.13.1` does not expose board-specific widget guidance.
 
 ### 7.4 Feedback workflow
 
@@ -1173,6 +1177,8 @@ Verify:
 - Token failure leaves Envoy usable and hides the launcher.
 - Desktop and mobile viewport behavior.
 - Keyboard access and accessible launcher name.
+- Screenshot guidance appears when the panel opens, can be dismissed, and stays
+  dismissed on later opens in the same browser.
 
 ### 16.4 Real local integration tests
 
@@ -1585,6 +1591,8 @@ The implementation is complete when:
 - Feature Requests and Bug Reports are available with the approved permissions.
 - Users can browse, search, vote, comment, and submit.
 - Bug reports can include screenshots and enter moderation.
+- The first widget open explains how to paste or drag a screenshot, without
+  requiring a Quackback fork.
 - Changelog and roadmap are available without another login.
 - Anonymous interaction and anonymous portal access are rejected.
 - Logout/account switching cannot leak the previous user's state.
